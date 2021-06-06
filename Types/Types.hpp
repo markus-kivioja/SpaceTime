@@ -15,6 +15,10 @@
 
 #include "Matrix4.hpp"
 
+typedef unsigned char uchar;
+typedef unsigned short ushort;
+typedef unsigned int uint;
+typedef unsigned long long ullong;
 
 static const uint NONE = uint(-1);
 static const ddouble PI = 3.1415926535897932385;
@@ -26,9 +30,5 @@ static const ddouble PIx3_2 = 4.7123889803846898578;
 static const ddouble RAD2DEG = 57.295779513082320875;
 static const ddouble DEG2RAD = 0.0174532925199432958;
 
-typedef unsigned char uchar;
-typedef unsigned short ushort;
-typedef unsigned int uint;
-typedef unsigned long long ullong;
 
 #endif //_TYPES_HPP_INCLUDED_

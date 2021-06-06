@@ -741,30 +741,30 @@ bool DelaunayMesh::findCell(const Vector4 &p, uint &curr) const
 }
 
 
-uint DelaunayMesh::insertNode(const Vector4 &p, const ddouble w, uint near)
+uint DelaunayMesh::insertNode(const Vector4 &p, const ddouble w, uint nearNode)
 {
 	uint i, j, k, l;
 
 	// Check if the node already exists
-	near = findNode(p, near);
-	if(near != NONE && (getNodePosition(near) - p).lensq() < MINLENGTHSQ) return near;
+	nearNode = findNode(p, nearNode);
+	if(nearNode != NONE && (getNodePosition(nearNode) - p).lensq() < MINLENGTHSQ) return nearNode;
 
 	// Create new node
 	const uint node = addNode(p);
 
 	if(w != 0.0) setNodeWeight(node, w);
-	if(near == NONE) return node; // this is the first node
+	if(nearNode == NONE) return node; // this is the first node
 
 	if(m_esize == 0) // 0-dimensional convex mesh (only one node exists)
 	{
-		addEdge(near, node);
+		addEdge(nearNode, node);
 		return node;
 	}
 
 	if(m_fsize == 0) // 1-dimensional convex mesh (mesh on a straight line)
 	{
-		const Vector4 d = getNodePosition(near) - p;
-		uint curr = getNodeEdges(near)[0];
+		const Vector4 d = getNodePosition(nearNode) - p;
+		uint curr = getNodeEdges(nearNode)[0];
 		if(getEdgeOrthogonal(curr, d).lensq() > ORTOGONALSQ) // the new node increase the mesh dimension to 2
 		{
 			increaseDimension();
@@ -785,8 +785,8 @@ uint DelaunayMesh::insertNode(const Vector4 &p, const ddouble w, uint near)
 
 	if(m_bsize == 0) // 2-dimensional convex mesh (mesh on a plane)
 	{
-		const Vector4 d = getNodePosition(near) - p;
-		uint curr = getEdgeFaces(getNodeEdges(near)[0])[0];
+		const Vector4 d = getNodePosition(nearNode) - p;
+		uint curr = getEdgeFaces(getNodeEdges(nearNode)[0])[0];
 		if(getFaceOrthogonal(curr, d).lensq() > ORTOGONALSQ) // the new node increase the mesh dimension to 3
 		{
 			increaseDimension();
@@ -871,8 +871,8 @@ uint DelaunayMesh::insertNode(const Vector4 &p, const ddouble w, uint near)
 
 	if(m_qsize == 0) // 3-dimensional convex mesh
 	{
-		const Vector4 d = getNodePosition(near) - p;
-		uint curr = getFaceBodies(getEdgeFaces(getNodeEdges(near)[0])[0])[0];
+		const Vector4 d = getNodePosition(nearNode) - p;
+		uint curr = getFaceBodies(getEdgeFaces(getNodeEdges(nearNode)[0])[0])[0];
 		if(getBodyOrthogonal(curr, d).lensq() > ORTOGONALSQ) // the new node increase the mesh dimension to 4
 		{
 			increaseDimension();
@@ -963,7 +963,7 @@ uint DelaunayMesh::insertNode(const Vector4 &p, const ddouble w, uint near)
 	}
 
 	// 4-dimensional mesh
-	uint curr = getBodyQuads(getFaceBodies(getEdgeFaces(getNodeEdges(near)[0])[0])[0])[0];
+	uint curr = getBodyQuads(getFaceBodies(getEdgeFaces(getNodeEdges(nearNode)[0])[0])[0])[0];
 	uint qbs = 0;
 	Buffer<uint> qb;
 	if(findCell(p, curr)) // insert node inside the mesh.

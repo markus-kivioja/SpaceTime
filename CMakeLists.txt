@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.18)
 project(GrossPitaevskii)
 
 file(GLOB SOURCES
-    GrossPitaevskii/*.h
+    GrossPitaevskii/*.hpp
     GrossPitaevskii/*.cpp
 )
 

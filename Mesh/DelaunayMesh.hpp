@@ -32,7 +32,7 @@ public:
 	bool findCell(const Vector4 &p, uint &curr) const;
 
 	// insert and erase Delaunay nodes
-	uint insertNode(const Vector4 &p, const ddouble w, uint near = 0);
+	uint insertNode(const Vector4 &p, const ddouble w, uint nearNode = 0);
 	bool eraseNode(const uint n);
 
 	void transform(const Matrix4 &mat);

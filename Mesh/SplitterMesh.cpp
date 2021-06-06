@@ -1,6 +1,5 @@
 #include "SplitterMesh.hpp"
 #include "../Types/RBTree.hpp"
-#include "../Types/MpiEasy.hpp"
 #include <fstream>
 #include <iostream>
 #include <sstream>
