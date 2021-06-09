@@ -20,7 +20,7 @@ ddouble G = 20000;
 
 #define THREAD_BLOCK_X 8
 #define THREAD_BLOCK_Y 8
-#define THREAD_BLOCK_Z 1
+#define THREAD_BLOCK_Z 1 // Gets slower if this is greater
 #define FACE_COUNT 6
 #define VALUES_IN_BLOCK 1
 #define INDICES_PER_BLOCK 6
