@@ -1,23 +1,13 @@
 cmake_minimum_required(VERSION 3.18)
-project(GrossPitaevskii)
+project(SpaceTime)
 
-file(GLOB SOURCES
-    GrossPitaevskii/*.hpp
-    GrossPitaevskii/*.cpp
-)
-
-add_executable(GrossPitaevskii ${SOURCES})
-
-target_include_directories(GrossPitaevskii PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/GrossPitaevskii/>
-)
-
-set (CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+set(CMAKE_CUDA_ARCHITECTURES 52)
 
 add_subdirectory(Mesh)
 add_subdirectory(Output)
 add_subdirectory(Types)
 
-target_link_libraries(GrossPitaevskii Mesh)
-target_link_libraries(GrossPitaevskii Output)
-target_link_libraries(GrossPitaevskii Types)
+add_subdirectory(GrossPitaevskii)
+add_subdirectory(GrossPitaevskiiGpuCube)
+add_subdirectory(GrossPitaevskiiGpuBcc)
+add_subdirectory(GrossPitaevskiiGpuC15)

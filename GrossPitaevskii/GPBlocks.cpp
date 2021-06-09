@@ -10,6 +10,10 @@
 ddouble RATIO = 1.0;
 ddouble RATIOSQ = 1.0;
 
+//#define CUBIC
+#define BCC
+//#define C15
+
 ddouble potentialRZ(const ddouble r, const ddouble z)
 {
 	return 0.5 * (r * r + RATIO * RATIO * z * z);
@@ -35,23 +39,22 @@ void generateCode() // generates code section for different grid structures
 	mesh.stretchLinear(Vector4(0,0,1,0), 1, 0, 0, 0);
 	const Vector3 dim(SQ3,3,1); // maximum block coordinates
 */
-	// cubic grid
-	/*mesh.createGrid(Vector4(-1,-1,-1,0), Vector4(2,2,2,0), 1.0);
+	
+#ifdef CUBIC // cubic grid
+	mesh.createGrid(Vector4(-1,-1,-1,0), Vector4(2,2,2,0), 1.0);
 	const Vector3 dim(1,1,1); // maximum block coordinates
 	std::string filename = "cubeCode.txt";
-	*/
-
-	// bcc grid
-/*	const ddouble SQ8 = 8.0;//sqrt(8.0);
+#elif defined(BCC) // bcc grid
+	const ddouble SQ8 = sqrt(8.0);
 	mesh.createBccGrid(SQ8 * Vector3(-1.125,-1.125,-1.125), SQ8 * Vector3(1.875,1.875,1.875), SQ8);
 	const Vector3 dim(SQ8,SQ8,SQ8); // maximum block coordinates
 	std::string filename = "bccCode.txt";
-	*/
-
-
-	mesh.createA15Grid(Vector3(1.0, 1.0, 1.0), Vector3(1.0, 1.0, 1.0), 1.0);
-	const Vector3 dim(1.0, 1.0, 1.0); // maximum block coordinates
-	std::string filename = "a15Code.txt";
+#elif defined(C15) // C15 grid
+	const ddouble SQ8 = sqrt(61);
+	mesh.createC15Grid(SQ8 * Vector3(-1.125, -1.125, -1.125), SQ8 * Vector3(1.875, 1.875, 1.875), SQ8);
+	const Vector3 dim(SQ8, SQ8, SQ8); // maximum block coordinates
+	std::string filename = "c15Code.txt";
+#endif
 
 	// find circumcenters inside the block
 	Buffer<Vector3> p(mesh.getBodySize());
@@ -74,7 +77,7 @@ void generateCode() // generates code section for different grid structures
 	for(i=0; i<f0.size(); i++)
 	{
 		if(mesh.getFaceBodies(f0[i]).size() < 2) continue;
-		if(fsize == 0)
+		//if(fsize == 0)
 		{
 			factor = bhodge / mesh.getFaceHodge(f0[i]);
 			std::cout << "dual edge length = " << mesh.getFaceDualVector(f0[i]).len() << std::endl;
@@ -183,9 +186,9 @@ ddouble getLaplacian(Buffer<uint> &ind, const uint nx, const uint ny, const uint
 	return 4.0 / 3.0;
 }
 */
-/*
+
 // cubic grid
-const Vector3 BLOCK_WIDTH = Vector3(1, 1, 1); // dimensions of unit block
+/*const Vector3 BLOCK_WIDTH = Vector3(1, 1, 1); // dimensions of unit block
 const ddouble VOLUME = 1; // volume of body elements
 const bool IS_3D = true; // 3-dimensional
 void getPositions(Buffer<Vector3> &pos)
@@ -445,8 +448,8 @@ uint integrateInTime(const VortexState &state, const ddouble block_scale, const 
 int main ( int argc, char** argv )
 {
 	// for code generation
-	generateCode();
-	return 0;
+	//generateCode();
+	//return 0;
 
 	// preliminary vortex state to find vortex size
 	VortexState state0;
