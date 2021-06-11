@@ -11,8 +11,8 @@ ddouble RATIO = 1.0;
 ddouble RATIOSQ = 1.0;
 
 //#define CUBIC
-#define BCC
-//#define C15
+//#define BCC
+#define C15
 
 ddouble potentialRZ(const ddouble r, const ddouble z)
 {
@@ -43,17 +43,17 @@ void generateCode() // generates code section for different grid structures
 #ifdef CUBIC // cubic grid
 	mesh.createGrid(Vector4(-1,-1,-1,0), Vector4(2,2,2,0), 1.0);
 	const Vector3 dim(1,1,1); // maximum block coordinates
-	std::string filename = "cubeCode.txt";
+	std::string filename = "../../GrossPitaevskiiGpuCube/mesh.h";
 #elif defined(BCC) // bcc grid
 	const ddouble SQ8 = sqrt(8.0);
 	mesh.createBccGrid(SQ8 * Vector3(-1.125,-1.125,-1.125), SQ8 * Vector3(1.875,1.875,1.875), SQ8);
 	const Vector3 dim(SQ8,SQ8,SQ8); // maximum block coordinates
-	std::string filename = "bccCode.txt";
+	std::string filename = "../../GrossPitaevskiiGpuBcc/mesh.h";
 #elif defined(C15) // C15 grid
 	const ddouble SQ8 = sqrt(61);
 	mesh.createC15Grid(SQ8 * Vector3(-1.125, -1.125, -1.125), SQ8 * Vector3(1.875, 1.875, 1.875), SQ8);
 	const Vector3 dim(SQ8, SQ8, SQ8); // maximum block coordinates
-	std::string filename = "c15Code.txt";
+	std::string filename = "../../GrossPitaevskiiGpuC15/mesh.h";
 #endif
 
 	// find circumcenters inside the block
@@ -76,9 +76,11 @@ void generateCode() // generates code section for different grid structures
 	const Buffer<uint> &f0 = mesh.getBodyFaces(ind[0]);
 	for(i=0; i<f0.size(); i++)
 	{
-		if(mesh.getFaceBodies(f0[i]).size() < 2) continue;
+		auto faceBodies = mesh.getFaceBodies(f0[i]);
+		if(faceBodies.size() < 2) continue;
 		//if(fsize == 0)
 		{
+			std::cout << "Body pos diff length: " << (mesh.getBodyPosition(faceBodies[1]) - mesh.getBodyPosition(faceBodies[0])).len() << std::endl;
 			factor = bhodge / mesh.getFaceHodge(f0[i]);
 			std::cout << "dual edge length = " << mesh.getFaceDualVector(f0[i]).len() << std::endl;
 		}
@@ -88,18 +90,21 @@ void generateCode() // generates code section for different grid structures
 	// print code
 	Text text;
 	//text.precision(17);
+	text << "#define FACE_COUNT " << f0.size() << std::endl;
+	text << "#define VALUES_IN_BLOCK " << inds << std::endl;
+	text << "#define INDICES_PER_BLOCK " << f0.size() * inds << std::endl;
 	text << "const Vector3 BLOCK_WIDTH = Vector3(" << dim.x << ", " << dim.y << ", " << dim.z << "); // dimensions of unit block" << std::endl;
 	text << "const ddouble VOLUME = " << 1.0 / bhodge << "; // volume of body elements" << std::endl;
 	if(fsize == f0.size()) text << "const bool IS_3D = true; // 3-dimensional" << std::endl;
 	else text << "const bool IS_3D = false; // 2-dimensional" << std::endl;
 	text << "void getPositions(Buffer<Vector3> &pos)" << std::endl;
 	text << "{" << std::endl;
-	text << "\tpos.resize(" << inds << ");" << std::endl;
+	text << "\tpos.resize(VALUES_IN_BLOCK);" << std::endl;
 	for(i=0; i<inds; i++) text << "\tpos[" << i << "] = Vector3(" << p[ind[i]].x << ", " << p[ind[i]].y << ", " << p[ind[i]].z << ");" << std::endl;
 	text << "}" << std::endl;
-	text << "ddouble getLaplacian(Buffer<uint> &ind, const uint nx, const uint ny, const uint nz)" << std::endl;
+	text << "ddouble getLaplacian(Buffer<int2> &ind, const int nx, const int ny, const int nz) // nx, ny, nz in bytes" << std::endl;
 	text << "{" << std::endl;
-	text << "\tind.resize(" << fsize * inds << ");" << std::endl;
+	text << "\tind.resize(INDICES_PER_BLOCK);" << std::endl;
 	fsize = 0;
 	for(i=0; i<inds; i++)
 	{
@@ -111,12 +116,12 @@ void generateCode() // generates code section for different grid structures
 			const uint other = (b[0] == ind[i] ? b[1] : b[0]);
 			Vector3 pp = p[other];
 			Text link;
-			if(pp.x < 0.0) { pp.x += dim.x; link << " - nx"; }
-			else if(pp.x >= dim.x) { pp.x -= dim.x; link << " + nx"; }
-			if(pp.y < 0.0) { pp.y += dim.y; link << " - ny"; }
-			else if(pp.y >= dim.y) { pp.y -= dim.y; link << " + ny"; }
-			if(pp.z < 0.0) { pp.z += dim.z; link << " - nz"; }
-			else if(pp.z >= dim.z) { pp.z -= dim.z; link << " + nz"; }
+			if(pp.x < 0.0) { pp.x += dim.x; link << "-nx"; }
+			else if(pp.x >= dim.x) { pp.x -= dim.x; link << "nx"; }
+			if(pp.y < 0.0) { pp.y += dim.y; link << (link.str().empty() ? "-ny" : " - ny"); }
+			else if(pp.y >= dim.y) { pp.y -= dim.y; link << (link.str().empty() ? "ny" : " + ny"); }
+			if(pp.z < 0.0) { pp.z += dim.z; link << (link.str().empty() ? "-nz" : " - nz"); }
+			else if(pp.z >= dim.z) { pp.z -= dim.z; link << (link.str().empty() ? "nz" : " + nz"); }
 			for(k=0; k<inds; k++)
 			{
 				if((p[ind[k]] - pp).lensq() < 1e-13) break;
@@ -126,7 +131,8 @@ void generateCode() // generates code section for different grid structures
 				std::cout << "FAILED" << std::endl;
 				return;
 			}
-			text << "\tind[" << fsize++ << "] = " << k << link.str() << ";" << std::endl;
+			if (link.str().empty()) link << "0";
+			text << "\tind[" << fsize++ << "] = make_int2(" << link.str() << ", " << k << ");" << std::endl;
 		}
 	}
 	text << "\treturn " << factor << ";" << std::endl;
@@ -448,8 +454,8 @@ uint integrateInTime(const VortexState &state, const ddouble block_scale, const 
 int main ( int argc, char** argv )
 {
 	// for code generation
-	//generateCode();
-	//return 0;
+	generateCode();
+	return 0;
 
 	// preliminary vortex state to find vortex size
 	VortexState state0;
