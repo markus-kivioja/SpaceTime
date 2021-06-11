@@ -20,7 +20,7 @@ void getPositions(Buffer<Vector3> &pos)
 	pos[10] = Vector3(1.06066, 1.76777, 2.47487);
 	pos[11] = Vector3(1.76777, 1.06066, 2.47487);
 }
-ddouble getLaplacian(Buffer<int2> &ind, const int nx, const int ny, const int nz) // nx, ny, nz in bytes
+ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz) // nx, ny, nz in bytes
 {
 	ind.resize(INDICES_PER_BLOCK);
 	ind[0] = make_int2(0, 9);
@@ -71,5 +71,56 @@ ddouble getLaplacian(Buffer<int2> &ind, const int nx, const int ny, const int nz
 	ind[45] = make_int2(0, 10);
 	ind[46] = make_int2(nz, 2);
 	ind[47] = make_int2(0, 3);
+
+	hodges.resize(INDICES_PER_BLOCK);
+	hodges[0] = 1.5;
+	hodges[1] = 1.5;
+	hodges[2] = 1.5;
+	hodges[3] = 1.5;
+	hodges[4] = 1.5;
+	hodges[5] = 1.5;
+	hodges[6] = 1.5;
+	hodges[7] = 1.5;
+	hodges[8] = 1.5;
+	hodges[9] = 1.5;
+	hodges[10] = 1.5;
+	hodges[11] = 1.5;
+	hodges[12] = 1.5;
+	hodges[13] = 1.5;
+	hodges[14] = 1.5;
+	hodges[15] = 1.5;
+	hodges[16] = 1.5;
+	hodges[17] = 1.5;
+	hodges[18] = 1.5;
+	hodges[19] = 1.5;
+	hodges[20] = 1.5;
+	hodges[21] = 1.5;
+	hodges[22] = 1.5;
+	hodges[23] = 1.5;
+	hodges[24] = 1.5;
+	hodges[25] = 1.5;
+	hodges[26] = 1.5;
+	hodges[27] = 1.5;
+	hodges[28] = 1.5;
+	hodges[29] = 1.5;
+	hodges[30] = 1.5;
+	hodges[31] = 1.5;
+	hodges[32] = 1.5;
+	hodges[33] = 1.5;
+	hodges[34] = 1.5;
+	hodges[35] = 1.5;
+	hodges[36] = 1.5;
+	hodges[37] = 1.5;
+	hodges[38] = 1.5;
+	hodges[39] = 1.5;
+	hodges[40] = 1.5;
+	hodges[41] = 1.5;
+	hodges[42] = 1.5;
+	hodges[43] = 1.5;
+	hodges[44] = 1.5;
+	hodges[45] = 1.5;
+	hodges[46] = 1.5;
+	hodges[47] = 1.5;
+
 	return 1.5;
 }

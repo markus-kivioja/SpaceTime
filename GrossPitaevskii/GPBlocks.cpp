@@ -50,7 +50,7 @@ void generateCode() // generates code section for different grid structures
 	const Vector3 dim(SQ8,SQ8,SQ8); // maximum block coordinates
 	std::string filename = "../../GrossPitaevskiiGpuBcc/mesh.h";
 #elif defined(C15) // C15 grid
-	const ddouble SQ8 = sqrt(61);
+	const ddouble SQ8 = sqrt(32);
 	mesh.createC15Grid(SQ8 * Vector3(-1.125, -1.125, -1.125), SQ8 * Vector3(1.875, 1.875, 1.875), SQ8);
 	const Vector3 dim(SQ8, SQ8, SQ8); // maximum block coordinates
 	std::string filename = "../../GrossPitaevskiiGpuC15/mesh.h";
@@ -89,6 +89,7 @@ void generateCode() // generates code section for different grid structures
 
 	// print code
 	Text text;
+	Text hodgesText;
 	//text.precision(17);
 	text << "#define FACE_COUNT " << f0.size() << std::endl;
 	text << "#define VALUES_IN_BLOCK " << inds << std::endl;
@@ -102,12 +103,13 @@ void generateCode() // generates code section for different grid structures
 	text << "\tpos.resize(VALUES_IN_BLOCK);" << std::endl;
 	for(i=0; i<inds; i++) text << "\tpos[" << i << "] = Vector3(" << p[ind[i]].x << ", " << p[ind[i]].y << ", " << p[ind[i]].z << ");" << std::endl;
 	text << "}" << std::endl;
-	text << "ddouble getLaplacian(Buffer<int2> &ind, const int nx, const int ny, const int nz) // nx, ny, nz in bytes" << std::endl;
+	text << "ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz) // nx, ny, nz in bytes" << std::endl;
 	text << "{" << std::endl;
 	text << "\tind.resize(INDICES_PER_BLOCK);" << std::endl;
 	fsize = 0;
 	for(i=0; i<inds; i++)
 	{
+		ddouble bodyHodge = mesh.getBodyHodge(ind[i]);
 		const Buffer<uint> &f = mesh.getBodyFaces(ind[i]);
 		for(j=0; j<f.size(); j++)
 		{
@@ -132,9 +134,12 @@ void generateCode() // generates code section for different grid structures
 				return;
 			}
 			if (link.str().empty()) link << "0";
-			text << "\tind[" << fsize++ << "] = make_int2(" << link.str() << ", " << k << ");" << std::endl;
+			text << "\tind[" << fsize << "] = make_int2(" << link.str() << ", " << k << ");" << std::endl;
+			hodgesText << "\thodges[" << fsize++ << "] = " << bodyHodge / mesh.getFaceHodge(f[j]) << ";" << std::endl;
 		}
 	}
+	text << std::endl << "\thodges.resize(INDICES_PER_BLOCK);" << std::endl;
+	text << hodgesText.str() << std::endl;
 	text << "\treturn " << factor << ";" << std::endl;
 	text << "}" << std::endl;
 
