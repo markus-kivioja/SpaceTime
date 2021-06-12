@@ -108,13 +108,13 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
 
 	// Load Laplacian indices into LDS // TODO: Load prevStep also into LDS?
-	__shared__ int2 ldsLapInd[INDICES_PER_BLOCK];
-	size_t threadIdxInBlock = blockDim.x * blockDim.y * threadIdx.z + blockDim.x * threadIdx.y + threadIdx.x;
-	if (threadIdxInBlock < INDICES_PER_BLOCK)
-	{
-		ldsLapInd[threadIdxInBlock] = lapInd[threadIdxInBlock];
-	}
-	__syncthreads();
+	//__shared__ int2 ldsLapInd[INDICES_PER_BLOCK];
+	//size_t threadIdxInBlock = blockDim.x * blockDim.y * threadIdx.z + blockDim.x * threadIdx.y + threadIdx.x;
+	//if (threadIdxInBlock < INDICES_PER_BLOCK)
+	//{
+	//	ldsLapInd[threadIdxInBlock] = lapInd[threadIdxInBlock];
+	//}
+	//__syncthreads();
 
 	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 
@@ -137,7 +137,8 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 	double2 sum = make_double2(0, 0);
 #pragma unroll
 	for (int i = 0; i < FACE_COUNT; ++i)
-		sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + ldsLapInd[primaryFace].x))->values[ldsLapInd[primaryFace++].y] - prev);
+		//sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + ldsLapInd[primaryFace].x))->values[ldsLapInd[primaryFace++].y] - prev);
+		sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + lapInd[primaryFace].x))->values[lapInd[primaryFace++].y] - prev);
 
 	double normsq = prev.x * prev.x + prev.y * prev.y;
 	sum += (pot->values[dualNodeId] + g * normsq) * prev;
@@ -476,7 +477,7 @@ int main(int argc, char** argv)
 #endif
 
 	const int number_of_iterations = 50;
-	const ddouble iteration_period = 0.01;
+	const ddouble iteration_period = 0.1;
 	const ddouble block_scale = PIx2 / (20.0 * sqrt(state.integrateCurvature()));
 
 	std::cout << "1 GPU version" << std::endl;
