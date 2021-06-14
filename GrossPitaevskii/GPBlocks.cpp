@@ -12,7 +12,9 @@ ddouble RATIOSQ = 1.0;
 
 //#define CUBIC
 //#define BCC
-#define C15
+//#define FCC
+#define A15
+//#define C15
 
 ddouble potentialRZ(const ddouble r, const ddouble z)
 {
@@ -49,6 +51,16 @@ void generateCode() // generates code section for different grid structures
 	mesh.createBccGrid(SQ8 * Vector3(-1.125,-1.125,-1.125), SQ8 * Vector3(1.875,1.875,1.875), SQ8);
 	const Vector3 dim(SQ8,SQ8,SQ8); // maximum block coordinates
 	std::string filename = "../../GrossPitaevskiiGpuBcc/mesh.h";
+#elif defined(FCC) // FCC grid
+	const ddouble SQ8 = sqrt(8);
+	mesh.createFccGrid(SQ8 * Vector3(-1.125, -1.125, -1.125), SQ8 * Vector3(1.875, 1.875, 1.875), SQ8);
+	const Vector3 dim(SQ8, SQ8, SQ8); // maximum block coordinates
+	std::string filename = "../../GrossPitaevskiiGpuFcc/mesh.h";
+#elif defined(A15) // A15 grid
+	const ddouble SQ8 = sqrt(16);
+	mesh.createA15Grid(SQ8 * Vector3(-1.125, -1.125, -1.125), SQ8 * Vector3(1.875, 1.875, 1.875), SQ8);
+	const Vector3 dim(SQ8, SQ8, SQ8); // maximum block coordinates
+	std::string filename = "../../GrossPitaevskiiGpuA15/mesh.h";
 #elif defined(C15) // C15 grid
 	const ddouble SQ8 = sqrt(32);
 	mesh.createC15Grid(SQ8 * Vector3(-1.125, -1.125, -1.125), SQ8 * Vector3(1.875, 1.875, 1.875), SQ8);
@@ -78,9 +90,8 @@ void generateCode() // generates code section for different grid structures
 	{
 		auto faceBodies = mesh.getFaceBodies(f0[i]);
 		if(faceBodies.size() < 2) continue;
-		//if(fsize == 0)
+		if(fsize == 0)
 		{
-			std::cout << "Body pos diff length: " << (mesh.getBodyPosition(faceBodies[1]) - mesh.getBodyPosition(faceBodies[0])).len() << std::endl;
 			factor = bhodge / mesh.getFaceHodge(f0[i]);
 			std::cout << "dual edge length = " << mesh.getFaceDualVector(f0[i]).len() << std::endl;
 		}
