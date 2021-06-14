@@ -101,7 +101,7 @@ inline __host__ __device__ double2 operator*(double b, double2 a)
 	return make_double2(b * a.x, b * a.y);
 }
 
-__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr potentials, int2* lapInd, double* hodges, double g, uint3 dimensions)
+__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr potentials, int2* lapInd, double* hodges, int2 indicesAndFaceCounts, double g, uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -221,7 +221,8 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	// find terms for laplacian
 	Buffer<int2> lapind;
 	Buffer<ddouble> hodges;
-	ddouble lapfac = -0.5 * getLaplacian(lapind, hodges, sizeof(BlockPsis), d_evenPsi.pitch, d_evenPsi.slicePitch) / (block_scale * block_scale);
+	Buffer<int2> indicesAndFaceCounts;
+	ddouble lapfac = -0.5 * getLaplacian(lapind, hodges, sizeof(BlockPsis), d_evenPsi.pitch, d_evenPsi.slicePitch, indicesAndFaceCounts) / (block_scale * block_scale);
 	const uint lapsize = lapind.size() / bsize;
 	ddouble lapfac0 = lapsize * (-lapfac);
 
@@ -477,7 +478,7 @@ int main(int argc, char** argv)
 #endif
 
 	const int number_of_iterations = 50;
-	const ddouble iteration_period = 0.1;
+	const ddouble iteration_period = 0.01;
 	const ddouble block_scale = PIx2 / (20.0 * sqrt(state.integrateCurvature()));
 
 	std::cout << "1 GPU version" << std::endl;

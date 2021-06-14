@@ -1238,5 +1238,5 @@ ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, c
 	hodges[542] = 1.28571;
 	hodges[543] = 2.4;
 
-	return 1.57895;
+	return 2.4;
 }

@@ -12,8 +12,8 @@ ddouble RATIOSQ = 1.0;
 
 //#define CUBIC
 //#define BCC
-//#define FCC
-#define A15
+#define FCC
+//#define A15
 //#define C15
 
 ddouble potentialRZ(const ddouble r, const ddouble z)
@@ -72,6 +72,7 @@ void generateCode() // generates code section for different grid structures
 	Buffer<Vector3> p(mesh.getBodySize());
 	Buffer<uint> ind;
 	uint inds = 0;
+	uint totalFaceCount = 0;
 	for(i=0; i<p.size(); i++)
 	{
 		p[i] = mesh.getBodyPosition(i).toVector3();
@@ -79,6 +80,7 @@ void generateCode() // generates code section for different grid structures
 		if(p[i].x < 0.0 || p[i].y < 0.0 || p[i].z < 0.0) continue;
 		if(p[i].x >= dim.x || p[i].y >= dim.y || p[i].z >= dim.z) continue;
 		ind.gather(i, inds);
+		totalFaceCount += mesh.getBodyFaces(i).size();
 	}
 
 	// compute terms for laplacian
@@ -101,10 +103,10 @@ void generateCode() // generates code section for different grid structures
 	// print code
 	Text text;
 	Text hodgesText;
+	Text indicesAndFaceCountsText;
 	//text.precision(17);
-	text << "#define FACE_COUNT " << f0.size() << std::endl;
 	text << "#define VALUES_IN_BLOCK " << inds << std::endl;
-	text << "#define INDICES_PER_BLOCK " << f0.size() * inds << std::endl;
+	text << "#define INDICES_PER_BLOCK " << totalFaceCount << std::endl;
 	text << "const Vector3 BLOCK_WIDTH = Vector3(" << dim.x << ", " << dim.y << ", " << dim.z << "); // dimensions of unit block" << std::endl;
 	text << "const ddouble VOLUME = " << 1.0 / bhodge << "; // volume of body elements" << std::endl;
 	if(fsize == f0.size()) text << "const bool IS_3D = true; // 3-dimensional" << std::endl;
@@ -114,7 +116,7 @@ void generateCode() // generates code section for different grid structures
 	text << "\tpos.resize(VALUES_IN_BLOCK);" << std::endl;
 	for(i=0; i<inds; i++) text << "\tpos[" << i << "] = Vector3(" << p[ind[i]].x << ", " << p[ind[i]].y << ", " << p[ind[i]].z << ");" << std::endl;
 	text << "}" << std::endl;
-	text << "ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz) // nx, ny, nz in bytes" << std::endl;
+	text << "ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz, Buffer<int2> &indicesAndFaceCounts) // nx, ny, nz in bytes" << std::endl;
 	text << "{" << std::endl;
 	text << "\tind.resize(INDICES_PER_BLOCK);" << std::endl;
 	fsize = 0;
@@ -122,6 +124,7 @@ void generateCode() // generates code section for different grid structures
 	{
 		ddouble bodyHodge = mesh.getBodyHodge(ind[i]);
 		const Buffer<uint> &f = mesh.getBodyFaces(ind[i]);
+		indicesAndFaceCountsText << "\tindicesAndFaceCounts[" << i << "] = make_int2(" << fsize << ", " << f.size() << ");" << std::endl;
 		for(j=0; j<f.size(); j++)
 		{
 			const Buffer<uint> &b = mesh.getFaceBodies(f[j]);
@@ -151,6 +154,8 @@ void generateCode() // generates code section for different grid structures
 	}
 	text << std::endl << "\thodges.resize(INDICES_PER_BLOCK);" << std::endl;
 	text << hodgesText.str() << std::endl;
+	text << std::endl << "\tindicesAndFaceCounts.resize(VALUES_IN_BLOCK);" << std::endl;
+	text << indicesAndFaceCountsText.str() << std::endl;
 	text << "\treturn " << factor << ";" << std::endl;
 	text << "}" << std::endl;
 

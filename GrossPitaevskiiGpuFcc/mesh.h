@@ -1,6 +1,5 @@
-#define FACE_COUNT 4
 #define VALUES_IN_BLOCK 12
-#define INDICES_PER_BLOCK 48
+#define INDICES_PER_BLOCK 64
 const Vector3 BLOCK_WIDTH = Vector3(2.82843, 2.82843, 2.82843); // dimensions of unit block
 const ddouble VOLUME = 0.942809; // volume of body elements
 const bool IS_3D = true; // 3-dimensional
@@ -20,7 +19,7 @@ void getPositions(Buffer<Vector3> &pos)
 	pos[10] = Vector3(2.47487, 1.06066, 2.47487);
 	pos[11] = Vector3(1.06066, 2.47487, 2.47487);
 }
-ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz) // nx, ny, nz in bytes
+ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz, Buffer<int2> &indicesAndFaceCounts) // nx, ny, nz in bytes
 {
 	ind.resize(INDICES_PER_BLOCK);
 	ind[0] = make_int2(0, 11);
@@ -153,6 +152,21 @@ ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, c
 	hodges[61] = 0.375;
 	hodges[62] = 0.375;
 	hodges[63] = 0.375;
+
+
+	indicesAndFaceCounts.resize(VALUES_IN_BLOCK);
+	indicesAndFaceCounts[0] = make_int2(0, 4);
+	indicesAndFaceCounts[1] = make_int2(4, 4);
+	indicesAndFaceCounts[2] = make_int2(8, 4);
+	indicesAndFaceCounts[3] = make_int2(12, 8);
+	indicesAndFaceCounts[4] = make_int2(20, 4);
+	indicesAndFaceCounts[5] = make_int2(24, 4);
+	indicesAndFaceCounts[6] = make_int2(28, 8);
+	indicesAndFaceCounts[7] = make_int2(36, 4);
+	indicesAndFaceCounts[8] = make_int2(40, 4);
+	indicesAndFaceCounts[9] = make_int2(44, 4);
+	indicesAndFaceCounts[10] = make_int2(48, 8);
+	indicesAndFaceCounts[11] = make_int2(56, 8);
 
 	return 1.5;
 }
