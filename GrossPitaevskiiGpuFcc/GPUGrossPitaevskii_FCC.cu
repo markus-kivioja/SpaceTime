@@ -101,7 +101,7 @@ inline __host__ __device__ double2 operator*(double b, double2 a)
 	return make_double2(b * a.x, b * a.y);
 }
 
-__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr potentials, int2* lapInd, double* hodges, int2 indicesAndFaceCounts, double g, uint3 dimensions)
+__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr potentials, int2* lapInd, double* hodges, int2* indicesAndFaceCounts, double g, uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -132,13 +132,16 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 	// Update psi
 	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 	double2 prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
-
-	uint primaryFace = dualNodeId * FACE_COUNT;
+	
+	uint faceCount = indicesAndFaceCounts[dualNodeId].y;
+	uint primaryFace = indicesAndFaceCounts[dualNodeId].x;
 	double2 sum = make_double2(0, 0);
 #pragma unroll
-	for (int i = 0; i < FACE_COUNT; ++i)
+	for (int i = 0; i < faceCount; ++i)
+	{
 		//sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + ldsLapInd[primaryFace].x))->values[ldsLapInd[primaryFace++].y] - prev);
 		sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + lapInd[primaryFace].x))->values[lapInd[primaryFace++].y] - prev);
+	}
 
 	double normsq = prev.x * prev.x + prev.y * prev.y;
 	sum += (pot->values[dualNodeId] + g * normsq) * prev;
@@ -247,6 +250,9 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	ddouble* d_hodges;
 	checkCudaErrors(cudaMalloc(&d_hodges, hodges.size() * sizeof(ddouble)));
 
+	int2* d_indicesAndFaceCounts;
+	checkCudaErrors(cudaMalloc(&d_indicesAndFaceCounts, indicesAndFaceCounts.size() * sizeof(int2)));
+
 	// Initialize host memory
 	size_t hostSize = dxsize * dysize * (zsize + 2);
 	BlockPsis* h_evenPsi;// = new BlockPsis[dxsize * dysize * (zsize + 2)];
@@ -329,6 +335,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	checkCudaErrors(cudaMemcpy3D(&potParams));
 	checkCudaErrors(cudaMemcpy(d_lapind, &lapind[0], lapind.size() * sizeof(int2), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_hodges, &hodges[0], hodges.size() * sizeof(ddouble), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpy(d_indicesAndFaceCounts, &indicesAndFaceCounts[0], indicesAndFaceCounts.size() * sizeof(int2), cudaMemcpyHostToDevice));
 
 	// Clear host memory after data has been copied to devices
 	cudaDeviceSynchronize();
@@ -337,6 +344,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	bpos.clear();
 	lapind.clear();
 	hodges.clear();
+	indicesAndFaceCounts.clear();
 	cudaFreeHost(h_oddPsi);
 	cudaFreeHost(h_pot);
 #if !(SAVE_PICTURE || SAVE_VOLUME)
@@ -417,9 +425,9 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 		for (uint step = 0; step < steps_per_iteration; step++)
 		{
 			// update odd values
-			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_pot, d_lapind, d_hodges, g, dimensions);
+			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_pot, d_lapind, d_hodges, d_indicesAndFaceCounts, g, dimensions);
 			// update even values
-			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_pot, d_lapind, d_hodges, g, dimensions);
+			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_pot, d_lapind, d_hodges, d_indicesAndFaceCounts, g, dimensions);
 		}
 #if SAVE_PICTURE || SAVE_VOLUME
 		// Copy back from device memory to host memory
@@ -478,7 +486,7 @@ int main(int argc, char** argv)
 #endif
 
 	const int number_of_iterations = 50;
-	const ddouble iteration_period = 0.01;
+	const ddouble iteration_period = 0.1;
 	const ddouble block_scale = PIx2 / (20.0 * sqrt(state.integrateCurvature()));
 
 	std::cout << "1 GPU version" << std::endl;

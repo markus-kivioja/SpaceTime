@@ -12,9 +12,9 @@ ddouble RATIOSQ = 1.0;
 
 //#define CUBIC
 //#define BCC
-#define FCC
+//#define FCC
 //#define A15
-//#define C15
+#define C15
 
 ddouble potentialRZ(const ddouble r, const ddouble z)
 {
@@ -105,6 +105,9 @@ void generateCode() // generates code section for different grid structures
 	Text hodgesText;
 	Text indicesAndFaceCountsText;
 	//text.precision(17);
+	bool constantFaceCount = totalFaceCount == (f0.size() * inds);
+	if (constantFaceCount)
+		text << "#define FACE_COUNT " << f0.size() << std::endl;
 	text << "#define VALUES_IN_BLOCK " << inds << std::endl;
 	text << "#define INDICES_PER_BLOCK " << totalFaceCount << std::endl;
 	text << "const Vector3 BLOCK_WIDTH = Vector3(" << dim.x << ", " << dim.y << ", " << dim.z << "); // dimensions of unit block" << std::endl;
@@ -116,7 +119,10 @@ void generateCode() // generates code section for different grid structures
 	text << "\tpos.resize(VALUES_IN_BLOCK);" << std::endl;
 	for(i=0; i<inds; i++) text << "\tpos[" << i << "] = Vector3(" << p[ind[i]].x << ", " << p[ind[i]].y << ", " << p[ind[i]].z << ");" << std::endl;
 	text << "}" << std::endl;
-	text << "ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz, Buffer<int2> &indicesAndFaceCounts) // nx, ny, nz in bytes" << std::endl;
+	if (constantFaceCount)
+		text << "ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz) // nx, ny, nz in bytes" << std::endl;
+	else
+		text << "ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz, Buffer<int2> &indicesAndFaceCounts) // nx, ny, nz in bytes" << std::endl;
 	text << "{" << std::endl;
 	text << "\tind.resize(INDICES_PER_BLOCK);" << std::endl;
 	fsize = 0;
@@ -154,8 +160,11 @@ void generateCode() // generates code section for different grid structures
 	}
 	text << std::endl << "\thodges.resize(INDICES_PER_BLOCK);" << std::endl;
 	text << hodgesText.str() << std::endl;
-	text << std::endl << "\tindicesAndFaceCounts.resize(VALUES_IN_BLOCK);" << std::endl;
-	text << indicesAndFaceCountsText.str() << std::endl;
+	if (!constantFaceCount)
+	{
+		text << std::endl << "\tindicesAndFaceCounts.resize(VALUES_IN_BLOCK);" << std::endl;
+		text << indicesAndFaceCountsText.str() << std::endl;
+	}
 	text << "\treturn " << factor << ";" << std::endl;
 	text << "}" << std::endl;
 
