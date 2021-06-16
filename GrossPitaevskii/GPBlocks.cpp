@@ -14,7 +14,8 @@ ddouble RATIOSQ = 1.0;
 //#define BCC
 //#define FCC
 //#define A15
-#define C15
+//#define C15
+#define Z
 
 ddouble potentialRZ(const ddouble r, const ddouble z)
 {
@@ -46,7 +47,7 @@ void generateCode() // generates code section for different grid structures
 	mesh.createGrid(Vector4(-1,-1,-1,0), Vector4(2,2,2,0), 1.0);
 	const Vector3 dim(1,1,1); // maximum block coordinates
 	std::string filename = "../../GrossPitaevskiiGpuCube/mesh.h";
-#elif defined(BCC) // bcc grid
+#elif defined(BCC) // BCC grid
 	const ddouble SQ8 = sqrt(8.0);
 	mesh.createBccGrid(SQ8 * Vector3(-1.125,-1.125,-1.125), SQ8 * Vector3(1.875,1.875,1.875), SQ8);
 	const Vector3 dim(SQ8,SQ8,SQ8); // maximum block coordinates
@@ -66,6 +67,11 @@ void generateCode() // generates code section for different grid structures
 	mesh.createC15Grid(SQ8 * Vector3(-1.125, -1.125, -1.125), SQ8 * Vector3(1.875, 1.875, 1.875), SQ8);
 	const Vector3 dim(SQ8, SQ8, SQ8); // maximum block coordinates
 	std::string filename = "../../GrossPitaevskiiGpuC15/mesh.h";
+#elif defined(Z) // Z grid
+const ddouble SQ8 = sqrt(16);
+mesh.createZGrid(SQ8 * Vector3(-1.125, -1.125, -1.125), SQ8 * Vector3(1.875, 1.875 * sqrt(3.0), 1.875), SQ8);
+const Vector3 dim(SQ8, SQ8 * sqrt(3.0), SQ8); // maximum block coordinates
+std::string filename = "../../GrossPitaevskiiGpuZ/mesh.h";
 #endif
 
 	// find circumcenters inside the block
