@@ -21,7 +21,7 @@ enum GridType
 	COUNT
 };
 
-constexpr double scales[] = {1.0, 1.5, 1.59, 1.46, 1.48, 1.46};
+constexpr double scales[] = {1.0, 2.12, 1.84, 2.92, 4.20, 2.92};
 
 ddouble potentialRZ(const ddouble r, const ddouble z)
 {

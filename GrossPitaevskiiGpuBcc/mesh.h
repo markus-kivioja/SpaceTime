@@ -1,24 +1,24 @@
 #define FACE_COUNT 4
 #define VALUES_IN_BLOCK 12
 #define INDICES_PER_BLOCK 48
-const Vector3 BLOCK_WIDTH = Vector3(1.59, 1.59, 1.59); // dimensions of unit block
-const ddouble VOLUME = 0.334973; // volume of body elements
+const Vector3 BLOCK_WIDTH = Vector3(1.84, 1.84, 1.84); // dimensions of unit block
+const ddouble VOLUME = 0.519125; // volume of body elements
 const bool IS_3D = true; // 3-dimensional
 void getPositions(Buffer<Vector3> &pos)
 {
 	pos.resize(VALUES_IN_BLOCK);
-	pos[0] = Vector3(0.19875, 0.59625, 1.39125);
-	pos[1] = Vector3(1.39125, 0.19875, 0.59625);
-	pos[2] = Vector3(1.39125, 0.59625, 0.19875);
-	pos[3] = Vector3(1.39125, 0.59625, 0.99375);
-	pos[4] = Vector3(1.39125, 0.99375, 0.59625);
-	pos[5] = Vector3(0.19875, 1.39125, 0.59625);
-	pos[6] = Vector3(0.59625, 1.39125, 0.19875);
-	pos[7] = Vector3(0.59625, 1.39125, 0.99375);
-	pos[8] = Vector3(0.99375, 1.39125, 0.59625);
-	pos[9] = Vector3(0.59625, 0.19875, 1.39125);
-	pos[10] = Vector3(0.59625, 0.99375, 1.39125);
-	pos[11] = Vector3(0.99375, 0.59625, 1.39125);
+	pos[0] = Vector3(0.23, 0.69, 1.61);
+	pos[1] = Vector3(1.61, 0.23, 0.69);
+	pos[2] = Vector3(1.61, 0.69, 0.23);
+	pos[3] = Vector3(1.61, 0.69, 1.15);
+	pos[4] = Vector3(1.61, 1.15, 0.69);
+	pos[5] = Vector3(0.23, 1.61, 0.69);
+	pos[6] = Vector3(0.69, 1.61, 0.23);
+	pos[7] = Vector3(0.69, 1.61, 1.15);
+	pos[8] = Vector3(1.15, 1.61, 0.69);
+	pos[9] = Vector3(0.69, 0.23, 1.61);
+	pos[10] = Vector3(0.69, 1.15, 1.61);
+	pos[11] = Vector3(1.15, 0.69, 1.61);
 }
 ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz) // nx, ny, nz in bytes
 {
@@ -73,54 +73,54 @@ ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, c
 	ind[47] = make_int2(0, 3);
 
 	hodges.resize(INDICES_PER_BLOCK);
-	hodges[0] = 4.74665;
-	hodges[1] = 4.74665;
-	hodges[2] = 4.74665;
-	hodges[3] = 4.74665;
-	hodges[4] = 4.74665;
-	hodges[5] = 4.74665;
-	hodges[6] = 4.74665;
-	hodges[7] = 4.74665;
-	hodges[8] = 4.74665;
-	hodges[9] = 4.74665;
-	hodges[10] = 4.74665;
-	hodges[11] = 4.74665;
-	hodges[12] = 4.74665;
-	hodges[13] = 4.74665;
-	hodges[14] = 4.74665;
-	hodges[15] = 4.74665;
-	hodges[16] = 4.74665;
-	hodges[17] = 4.74665;
-	hodges[18] = 4.74665;
-	hodges[19] = 4.74665;
-	hodges[20] = 4.74665;
-	hodges[21] = 4.74665;
-	hodges[22] = 4.74665;
-	hodges[23] = 4.74665;
-	hodges[24] = 4.74665;
-	hodges[25] = 4.74665;
-	hodges[26] = 4.74665;
-	hodges[27] = 4.74665;
-	hodges[28] = 4.74665;
-	hodges[29] = 4.74665;
-	hodges[30] = 4.74665;
-	hodges[31] = 4.74665;
-	hodges[32] = 4.74665;
-	hodges[33] = 4.74665;
-	hodges[34] = 4.74665;
-	hodges[35] = 4.74665;
-	hodges[36] = 4.74665;
-	hodges[37] = 4.74665;
-	hodges[38] = 4.74665;
-	hodges[39] = 4.74665;
-	hodges[40] = 4.74665;
-	hodges[41] = 4.74665;
-	hodges[42] = 4.74665;
-	hodges[43] = 4.74665;
-	hodges[44] = 4.74665;
-	hodges[45] = 4.74665;
-	hodges[46] = 4.74665;
-	hodges[47] = 4.74665;
+	hodges[0] = 3.54442;
+	hodges[1] = 3.54442;
+	hodges[2] = 3.54442;
+	hodges[3] = 3.54442;
+	hodges[4] = 3.54442;
+	hodges[5] = 3.54442;
+	hodges[6] = 3.54442;
+	hodges[7] = 3.54442;
+	hodges[8] = 3.54442;
+	hodges[9] = 3.54442;
+	hodges[10] = 3.54442;
+	hodges[11] = 3.54442;
+	hodges[12] = 3.54442;
+	hodges[13] = 3.54442;
+	hodges[14] = 3.54442;
+	hodges[15] = 3.54442;
+	hodges[16] = 3.54442;
+	hodges[17] = 3.54442;
+	hodges[18] = 3.54442;
+	hodges[19] = 3.54442;
+	hodges[20] = 3.54442;
+	hodges[21] = 3.54442;
+	hodges[22] = 3.54442;
+	hodges[23] = 3.54442;
+	hodges[24] = 3.54442;
+	hodges[25] = 3.54442;
+	hodges[26] = 3.54442;
+	hodges[27] = 3.54442;
+	hodges[28] = 3.54442;
+	hodges[29] = 3.54442;
+	hodges[30] = 3.54442;
+	hodges[31] = 3.54442;
+	hodges[32] = 3.54442;
+	hodges[33] = 3.54442;
+	hodges[34] = 3.54442;
+	hodges[35] = 3.54442;
+	hodges[36] = 3.54442;
+	hodges[37] = 3.54442;
+	hodges[38] = 3.54442;
+	hodges[39] = 3.54442;
+	hodges[40] = 3.54442;
+	hodges[41] = 3.54442;
+	hodges[42] = 3.54442;
+	hodges[43] = 3.54442;
+	hodges[44] = 3.54442;
+	hodges[45] = 3.54442;
+	hodges[46] = 3.54442;
+	hodges[47] = 3.54442;
 
-	return 4.74665;
+	return 3.54442;
 }
