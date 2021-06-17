@@ -477,7 +477,7 @@ int main(int argc, char** argv)
 #endif
 
 	const int number_of_iterations = 50;
-	const ddouble iteration_period = 0.1;
+	const ddouble iteration_period = 1.0;
 	const ddouble block_scale = PIx2 / (20.0 * sqrt(state.integrateCurvature()));
 
 	std::cout << "1 GPU version" << std::endl;
