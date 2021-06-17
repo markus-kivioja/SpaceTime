@@ -10,12 +10,18 @@
 ddouble RATIO = 1.0;
 ddouble RATIOSQ = 1.0;
 
-//#define CUBIC
-//#define BCC
-//#define FCC
-//#define A15
-//#define C15
-#define Z
+enum GridType
+{
+	CUBIC = 0,
+	FCC,
+	BCC,
+	A15,
+	C15,
+	Z,
+	COUNT
+};
+
+constexpr double scales[] = {1.0, 1.5, 1.59, 1.46, 1.48, 1.46};
 
 ddouble potentialRZ(const ddouble r, const ddouble z)
 {
@@ -29,10 +35,7 @@ ddouble potentialV3(const Vector3 &p)
 
 void generateCode() // generates code section for different grid structures
 {
-	uint i, j, k;
-	DelaunayMesh mesh(3);
-
-/*	// square grid
+	/*	// square grid
 	mesh.createGrid(Vector4(-1,-1,0,0), Vector4(2,2,1,0), 1.0);
 	const Vector3 dim(1,1,1); // maximum block coordinates
 *//*
@@ -42,140 +45,154 @@ void generateCode() // generates code section for different grid structures
 	mesh.stretchLinear(Vector4(0,0,1,0), 1, 0, 0, 0);
 	const Vector3 dim(SQ3,3,1); // maximum block coordinates
 */
-	
-#ifdef CUBIC // cubic grid
-	mesh.createGrid(Vector4(-1,-1,-1,0), Vector4(2,2,2,0), 1.0);
-	const Vector3 dim(1,1,1); // maximum block coordinates
-	std::string filename = "../../GrossPitaevskiiGpuCube/mesh.h";
-#elif defined(BCC) // BCC grid
-	const ddouble SQ8 = sqrt(8.0);
-	mesh.createBccGrid(SQ8 * Vector3(-1.125,-1.125,-1.125), SQ8 * Vector3(1.875,1.875,1.875), SQ8);
-	const Vector3 dim(SQ8,SQ8,SQ8); // maximum block coordinates
-	std::string filename = "../../GrossPitaevskiiGpuBcc/mesh.h";
-#elif defined(FCC) // FCC grid
-	const ddouble SQ8 = sqrt(8);
-	mesh.createFccGrid(SQ8 * Vector3(-1.125, -1.125, -1.125), SQ8 * Vector3(1.875, 1.875, 1.875), SQ8);
-	const Vector3 dim(SQ8, SQ8, SQ8); // maximum block coordinates
-	std::string filename = "../../GrossPitaevskiiGpuFcc/mesh.h";
-#elif defined(A15) // A15 grid
-	const ddouble SQ8 = sqrt(16);
-	mesh.createA15Grid(SQ8 * Vector3(-1.125, -1.125, -1.125), SQ8 * Vector3(1.875, 1.875, 1.875), SQ8);
-	const Vector3 dim(SQ8, SQ8, SQ8); // maximum block coordinates
-	std::string filename = "../../GrossPitaevskiiGpuA15/mesh.h";
-#elif defined(C15) // C15 grid
-	const ddouble SQ8 = sqrt(32);
-	mesh.createC15Grid(SQ8 * Vector3(-1.125, -1.125, -1.125), SQ8 * Vector3(1.875, 1.875, 1.875), SQ8);
-	const Vector3 dim(SQ8, SQ8, SQ8); // maximum block coordinates
-	std::string filename = "../../GrossPitaevskiiGpuC15/mesh.h";
-#elif defined(Z) // Z grid
-const ddouble SQ8 = sqrt(16);
-mesh.createZGrid(SQ8 * Vector3(-1.125, -1.125, -1.125), SQ8 * Vector3(1.875, 1.875 * sqrt(3.0), 1.875), SQ8);
-const Vector3 dim(SQ8, SQ8 * sqrt(3.0), SQ8); // maximum block coordinates
-std::string filename = "../../GrossPitaevskiiGpuZ/mesh.h";
-#endif
-
-	// find circumcenters inside the block
-	Buffer<Vector3> p(mesh.getBodySize());
-	Buffer<uint> ind;
-	uint inds = 0;
-	uint totalFaceCount = 0;
-	for(i=0; i<p.size(); i++)
+	for (GridType gridType = CUBIC; gridType < GridType::COUNT; gridType = (GridType)(gridType + 1))
 	{
-		p[i] = mesh.getBodyPosition(i).toVector3();
+		uint i, j, k;
+		DelaunayMesh mesh(3);
 
-		if(p[i].x < 0.0 || p[i].y < 0.0 || p[i].z < 0.0) continue;
-		if(p[i].x >= dim.x || p[i].y >= dim.y || p[i].z >= dim.z) continue;
-		ind.gather(i, inds);
-		totalFaceCount += mesh.getBodyFaces(i).size();
-	}
+		const ddouble scale = scales[gridType];
+		Vector3 dim;
+		std::string filename;
 
-	// compute terms for laplacian
-	const ddouble bhodge = mesh.getBodyHodge(ind[0]);
-	uint fsize = 0;
-	ddouble factor = 0.0;
-	const Buffer<uint> &f0 = mesh.getBodyFaces(ind[0]);
-	for(i=0; i<f0.size(); i++)
-	{
-		auto faceBodies = mesh.getFaceBodies(f0[i]);
-		if(faceBodies.size() < 2) continue;
-		if(fsize == 0)
+		switch (gridType)
 		{
-			factor = bhodge / mesh.getFaceHodge(f0[i]);
-			std::cout << "dual edge length = " << mesh.getFaceDualVector(f0[i]).len() << std::endl;
+		case CUBIC:
+			mesh.createGrid(scale * Vector4(-1, -1, -1, 0), scale * Vector4(2, 2, 2, 0), scale);
+			dim = Vector3(scale, scale, scale); // maximum block coordinates
+			filename = "../../GrossPitaevskiiGpuCube/mesh.h";
+			break;
+		case FCC:
+			mesh.createFccGrid(scale * Vector3(-1.125, -1.125, -1.125), scale * Vector3(1.875, 1.875, 1.875), scale);
+			dim = Vector3(scale, scale, scale); // maximum block coordinates
+			filename = "../../GrossPitaevskiiGpuFcc/mesh.h";
+			break;
+		case BCC:
+			mesh.createBccGrid(scale * Vector3(-1.125, -1.125, -1.125), scale * Vector3(1.875, 1.875, 1.875), scale);
+			dim = Vector3(scale, scale, scale); // maximum block coordinates
+			filename = "../../GrossPitaevskiiGpuBcc/mesh.h";
+			break;
+		case A15:
+			mesh.createA15Grid(scale * Vector3(-1.125, -1.125, -1.125), scale * Vector3(1.875, 1.875, 1.875), scale);
+			dim = Vector3(scale, scale, scale); // maximum block coordinates
+			filename = "../../GrossPitaevskiiGpuA15/mesh.h";
+			break;
+		case C15:
+			mesh.createC15Grid(scale * Vector3(-1.125, -1.125, -1.125), scale * Vector3(1.875, 1.875, 1.875), scale);
+			dim = Vector3(scale, scale, scale); // maximum block coordinates
+			filename = "../../GrossPitaevskiiGpuC15/mesh.h";
+			break;
+		case Z:
+			mesh.createZGrid(scale * Vector3(-1.125, -1.125, -1.125), scale * Vector3(1.875, 1.875 * sqrt(3.0), 1.875), scale);
+			dim = Vector3(scale, scale * sqrt(3.0), scale); // maximum block coordinates
+			filename = "../../GrossPitaevskiiGpuZ/mesh.h";
+			break;
+		default:
+			break;
 		}
-		fsize++;
-	}
 
-	// print code
-	Text text;
-	Text hodgesText;
-	Text indicesAndFaceCountsText;
-	//text.precision(17);
-	bool constantFaceCount = totalFaceCount == (f0.size() * inds);
-	if (constantFaceCount)
-		text << "#define FACE_COUNT " << f0.size() << std::endl;
-	text << "#define VALUES_IN_BLOCK " << inds << std::endl;
-	text << "#define INDICES_PER_BLOCK " << totalFaceCount << std::endl;
-	text << "const Vector3 BLOCK_WIDTH = Vector3(" << dim.x << ", " << dim.y << ", " << dim.z << "); // dimensions of unit block" << std::endl;
-	text << "const ddouble VOLUME = " << 1.0 / bhodge << "; // volume of body elements" << std::endl;
-	if(fsize == f0.size()) text << "const bool IS_3D = true; // 3-dimensional" << std::endl;
-	else text << "const bool IS_3D = false; // 2-dimensional" << std::endl;
-	text << "void getPositions(Buffer<Vector3> &pos)" << std::endl;
-	text << "{" << std::endl;
-	text << "\tpos.resize(VALUES_IN_BLOCK);" << std::endl;
-	for(i=0; i<inds; i++) text << "\tpos[" << i << "] = Vector3(" << p[ind[i]].x << ", " << p[ind[i]].y << ", " << p[ind[i]].z << ");" << std::endl;
-	text << "}" << std::endl;
-	if (constantFaceCount)
-		text << "ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz) // nx, ny, nz in bytes" << std::endl;
-	else
-		text << "ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz, Buffer<int2> &indicesAndFaceCounts) // nx, ny, nz in bytes" << std::endl;
-	text << "{" << std::endl;
-	text << "\tind.resize(INDICES_PER_BLOCK);" << std::endl;
-	fsize = 0;
-	for(i=0; i<inds; i++)
-	{
-		ddouble bodyHodge = mesh.getBodyHodge(ind[i]);
-		const Buffer<uint> &f = mesh.getBodyFaces(ind[i]);
-		indicesAndFaceCountsText << "\tindicesAndFaceCounts[" << i << "] = make_int2(" << fsize << ", " << f.size() << ");" << std::endl;
-		for(j=0; j<f.size(); j++)
+		// find circumcenters inside the block
+		Buffer<Vector3> p(mesh.getBodySize());
+		Buffer<uint> ind;
+		uint inds = 0;
+		uint totalFaceCount = 0;
+		for (i = 0; i < p.size(); i++)
 		{
-			const Buffer<uint> &b = mesh.getFaceBodies(f[j]);
-			if(b.size() < 2) continue;
-			const uint other = (b[0] == ind[i] ? b[1] : b[0]);
-			Vector3 pp = p[other];
-			Text link;
-			if(pp.x < 0.0) { pp.x += dim.x; link << "-nx"; }
-			else if(pp.x >= dim.x) { pp.x -= dim.x; link << "nx"; }
-			if(pp.y < 0.0) { pp.y += dim.y; link << (link.str().empty() ? "-ny" : " - ny"); }
-			else if(pp.y >= dim.y) { pp.y -= dim.y; link << (link.str().empty() ? "ny" : " + ny"); }
-			if(pp.z < 0.0) { pp.z += dim.z; link << (link.str().empty() ? "-nz" : " - nz"); }
-			else if(pp.z >= dim.z) { pp.z -= dim.z; link << (link.str().empty() ? "nz" : " + nz"); }
-			for(k=0; k<inds; k++)
-			{
-				if((p[ind[k]] - pp).lensq() < 1e-13) break;
-			}
-			if(k >= inds)
-			{
-				std::cout << "FAILED" << std::endl;
-				return;
-			}
-			if (link.str().empty()) link << "0";
-			text << "\tind[" << fsize << "] = make_int2(" << link.str() << ", " << k << ");" << std::endl;
-			hodgesText << "\thodges[" << fsize++ << "] = " << bodyHodge / mesh.getFaceHodge(f[j]) << ";" << std::endl;
-		}
-	}
-	text << std::endl << "\thodges.resize(INDICES_PER_BLOCK);" << std::endl;
-	text << hodgesText.str() << std::endl;
-	if (!constantFaceCount)
-	{
-		text << std::endl << "\tindicesAndFaceCounts.resize(VALUES_IN_BLOCK);" << std::endl;
-		text << indicesAndFaceCountsText.str() << std::endl;
-	}
-	text << "\treturn " << factor << ";" << std::endl;
-	text << "}" << std::endl;
+			p[i] = mesh.getBodyPosition(i).toVector3();
 
-	std::cout << text.str() << std::endl;
-	text.save(filename);
+			if (p[i].x < 0.0 || p[i].y < 0.0 || p[i].z < 0.0) continue;
+			if (p[i].x >= dim.x || p[i].y >= dim.y || p[i].z >= dim.z) continue;
+			ind.gather(i, inds);
+			totalFaceCount += mesh.getBodyFaces(i).size();
+		}
+
+		// compute terms for laplacian
+		const ddouble bhodge = mesh.getBodyHodge(ind[0]);
+		uint fsize = 0;
+		ddouble factor = 0.0;
+		const Buffer<uint>& f0 = mesh.getBodyFaces(ind[0]);
+		for (i = 0; i < f0.size(); i++)
+		{
+			auto faceBodies = mesh.getFaceBodies(f0[i]);
+			if (faceBodies.size() < 2) continue;
+			if (fsize == 0)
+			{
+				factor = bhodge / mesh.getFaceHodge(f0[i]);
+				std::cout << "dual edge length = " << mesh.getFaceDualVector(f0[i]).len() << std::endl;
+			}
+			fsize++;
+		}
+
+		// print code
+		Text text;
+		Text hodgesText;
+		Text indicesAndFaceCountsText;
+		//text.precision(17);
+		bool constantFaceCount = totalFaceCount == (f0.size() * inds);
+		if (constantFaceCount)
+			text << "#define FACE_COUNT " << f0.size() << std::endl;
+		text << "#define VALUES_IN_BLOCK " << inds << std::endl;
+		text << "#define INDICES_PER_BLOCK " << totalFaceCount << std::endl;
+		text << "const Vector3 BLOCK_WIDTH = Vector3(" << dim.x << ", " << dim.y << ", " << dim.z << "); // dimensions of unit block" << std::endl;
+		text << "const ddouble VOLUME = " << 1.0 / bhodge << "; // volume of body elements" << std::endl;
+		if (fsize == f0.size()) text << "const bool IS_3D = true; // 3-dimensional" << std::endl;
+		else text << "const bool IS_3D = false; // 2-dimensional" << std::endl;
+		text << "void getPositions(Buffer<Vector3> &pos)" << std::endl;
+		text << "{" << std::endl;
+		text << "\tpos.resize(VALUES_IN_BLOCK);" << std::endl;
+		for (i = 0; i < inds; i++) text << "\tpos[" << i << "] = Vector3(" << p[ind[i]].x << ", " << p[ind[i]].y << ", " << p[ind[i]].z << ");" << std::endl;
+		text << "}" << std::endl;
+		if (constantFaceCount)
+			text << "ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz) // nx, ny, nz in bytes" << std::endl;
+		else
+			text << "ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz, Buffer<int2> &indicesAndFaceCounts) // nx, ny, nz in bytes" << std::endl;
+		text << "{" << std::endl;
+		text << "\tind.resize(INDICES_PER_BLOCK);" << std::endl;
+		fsize = 0;
+		for (i = 0; i < inds; i++)
+		{
+			ddouble bodyHodge = mesh.getBodyHodge(ind[i]);
+			const Buffer<uint>& f = mesh.getBodyFaces(ind[i]);
+			indicesAndFaceCountsText << "\tindicesAndFaceCounts[" << i << "] = make_int2(" << fsize << ", " << f.size() << ");" << std::endl;
+			for (j = 0; j < f.size(); j++)
+			{
+				const Buffer<uint>& b = mesh.getFaceBodies(f[j]);
+				if (b.size() < 2) continue;
+				const uint other = (b[0] == ind[i] ? b[1] : b[0]);
+				Vector3 pp = p[other];
+				Text link;
+				if (pp.x < 0.0) { pp.x += dim.x; link << "-nx"; }
+				else if (pp.x >= dim.x) { pp.x -= dim.x; link << "nx"; }
+				if (pp.y < 0.0) { pp.y += dim.y; link << (link.str().empty() ? "-ny" : " - ny"); }
+				else if (pp.y >= dim.y) { pp.y -= dim.y; link << (link.str().empty() ? "ny" : " + ny"); }
+				if (pp.z < 0.0) { pp.z += dim.z; link << (link.str().empty() ? "-nz" : " - nz"); }
+				else if (pp.z >= dim.z) { pp.z -= dim.z; link << (link.str().empty() ? "nz" : " + nz"); }
+				for (k = 0; k < inds; k++)
+				{
+					if ((p[ind[k]] - pp).lensq() < 1e-13) break;
+				}
+				if (k >= inds)
+				{
+					std::cout << "FAILED" << std::endl;
+					return;
+				}
+				if (link.str().empty()) link << "0";
+				text << "\tind[" << fsize << "] = make_int2(" << link.str() << ", " << k << ");" << std::endl;
+				hodgesText << "\thodges[" << fsize++ << "] = " << bodyHodge / mesh.getFaceHodge(f[j]) << ";" << std::endl;
+			}
+		}
+		text << std::endl << "\thodges.resize(INDICES_PER_BLOCK);" << std::endl;
+		text << hodgesText.str() << std::endl;
+		if (!constantFaceCount)
+		{
+			text << std::endl << "\tindicesAndFaceCounts.resize(VALUES_IN_BLOCK);" << std::endl;
+			text << indicesAndFaceCountsText.str() << std::endl;
+		}
+		text << "\treturn " << factor << ";" << std::endl;
+		text << "}" << std::endl;
+
+		std::cout << text.str() << std::endl;
+		text.save(filename);
+	}
 }
 /*
 // square grid
