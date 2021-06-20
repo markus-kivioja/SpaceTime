@@ -274,7 +274,8 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 					const Vector2 c = 0.01 * rnd.getUniformCircle();
 					const Complex noise(c.x + 1.0, c.y);
 					const Complex noisedPsi = Psi0[srcI] * noise;
-					double2 even = make_double2(noisedPsi.r, noisedPsi.i);
+					//double2 even = make_double2(noisedPsi.r, noisedPsi.i);
+					double2 even = make_double2(Psi0[srcI].r, Psi0[srcI].i); // No noice
 					h_evenPsi[dstI].values[l] = even;
 					h_oddPsi[dstI].values[l] = make_double2(oddPhase.r * even.x - oddPhase.i * even.y,
 						oddPhase.i * even.x + oddPhase.r * even.y);
@@ -476,7 +477,7 @@ int main(int argc, char** argv)
 	//std::cout << "maxf=" << state.searchFunctionMax() << std::endl;
 #endif
 
-	const int number_of_iterations = 50;
+	const int number_of_iterations = 10;
 	const ddouble iteration_period = 1.0;
 	const ddouble block_scale = PIx2 / (20.0 * sqrt(state.integrateCurvature()));
 

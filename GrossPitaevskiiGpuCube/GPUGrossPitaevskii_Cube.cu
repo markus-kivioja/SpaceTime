@@ -273,7 +273,8 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 					const Vector2 c = 0.01 * rnd.getUniformCircle();
 					const Complex noise(c.x + 1.0, c.y);
 					const Complex noisedPsi = Psi0[srcI] * noise;
-					double2 even = make_double2(noisedPsi.r, noisedPsi.i);
+					//double2 even = make_double2(noisedPsi.r, noisedPsi.i);
+					double2 even = make_double2(Psi0[srcI].r, Psi0[srcI].i); // No noice
 					h_evenPsi[dstI].values[l] = even;
 					h_oddPsi[dstI].values[l] = make_double2(oddPhase.r * even.x - oddPhase.i * even.y,
 						oddPhase.i * even.x + oddPhase.r * even.y);
@@ -330,7 +331,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 
 	// Clear host memory after data has been copied to devices
 	cudaDeviceSynchronize();
-	Psi0.clear();
+	//Psi0.clear();
 	pot.clear();
 	bpos.clear();
 	lapind.clear();
@@ -356,28 +357,52 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	evenPsiBackParams.kind = cudaMemcpyDeviceToHost;
 #endif
 	const uint time0 = clock();
+	const ddouble volume = (IS_3D ? block_scale : 1.0) * block_scale * block_scale * VOLUME;
 	while (true)
 	{
 #if SAVE_PICTURE
 		// draw picture
-		const float INTENSITY = 20.0f;
-		const int SIZE = 2;
-		int width = dxsize * SIZE, height = dysize * SIZE;
-		Picture pic(width, height);
-		k = zsize / 2 + 1;
-		for (j = 0; j < height; j++)
-		{
-			for (i = 0; i < width; i++)
-			{
-				const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
-				double norm = sqrt(h_evenPsi[idx].values[0].x * h_evenPsi[idx].values[0].x + h_evenPsi[idx].values[0].y * h_evenPsi[idx].values[0].y);
+		//const float INTENSITY = 20.0f;
+		//const int SIZE = 2;
+		//int width = dxsize * SIZE, height = dysize * SIZE;
+		//Picture pic(width, height);
+		//k = zsize / 2 + 1;
+		//for (j = 0; j < height; j++)
+		//{
+		//	for (i = 0; i < width; i++)
+		//	{
+		//		const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
+		//		double norm = sqrt(h_evenPsi[idx].values[0].x * h_evenPsi[idx].values[0].x + h_evenPsi[idx].values[0].y * h_evenPsi[idx].values[0].y);
+		//
+		//		pic.setColor(i, j, INTENSITY * Vector4(h_evenPsi[idx].values[0].x, norm, h_evenPsi[idx].values[0].y, 1.0));
+		//	}
+		//}
+		//std::ostringstream picpath;
+		//picpath << "kuva" << iter << ".bmp";
+		//pic.save(picpath.str(), false);
 
-				pic.setColor(i, j, INTENSITY * Vector4(h_evenPsi[idx].values[0].x, norm, h_evenPsi[idx].values[0].y, 1.0));
+		// print squared norm and error
+		ddouble normsq = 0.0;
+		Complex error(0.0, 0.0);
+		for (k = 0; k < zsize; k++)
+		{
+			for (j = 0; j < ysize; j++)
+			{
+				for (i = 0; i < xsize; i++)
+				{
+					for (l = 0; l < bsize; l++)
+					{
+						const uint srcI = ii0 + k * bxysize + j * bxsize + i * bsize + l;
+						const uint dstI = (k + 1) * dxsize * dysize + (j + 1) * dxsize + (i + 1);
+
+						Complex evenPsi(h_evenPsi[dstI].values[l].x, h_evenPsi[dstI].values[l].y);
+						normsq += evenPsi.normsq() * volume;
+						error += (Psi0[srcI].con() * evenPsi) * volume;
+					}
+				}
 			}
 		}
-		std::ostringstream picpath;
-		picpath << "kuva" << iter << ".bmp";
-		pic.save(picpath.str(), false);
+		std::cout << "normsq=" << normsq << " error=" << normsq - error.norm() << std::endl;
 #endif
 
 #if SAVE_VOLUME
@@ -475,7 +500,7 @@ int main(int argc, char** argv)
 	//std::cout << "maxf=" << state.searchFunctionMax() << std::endl;
 #endif
 
-	const int number_of_iterations = 50;
+	const int number_of_iterations = 10;
 	const ddouble iteration_period = 1.0;
 	const ddouble block_scale = PIx2 / (20.0 * sqrt(state.integrateCurvature()));
 

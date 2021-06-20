@@ -21,7 +21,8 @@ enum GridType
 	COUNT
 };
 
-constexpr double scales[] = {1.0, 2.12, 1.84, 2.92, 4.20, 2.92};
+constexpr double scales[] = { 1.0, 2.79, 2.68, 4.86, 6.75, 4.57 };
+// integration times = 1.9923, 1.9928, 1.9826, 1.9852, 1.9265, 1.9898
 
 ddouble potentialRZ(const ddouble r, const ddouble z)
 {
@@ -177,7 +178,9 @@ void generateCode() // generates code section for different grid structures
 				}
 				if (link.str().empty()) link << "0";
 				text << "\tind[" << fsize << "] = make_int2(" << link.str() << ", " << k << ");" << std::endl;
-				hodgesText << "\thodges[" << fsize++ << "] = " << bodyHodge / mesh.getFaceHodge(f[j]) << ";" << std::endl;
+				ddouble hodge = bodyHodge / mesh.getFaceHodge(f[j]);
+				factor = max(factor, hodge);
+				hodgesText << "\thodges[" << fsize++ << "] = " << hodge << ";" << std::endl;
 			}
 		}
 		text << std::endl << "\thodges.resize(INDICES_PER_BLOCK);" << std::endl;
@@ -507,8 +510,8 @@ uint integrateInTime(const VortexState &state, const ddouble block_scale, const 
 int main ( int argc, char** argv )
 {
 	// for code generation
-	generateCode();
-	return 0;
+	//generateCode();
+	//return 0;
 
 	// preliminary vortex state to find vortex size
 	VortexState state0;
