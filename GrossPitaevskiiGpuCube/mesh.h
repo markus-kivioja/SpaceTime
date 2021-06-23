@@ -1,4 +1,5 @@
 #define FACE_COUNT 6
+#define DUAL_EDGE_LENGTH 1
 #define VALUES_IN_BLOCK 1
 #define INDICES_PER_BLOCK 6
 const Vector3 BLOCK_WIDTH = Vector3(1, 1, 1); // dimensions of unit block

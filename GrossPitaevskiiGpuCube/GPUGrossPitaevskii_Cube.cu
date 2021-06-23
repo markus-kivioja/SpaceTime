@@ -13,8 +13,8 @@
 #include <mesh.h>
 
 ddouble RATIO = 1.0;
-ddouble KAPPA = 16;
-ddouble G = 20000;
+ddouble KAPPA = 10;
+ddouble G = 300;
 
 #define LOAD_STATE_FROM_DISK 1
 #define SAVE_PICTURE 1
@@ -232,6 +232,8 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 
 	std::cout << "steps_per_iteration = " << steps_per_iteration << std::endl;
 
+	std::cout << "ALU operations per unit time = " << xsize * ysize * zsize * bsize * steps_per_iteration * FACE_COUNT << std::endl;
+
 	// multiply terms with time_step_size
 	g *= time_step_size;
 	lapfac *= time_step_size;
@@ -356,6 +358,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	evenPsiBackParams.extent = psiExtent;
 	evenPsiBackParams.kind = cudaMemcpyDeviceToHost;
 #endif
+	Text errorText;
 	const uint time0 = clock();
 	const ddouble volume = (IS_3D ? block_scale : 1.0) * block_scale * block_scale * VOLUME;
 	while (true)
@@ -378,7 +381,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 		//	}
 		//}
 		//std::ostringstream picpath;
-		//picpath << "kuva" << iter << ".bmp";
+		//picpath << "results/kuva" << iter << ".bmp";
 		//pic.save(picpath.str(), false);
 
 		// print squared norm and error
@@ -402,7 +405,9 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 				}
 			}
 		}
-		std::cout << "normsq=" << normsq << " error=" << normsq - error.norm() << std::endl;
+		ddouble errorAbs = normsq - error.norm();
+		std::cout << "normsq=" << normsq << " error=" << errorAbs << std::endl;
+		errorText << errorAbs << " ";
 #endif
 
 #if SAVE_VOLUME
@@ -449,6 +454,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 		checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
 #endif
 	}
+	errorText.save("results/errors.txt");
 
 	std::cout << "iteration time = " << (1e-3 * (clock() - time0)) / number_of_iterations << std::endl;
 	std::cout << "total time = " << 1e-3 * (clock() - time0) << std::endl;
@@ -500,7 +506,7 @@ int main(int argc, char** argv)
 	//std::cout << "maxf=" << state.searchFunctionMax() << std::endl;
 #endif
 
-	const int number_of_iterations = 10;
+	const int number_of_iterations = 100;
 	const ddouble iteration_period = 1.0;
 	const ddouble block_scale = PIx2 / (20.0 * sqrt(state.integrateCurvature()));
 
@@ -512,6 +518,7 @@ int main(int argc, char** argv)
 	std::cout << "iteration_period = " << iteration_period << std::endl;
 	std::cout << "maxr = " << maxr << std::endl;
 	std::cout << "maxz = " << maxz << std::endl;
+	std::cout << "dual edge length = " << DUAL_EDGE_LENGTH * block_scale << std::endl;
 
 	// integrate in time using DEC
 	if (IS_3D) integrateInTime(state, block_scale, Vector3(-maxr, -maxr, -maxz), Vector3(maxr, maxr, maxz), iteration_period, number_of_iterations); // use this for 3d

@@ -13,10 +13,10 @@
 #include <mesh.h>
 
 ddouble RATIO = 1.0;
-ddouble KAPPA = 16;
-ddouble G = 20000;
+ddouble KAPPA = 10;
+ddouble G = 300;
 
-#define LOAD_STATE_FROM_DISK 1
+#define LOAD_STATE_FROM_DISK 0
 #define SAVE_PICTURE 1
 #define SAVE_VOLUME 0
 
@@ -108,13 +108,13 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
 
 	// Load Laplacian indices into LDS // TODO: Load prevStep also into LDS?
-	__shared__ int2 ldsLapInd[INDICES_PER_BLOCK];
-	size_t threadIdxInBlock = blockDim.x * blockDim.y * threadIdx.z + blockDim.x * threadIdx.y + threadIdx.x;
-	if (threadIdxInBlock < INDICES_PER_BLOCK)
-	{
-		ldsLapInd[threadIdxInBlock] = lapInd[threadIdxInBlock];
-	}
-	__syncthreads();
+	//__shared__ int2 ldsLapInd[INDICES_PER_BLOCK];
+	//size_t threadIdxInBlock = blockDim.x * blockDim.y * threadIdx.z + blockDim.x * threadIdx.y + threadIdx.x;
+	//if (threadIdxInBlock < INDICES_PER_BLOCK)
+	//{
+	//	ldsLapInd[threadIdxInBlock] = lapInd[threadIdxInBlock];
+	//}
+	//__syncthreads();
 
 	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 
@@ -137,7 +137,8 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 	double2 sum = make_double2(0, 0);
 #pragma unroll
 	for (int i = 0; i < FACE_COUNT; ++i)
-		sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + ldsLapInd[primaryFace].x))->values[ldsLapInd[primaryFace++].y] - prev);
+		//sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + ldsLapInd[primaryFace].x))->values[ldsLapInd[primaryFace++].y] - prev);
+		sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + lapInd[primaryFace].x))->values[lapInd[primaryFace++].y] - prev);
 
 	double normsq = prev.x * prev.x + prev.y * prev.y;
 	sum += (pot->values[dualNodeId] + g * normsq) * prev;
@@ -170,7 +171,8 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	const uint vsize = ii0 + (IS_3D ? zsize + 1 : zsize) * bxysize; // total number of values
 
 	std::cout << "bsize: " << bsize << ", xsize: " << xsize << ", yszie: " << ysize << ", zsize: " << zsize << std::endl;
-	std::cout << "bodies = " << xsize * ysize * zsize * bsize << std::endl;
+	uint64_t bodies = xsize * ysize * zsize * bsize;
+	std::cout << "bodies = " << bodies << std::endl;
 
 	// initialize stationary state
 	Buffer<Complex> Psi0(vsize, Complex(0, 0)); // initial discrete wave function
@@ -227,10 +229,11 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	//std::cout << "lapsize = " << lapsize << ", lapfac = " << lapfac << ", lapfac0 = " << lapfac0 << std::endl;
 
 	// compute time step size
-	const uint steps_per_iteration = uint(iteration_period * (maxpot + lapfac0)) + 1; // number of time steps per iteration period
+	const uint steps_per_iteration = 600; // uint(iteration_period * (maxpot + lapfac0)) + 1; // number of time steps per iteration period
 	const ddouble time_step_size = iteration_period / ddouble(steps_per_iteration); // time step in time units
 
 	std::cout << "steps_per_iteration = " << steps_per_iteration << std::endl;
+	std::cout << "ALU operations per unit time = " << bodies * steps_per_iteration * FACE_COUNT << std::endl;
 
 	// multiply terms with time_step_size
 	g *= time_step_size;
@@ -259,7 +262,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 
 	// initialize discrete field
 	const Complex oddPhase = state.getPhase(-0.5 * time_step_size);
-	Random rnd(54363);
+	//Random rnd(54363);
 	for (k = 0; k < zsize; k++)
 	{
 		for (j = 0; j < ysize; j++)
@@ -270,9 +273,9 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 				{
 					const uint srcI = ii0 + k * bxysize + j * bxsize + i * bsize + l;
 					const uint dstI = (k + 1) * dxsize * dysize + (j + 1) * dxsize + (i + 1);
-					const Vector2 c = 0.01 * rnd.getUniformCircle();
-					const Complex noise(c.x + 1.0, c.y);
-					const Complex noisedPsi = Psi0[srcI] * noise;
+					//const Vector2 c = 0.01 * rnd.getUniformCircle();
+					//const Complex noise(c.x + 1.0, c.y);
+					//const Complex noisedPsi = Psi0[srcI] * noise;
 					//double2 even = make_double2(noisedPsi.r, noisedPsi.i);
 					double2 even = make_double2(Psi0[srcI].r, Psi0[srcI].i); // No noice
 					h_evenPsi[dstI].values[l] = even;
@@ -356,6 +359,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	evenPsiBackParams.extent = psiExtent;
 	evenPsiBackParams.kind = cudaMemcpyDeviceToHost;
 #endif
+	Text errorText;
 	const uint time0 = clock();
 	const ddouble volume = (IS_3D ? block_scale : 1.0) * block_scale * block_scale * VOLUME;
 	while (true)
@@ -378,7 +382,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 			}
 		}
 		std::ostringstream picpath;
-		picpath << "kuva" << iter << ".bmp";
+		picpath << "results/kuva" << iter << ".bmp";
 		pic.save(picpath.str(), false);
 
 		// print squared norm and error
@@ -402,7 +406,9 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 				}
 			}
 		}
-		std::cout << "normsq=" << normsq << " error=" << normsq - error.norm() << std::endl;
+		ddouble errorAbs = abs(normsq - error.norm());
+		std::cout << "normsq=" << normsq << " error=" << errorAbs << std::endl;
+		errorText << errorAbs << " ";
 #endif
 
 #if SAVE_VOLUME
@@ -449,6 +455,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 		checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
 #endif
 	}
+	errorText.save("results/errors.txt");
 
 	std::cout << "iteration time = " << (1e-3 * (clock() - time0)) / number_of_iterations << std::endl;
 	std::cout << "total time = " << 1e-3 * (clock() - time0) << std::endl;
@@ -476,8 +483,8 @@ int main(int argc, char** argv)
 	VortexState state0;
 	state0.setKappa(KAPPA);
 	state0.setG(G);
-	//if(IS_3D) state0.setRange(0.0, 15.0, 35.0, 0.2, 0.2); // use this for 3d
-	if (IS_3D) state0.setRange(0.0, 15.0, 10.0, 0.2, 0.2); // use this for 3d
+	if(IS_3D) state0.setRange(0.0, 15.0, 35.0, 0.2, 0.2); // use this for 3d
+	//if (IS_3D) state0.setRange(0.0, 15.0, 10.0, 0.2, 0.2); // use this for 3d
 	else state0.setRange(0.0, 15.0, 1.0, 0.2, 1.0); // use this for 2d
 	state0.iterateSolution(potentialRZ, 10000, 1e-29);
 	const ddouble eps = 1e-5 * state0.searchFunctionMax();
@@ -500,7 +507,7 @@ int main(int argc, char** argv)
 	//std::cout << "maxf=" << state.searchFunctionMax() << std::endl;
 #endif
 
-	const int number_of_iterations = 10;
+	const int number_of_iterations = 100;
 	const ddouble iteration_period = 1.0;
 	const ddouble block_scale = PIx2 / (20.0 * sqrt(state.integrateCurvature()));
 
@@ -512,6 +519,7 @@ int main(int argc, char** argv)
 	std::cout << "iteration_period = " << iteration_period << std::endl;
 	std::cout << "maxr = " << maxr << std::endl;
 	std::cout << "maxz = " << maxz << std::endl;
+	std::cout << "dual edge length = " << DUAL_EDGE_LENGTH * block_scale << std::endl;
 
 	// integrate in time using DEC
 	if (IS_3D) integrateInTime(state, block_scale, Vector3(-maxr, -maxr, -maxz), Vector3(maxr, maxr, maxz), iteration_period, number_of_iterations); // use this for 3d

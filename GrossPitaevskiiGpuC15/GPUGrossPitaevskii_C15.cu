@@ -13,8 +13,8 @@
 #include <mesh.h>
 
 ddouble RATIO = 1.0;
-ddouble KAPPA = 16;
-ddouble G = 20000;
+ddouble KAPPA = 10;
+ddouble G = 300;
 
 #define LOAD_STATE_FROM_DISK 1
 #define SAVE_PICTURE 1
@@ -171,7 +171,8 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	const uint vsize = ii0 + (IS_3D ? zsize + 1 : zsize) * bxysize; // total number of values
 
 	std::cout << "bsize: " << bsize << ", xsize: " << xsize << ", yszie: " << ysize << ", zsize: " << zsize << std::endl;
-	std::cout << "bodies = " << xsize * ysize * zsize * bsize << std::endl;
+	uint64_t bodies = xsize * ysize * zsize * bsize;
+	std::cout << "bodies = " << bodies << std::endl;
 
 	// initialize stationary state
 	Buffer<Complex> Psi0(vsize, Complex(0, 0)); // initial discrete wave function
@@ -228,10 +229,11 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	//std::cout << "lapsize = " << lapsize << ", lapfac = " << lapfac << ", lapfac0 = " << lapfac0 << std::endl;
 
 	// compute time step size
-	const uint steps_per_iteration = uint(iteration_period * (maxpot + lapfac0)) + 1; // number of time steps per iteration period
+	const uint steps_per_iteration = 600; // uint(iteration_period * (maxpot + lapfac0)) + 1; // number of time steps per iteration period
 	const ddouble time_step_size = iteration_period / ddouble(steps_per_iteration); // time step in time units
 
 	std::cout << "steps_per_iteration = " << steps_per_iteration << std::endl;
+	std::cout << "ALU operations per unit time = " << bodies * steps_per_iteration * FACE_COUNT << std::endl;
 
 	// multiply terms with time_step_size
 	g *= time_step_size;
@@ -260,7 +262,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 
 	// initialize discrete field
 	const Complex oddPhase = state.getPhase(-0.5 * time_step_size);
-	Random rnd(54363);
+	//Random rnd(54363);
 	for (k = 0; k < zsize; k++)
 	{
 		for (j = 0; j < ysize; j++)
@@ -271,9 +273,9 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 				{
 					const uint srcI = ii0 + k * bxysize + j * bxsize + i * bsize + l;
 					const uint dstI = (k + 1) * dxsize * dysize + (j + 1) * dxsize + (i + 1);
-					const Vector2 c = 0.01 * rnd.getUniformCircle();
-					const Complex noise(c.x + 1.0, c.y);
-					const Complex noisedPsi = Psi0[srcI] * noise;
+					//const Vector2 c = 0.01 * rnd.getUniformCircle();
+					//const Complex noise(c.x + 1.0, c.y);
+					//const Complex noisedPsi = Psi0[srcI] * noise;
 					//double2 even = make_double2(noisedPsi.r, noisedPsi.i);
 					double2 even = make_double2(Psi0[srcI].r, Psi0[srcI].i); // No noice
 					h_evenPsi[dstI].values[l] = even;
@@ -332,7 +334,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 
 	// Clear host memory after data has been copied to devices
 	cudaDeviceSynchronize();
-	Psi0.clear();
+	//Psi0.clear();
 	pot.clear();
 	bpos.clear();
 	lapind.clear();
@@ -357,7 +359,9 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	evenPsiBackParams.extent = psiExtent;
 	evenPsiBackParams.kind = cudaMemcpyDeviceToHost;
 #endif
+	Text errorText;
 	const uint time0 = clock();
+	const ddouble volume = (IS_3D ? block_scale : 1.0) * block_scale * block_scale * VOLUME;
 	while (true)
 	{
 #if SAVE_PICTURE
@@ -373,13 +377,38 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 			{
 				const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
 				double norm = sqrt(h_evenPsi[idx].values[0].x * h_evenPsi[idx].values[0].x + h_evenPsi[idx].values[0].y * h_evenPsi[idx].values[0].y);
-
+		
 				pic.setColor(i, j, INTENSITY * Vector4(h_evenPsi[idx].values[0].x, norm, h_evenPsi[idx].values[0].y, 1.0));
 			}
 		}
 		std::ostringstream picpath;
-		picpath << "kuva" << iter << ".bmp";
+		picpath << "results/kuva" << iter << ".bmp";
 		pic.save(picpath.str(), false);
+
+		// print squared norm and error
+		ddouble normsq = 0.0;
+		Complex error(0.0, 0.0);
+		for (k = 0; k < zsize; k++)
+		{
+			for (j = 0; j < ysize; j++)
+			{
+				for (i = 0; i < xsize; i++)
+				{
+					for (l = 0; l < bsize; l++)
+					{
+						const uint srcI = ii0 + k * bxysize + j * bxsize + i * bsize + l;
+						const uint dstI = (k + 1) * dxsize * dysize + (j + 1) * dxsize + (i + 1);
+
+						Complex evenPsi(h_evenPsi[dstI].values[l].x, h_evenPsi[dstI].values[l].y);
+						normsq += evenPsi.normsq() * volume;
+						error += (Psi0[srcI].con() * evenPsi) * volume;
+					}
+				}
+			}
+		}
+		ddouble errorAbs = abs(normsq - error.norm());
+		std::cout << "normsq=" << normsq << " error=" << errorAbs << std::endl;
+		errorText << errorAbs << " ";
 #endif
 
 #if SAVE_VOLUME
@@ -426,6 +455,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 		checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
 #endif
 	}
+	errorText.save("results/errors.txt");
 
 	std::cout << "iteration time = " << (1e-3 * (clock() - time0)) / number_of_iterations << std::endl;
 	std::cout << "total time = " << 1e-3 * (clock() - time0) << std::endl;
@@ -477,7 +507,7 @@ int main(int argc, char** argv)
 	//std::cout << "maxf=" << state.searchFunctionMax() << std::endl;
 #endif
 
-	const int number_of_iterations = 10;
+	const int number_of_iterations = 100;
 	const ddouble iteration_period = 1.0;
 	const ddouble block_scale = PIx2 / (20.0 * sqrt(state.integrateCurvature()));
 
@@ -489,6 +519,7 @@ int main(int argc, char** argv)
 	std::cout << "iteration_period = " << iteration_period << std::endl;
 	std::cout << "maxr = " << maxr << std::endl;
 	std::cout << "maxz = " << maxz << std::endl;
+	std::cout << "dual edge length = " << DUAL_EDGE_LENGTH * block_scale << std::endl;
 
 	// integrate in time using DEC
 	if (IS_3D) integrateInTime(state, block_scale, Vector3(-maxr, -maxr, -maxz), Vector3(maxr, maxr, maxz), iteration_period, number_of_iterations); // use this for 3d

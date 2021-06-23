@@ -21,7 +21,7 @@ enum GridType
 	COUNT
 };
 
-constexpr double scales[] = { 1.0, 2.79, 2.68, 4.86, 6.75, 4.57 };
+constexpr double scales[] = { 1.0, 3.25, 2.27, 4.86, 4.5, 4.57 };
 // integration times = 1.9923, 1.9928, 1.9826, 1.9852, 1.9265, 1.9898
 
 ddouble potentialRZ(const ddouble r, const ddouble z)
@@ -110,6 +110,7 @@ void generateCode() // generates code section for different grid structures
 		const ddouble bhodge = mesh.getBodyHodge(ind[0]);
 		uint fsize = 0;
 		ddouble factor = 0.0;
+		ddouble dualEdgeLength = 0;
 		const Buffer<uint>& f0 = mesh.getBodyFaces(ind[0]);
 		for (i = 0; i < f0.size(); i++)
 		{
@@ -118,7 +119,8 @@ void generateCode() // generates code section for different grid structures
 			if (fsize == 0)
 			{
 				factor = bhodge / mesh.getFaceHodge(f0[i]);
-				std::cout << "dual edge length = " << mesh.getFaceDualVector(f0[i]).len() << std::endl;
+				dualEdgeLength = mesh.getFaceDualVector(f0[i]).len();
+				std::cout << "dual edge length = " << dualEdgeLength << std::endl;
 			}
 			fsize++;
 		}
@@ -127,10 +129,11 @@ void generateCode() // generates code section for different grid structures
 		Text text;
 		Text hodgesText;
 		Text indicesAndFaceCountsText;
-		//text.precision(17);
+		text.precision(17);
+		hodgesText.precision(17);
 		bool constantFaceCount = totalFaceCount == (f0.size() * inds);
-		if (constantFaceCount)
-			text << "#define FACE_COUNT " << f0.size() << std::endl;
+		text << "#define FACE_COUNT " << totalFaceCount / inds << std::endl;
+		text << "#define DUAL_EDGE_LENGTH " << dualEdgeLength << std::endl;
 		text << "#define VALUES_IN_BLOCK " << inds << std::endl;
 		text << "#define INDICES_PER_BLOCK " << totalFaceCount << std::endl;
 		text << "const Vector3 BLOCK_WIDTH = Vector3(" << dim.x << ", " << dim.y << ", " << dim.z << "); // dimensions of unit block" << std::endl;
@@ -510,8 +513,8 @@ uint integrateInTime(const VortexState &state, const ddouble block_scale, const 
 int main ( int argc, char** argv )
 {
 	// for code generation
-	//generateCode();
-	//return 0;
+	generateCode();
+	return 0;
 
 	// preliminary vortex state to find vortex size
 	VortexState state0;
