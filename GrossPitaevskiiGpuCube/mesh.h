@@ -10,15 +10,23 @@ void getPositions(Buffer<Vector3> &pos)
 	pos.resize(VALUES_IN_BLOCK);
 	pos[0] = Vector3(0.5, 0.5, 0.5);
 }
-ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz) // nx, ny, nz in bytes
+ddouble getLaplacian(Buffer<int3> &blockDirs, Buffer<int> &valueInds, Buffer<ddouble> &hodges)
 {
-	ind.resize(INDICES_PER_BLOCK);
-	ind[0] = make_int2(-nz, 0);
-	ind[1] = make_int2(-nx, 0);
-	ind[2] = make_int2(-ny, 0);
-	ind[3] = make_int2(nx, 0);
-	ind[4] = make_int2(ny, 0);
-	ind[5] = make_int2(nz, 0);
+	blockDirs.resize(INDICES_PER_BLOCK);
+	blockDirs[0] = make_int3(0, 0, -1);
+	blockDirs[1] = make_int3(-1, 0, 0);
+	blockDirs[2] = make_int3(0, -1, 0);
+	blockDirs[3] = make_int3(1, 0, 0);
+	blockDirs[4] = make_int3(0, 1, 0);
+	blockDirs[5] = make_int3(0, 0, 1);
+
+	valueInds.resize(INDICES_PER_BLOCK);
+	valueInds[0] = 0;
+	valueInds[1] = 0;
+	valueInds[2] = 0;
+	valueInds[3] = 0;
+	valueInds[4] = 0;
+	valueInds[5] = 0;
 
 	hodges.resize(INDICES_PER_BLOCK);
 	hodges[0] = 1;
