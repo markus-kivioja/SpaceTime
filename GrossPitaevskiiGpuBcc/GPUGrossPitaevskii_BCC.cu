@@ -108,8 +108,8 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
 	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 
-	// Exit leftover threads
-	if (xid >= dimensions.x || yid >= dimensions.y || dataZid >= dimensions.z)
+	// Kill the leftover threads but leave threads for the additional zero buffer at the edges
+	if (xid > dimensions.x || yid > dimensions.y || dataZid > dimensions.z)
 	{
 		return;
 	}
@@ -117,42 +117,52 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 	__shared__ BlockPsis ldsPrevPsis[THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X];
 	size_t threadIdxInBlock = threadIdx.z / VALUES_IN_BLOCK * THREAD_BLOCK_Y * THREAD_BLOCK_X + threadIdx.y * THREAD_BLOCK_X + threadIdx.x;
 
-	// Calculate the pointers for this block
+	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+
 	char* prevPsi = prevStep.ptr + prevStep.slicePitch * dataZid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
 	BlockPots* pot = (BlockPots*)(potentials.ptr + potentials.slicePitch * dataZid + potentials.pitch * yid) + xid;
 	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * dataZid + nextStep.pitch * yid) + xid;
-
-	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 	double2 prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
 	ldsPrevPsis[threadIdxInBlock].values[dualNodeId] = prev;
+	double normsq = prev.x * prev.x + prev.y * prev.y;
+
+	// Kill also the leftover edge threads
+	if (xid == dimensions.x || yid == dimensions.y || dataZid == dimensions.z)
+	{
+		return;
+	}
 
 	// Update psi
 	uint primaryFace = dualNodeId * FACE_COUNT;
 	double2 sum = make_double2(0, 0);
+
 	__syncthreads();
 #pragma unroll
 	for (int i = 0; i < FACE_COUNT; ++i)
 	{
 		int neighbourX = threadIdx.x + blockDirs[primaryFace].x;
-		int neighbourY = threadIdx.y + blockDirs[primaryFace].y * THREAD_BLOCK_X;
-		int neighbourZ = threadIdx.z + blockDirs[primaryFace].z * THREAD_BLOCK_X * THREAD_BLOCK_Y;
+		int neighbourY = threadIdx.y + blockDirs[primaryFace].y;
+		int neighbourZ = threadIdx.z / VALUES_IN_BLOCK + blockDirs[primaryFace].z;
+
+		double2 neighbourPsi;
+
+		// Read from the local shared memory
 		if ((0 <= neighbourX) && (neighbourX < THREAD_BLOCK_X) &&
 			(0 <= neighbourY) && (neighbourY < THREAD_BLOCK_Y) &&
 			(0 <= neighbourZ) && (neighbourZ < THREAD_BLOCK_Z))
 		{
 			int neighbourIdx = neighbourZ * THREAD_BLOCK_Y * THREAD_BLOCK_X + neighbourY * THREAD_BLOCK_X + neighbourX;
-			double2 prevPsis = ldsPrevPsis[neighbourIdx].values[valueInds[primaryFace]];
-			sum += hodges[primaryFace] * (prevPsis - prev);
+			neighbourPsi = ldsPrevPsis[neighbourIdx].values[valueInds[primaryFace]];
 		}
-		else
+		else // Read from the global memory
 		{
 			int offset = blockDirs[primaryFace].z * prevStep.slicePitch + blockDirs[primaryFace].y * prevStep.pitch + blockDirs[primaryFace].x * sizeof(BlockPsis);
-			sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + offset))->values[valueInds[primaryFace]] - prev);
+			neighbourPsi = ((BlockPsis*)(prevPsi + offset))->values[valueInds[primaryFace]];
 		}
+		sum += hodges[primaryFace] * (neighbourPsi - prev);
 		primaryFace++;
 	}
 
-	double normsq = prev.x * prev.x + prev.y * prev.y;
 	sum += (pot->values[dualNodeId] + g * normsq) * prev;
 
 	nextPsi->values[dualNodeId] += make_double2(sum.y, -sum.x);
@@ -526,7 +536,7 @@ int main(int argc, char** argv)
 	//std::cout << "maxf=" << state.searchFunctionMax() << std::endl;
 #endif
 
-	const int number_of_iterations = 10;
+	const int number_of_iterations = 100;
 	const ddouble iteration_period = 1.0;
 	const ddouble block_scale = PIx2 / (20.0 * sqrt(state.integrateCurvature()));
 
