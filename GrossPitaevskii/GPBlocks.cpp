@@ -146,12 +146,13 @@ void generateCode() // generates code section for different grid structures
 		for (i = 0; i < inds; i++) text << "\tpos[" << i << "] = Vector3(" << p[ind[i]].x << ", " << p[ind[i]].y << ", " << p[ind[i]].z << ");" << std::endl;
 		text << "}" << std::endl;
 		if (constantFaceCount)
-			text << "ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz) // nx, ny, nz in bytes" << std::endl;
+			text << "ddouble getLaplacian(Buffer<int3> &blockDirs, Buffer<int> &valueInds, Buffer<ddouble> &hodges)" << std::endl;
 		else
-			text << "ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz, Buffer<int2> &indicesAndFaceCounts) // nx, ny, nz in bytes" << std::endl;
+			text << "ddouble getLaplacian(Buffer<int3> &blockDirs, Buffer<int> &valueInds, Buffer<ddouble> &hodges, Buffer<int2> &indicesAndFaceCounts)" << std::endl;
 		text << "{" << std::endl;
-		text << "\tind.resize(INDICES_PER_BLOCK);" << std::endl;
+		text << "\tblockDirs.resize(INDICES_PER_BLOCK);" << std::endl;
 		fsize = 0;
+		std::vector<uint32_t> valueInds;
 		for (i = 0; i < inds; i++)
 		{
 			ddouble bodyHodge = mesh.getBodyHodge(ind[i]);
@@ -164,12 +165,37 @@ void generateCode() // generates code section for different grid structures
 				const uint other = (b[0] == ind[i] ? b[1] : b[0]);
 				Vector3 pp = p[other];
 				Text link;
-				if (pp.x < 0.0) { pp.x += dim.x; link << "-nx"; }
-				else if (pp.x >= dim.x) { pp.x -= dim.x; link << "nx"; }
-				if (pp.y < 0.0) { pp.y += dim.y; link << (link.str().empty() ? "-ny" : " - ny"); }
-				else if (pp.y >= dim.y) { pp.y -= dim.y; link << (link.str().empty() ? "ny" : " + ny"); }
-				if (pp.z < 0.0) { pp.z += dim.z; link << (link.str().empty() ? "-nz" : " - nz"); }
-				else if (pp.z >= dim.z) { pp.z -= dim.z; link << (link.str().empty() ? "nz" : " + nz"); }
+				int x = 0, y = 0, z = 0;
+				if (pp.x < 0.0)
+				{
+					pp.x += dim.x; link << "-nx";
+					x = -1;
+				}
+				else if (pp.x >= dim.x)
+				{
+					pp.x -= dim.x; link << "nx";
+					x = 1;
+				}
+				if (pp.y < 0.0)
+				{
+					pp.y += dim.y; link << (link.str().empty() ? "-ny" : " - ny");
+					y = -1;
+				}
+				else if (pp.y >= dim.y)
+				{
+					pp.y -= dim.y; link << (link.str().empty() ? "ny" : " + ny");
+					y = 1;
+				}
+				if (pp.z < 0.0)
+				{
+					pp.z += dim.z; link << (link.str().empty() ? "-nz" : " - nz");
+					z = -1;
+				}
+				else if (pp.z >= dim.z)
+				{
+					pp.z -= dim.z; link << (link.str().empty() ? "nz" : " + nz");
+					z = 1;
+				}
 				for (k = 0; k < inds; k++)
 				{
 					if ((p[ind[k]] - pp).lensq() < 1e-13) break;
@@ -180,11 +206,17 @@ void generateCode() // generates code section for different grid structures
 					return;
 				}
 				if (link.str().empty()) link << "0";
-				text << "\tind[" << fsize << "] = make_int2(" << link.str() << ", " << k << ");" << std::endl;
+				text << "\tblockDirs[" << fsize << "] = make_int3(" << std::to_string(x) << ", " << std::to_string(y) << ", " << std::to_string(z) << ");" << std::endl;
 				ddouble hodge = bodyHodge / mesh.getFaceHodge(f[j]);
 				factor = max(factor, hodge);
 				hodgesText << "\thodges[" << fsize++ << "] = " << hodge << ";" << std::endl;
+				valueInds.push_back(k);
 			}
+		}
+		text << std::endl << "\tvalueInds.resize(INDICES_PER_BLOCK);" << std::endl;
+		for (size_t i = 0; i < valueInds.size(); ++i)
+		{
+			text << "\tvalueInds[" << i << "] = " << valueInds[i] << ";" << std::endl;
 		}
 		text << std::endl << "\thodges.resize(INDICES_PER_BLOCK);" << std::endl;
 		text << hodgesText.str() << std::endl;

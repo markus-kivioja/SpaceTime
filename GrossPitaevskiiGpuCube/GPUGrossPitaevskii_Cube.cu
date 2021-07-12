@@ -151,7 +151,7 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 		{
 			int neighbourIdx = neighbourZ * THREAD_BLOCK_Y * THREAD_BLOCK_X + neighbourY * THREAD_BLOCK_X + neighbourX;
 			double2 prevPsis = ldsPrevPsis[neighbourIdx];
-			sum += hodges[i] * (prevPsis - ldsPrevPsis[threadIdxInBlock]);
+			sum += hodges[i] * (prevPsis - prev);
 		}
 		else
 		{
