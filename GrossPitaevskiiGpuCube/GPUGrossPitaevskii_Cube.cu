@@ -24,16 +24,6 @@ ddouble G = 300;
 #define THREAD_BLOCK_Y 8
 #define THREAD_BLOCK_Z 8
 
-#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
-inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
-{
-	if (code != cudaSuccess)
-	{
-		fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-		if (abort) exit(code);
-	}
-}
-
 ddouble potentialRZ(const ddouble r, const ddouble z)
 {
 	return 0.5 * (r * r + RATIO * RATIO * z * z);
@@ -116,54 +106,56 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 
 	// Exit leftover threads
-	if (xid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	if (xid >= dimensions.x || yid >= dimensions.y || dataZid >= dimensions.z)
 	{
 		return;
 	}
 
-	__shared__ double2 ldsPrevPsis[THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X];
-	size_t threadIdxInBlock = threadIdx.z * THREAD_BLOCK_Y * THREAD_BLOCK_X + threadIdx.y * THREAD_BLOCK_X + threadIdx.x;
+	__shared__ BlockPsis ldsPrevPsis[THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X];
+	size_t threadIdxInBlock = threadIdx.z / VALUES_IN_BLOCK * THREAD_BLOCK_Y * THREAD_BLOCK_X + threadIdx.y * THREAD_BLOCK_X + threadIdx.x;
 
 	// Calculate the pointers for this block
-	char* prevPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
-	//size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
-	double2 prev = ((BlockPsis*)prevPsi)->values[0];
-	ldsPrevPsis[threadIdxInBlock] = prev;
+	char* prevPsi = prevStep.ptr + prevStep.slicePitch * dataZid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
+	BlockPots* pot = (BlockPots*)(potentials.ptr + potentials.slicePitch * dataZid + potentials.pitch * yid) + xid;
+	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * dataZid + nextStep.pitch * yid) + xid;
 
-	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + xid;
-	BlockPots* pot = (BlockPots*)(potentials.ptr + potentials.slicePitch * zid + potentials.pitch * yid) + xid;
+	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+	double2 prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
+	ldsPrevPsis[threadIdxInBlock].values[dualNodeId] = prev;
 
 	// Update psi
-	//uint primaryFace = dualNodeId * FACE_COUNT;
+	uint primaryFace = dualNodeId * FACE_COUNT;
 	double2 sum = make_double2(0, 0);
 	__syncthreads();
 #pragma unroll
 	for (int i = 0; i < FACE_COUNT; ++i)
 	{
-		int neighbourX = threadIdx.x + blockDirs[i].x;
-		int neighbourY = threadIdx.y + blockDirs[i].y * THREAD_BLOCK_X;
-		int neighbourZ = threadIdx.z + blockDirs[i].z * THREAD_BLOCK_X * THREAD_BLOCK_Y;
+		int neighbourX = threadIdx.x + blockDirs[primaryFace].x;
+		int neighbourY = threadIdx.y + blockDirs[primaryFace].y * THREAD_BLOCK_X;
+		int neighbourZ = threadIdx.z + blockDirs[primaryFace].z * THREAD_BLOCK_X * THREAD_BLOCK_Y;
 		if ((0 <= neighbourX) && (neighbourX < THREAD_BLOCK_X) &&
 			(0 <= neighbourY) && (neighbourY < THREAD_BLOCK_Y) &&
 			(0 <= neighbourZ) && (neighbourZ < THREAD_BLOCK_Z))
 		{
 			int neighbourIdx = neighbourZ * THREAD_BLOCK_Y * THREAD_BLOCK_X + neighbourY * THREAD_BLOCK_X + neighbourX;
-			double2 prevPsis = ldsPrevPsis[neighbourIdx];
-			sum += hodges[i] * (prevPsis - prev);
+			double2 prevPsis = ldsPrevPsis[neighbourIdx].values[valueInds[primaryFace]];
+			sum += hodges[primaryFace] * (prevPsis - prev);
 		}
 		else
 		{
-			int offset = blockDirs[i].z * prevStep.slicePitch + blockDirs[i].y * prevStep.pitch + blockDirs[i].x * sizeof(BlockPsis);
-			sum += hodges[i] * (((BlockPsis*)(prevPsi + offset))->values[0] - prev);
+			int offset = blockDirs[primaryFace].z * prevStep.slicePitch + blockDirs[primaryFace].y * prevStep.pitch + blockDirs[primaryFace].x * sizeof(BlockPsis);
+			sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + offset))->values[valueInds[primaryFace]] - prev);
 		}
+		primaryFace++;
 	}
 
 	double normsq = prev.x * prev.x + prev.y * prev.y;
-	sum += (pot->values[0] + g * normsq) * prev;
+	sum += (pot->values[dualNodeId] + g * normsq) * prev;
 
-	nextPsi->values[0] += make_double2(sum.y, -sum.x);
+	nextPsi->values[dualNodeId] += make_double2(sum.y, -sum.x);
 };
 
 uint integrateInTime(const VortexState& state, const ddouble block_scale, const Vector3& minp, const Vector3& maxp, const ddouble iteration_period, const uint number_of_iterations)
@@ -191,7 +183,8 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	const uint vsize = ii0 + (IS_3D ? zsize + 1 : zsize) * bxysize; // total number of values
 
 	std::cout << "bsize: " << bsize << ", xsize: " << xsize << ", yszie: " << ysize << ", zsize: " << zsize << std::endl;
-	std::cout << "bodies = " << xsize * ysize * zsize * bsize << std::endl;
+	uint64_t bodies = xsize * ysize * zsize * bsize;
+	std::cout << "bodies = " << bodies << std::endl;
 
 	// initialize stationary state
 	Buffer<Complex> Psi0(vsize, Complex(0, 0)); // initial discrete wave function
@@ -254,7 +247,6 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 
 	std::cout << "steps_per_iteration = " << steps_per_iteration << std::endl;
 
-	uint64_t bodies = xsize * ysize * zsize * bsize;
 	std::cout << "ALU operations per unit time = " << bodies * steps_per_iteration * FACE_COUNT << std::endl;
 
 	// multiply terms with time_step_size
@@ -287,7 +279,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 
 	// initialize discrete field
 	const Complex oddPhase = state.getPhase(-0.5 * time_step_size);
-	Random rnd(54363);
+	//Random rnd(54363);
 	for (k = 0; k < zsize; k++)
 	{
 		for (j = 0; j < ysize; j++)
@@ -298,9 +290,9 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 				{
 					const uint srcI = ii0 + k * bxysize + j * bxsize + i * bsize + l;
 					const uint dstI = (k + 1) * dxsize * dysize + (j + 1) * dxsize + (i + 1);
-					const Vector2 c = 0.01 * rnd.getUniformCircle();
-					const Complex noise(c.x + 1.0, c.y);
-					const Complex noisedPsi = Psi0[srcI] * noise;
+					//const Vector2 c = 0.01 * rnd.getUniformCircle();
+					//const Complex noise(c.x + 1.0, c.y);
+					//const Complex noisedPsi = Psi0[srcI] * noise;
 					//double2 even = make_double2(noisedPsi.r, noisedPsi.i);
 					double2 even = make_double2(Psi0[srcI].r, Psi0[srcI].i); // No noice
 					h_evenPsi[dstI].values[l] = even;
@@ -375,7 +367,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	// Integrate in time
 	uint3 dimensions = make_uint3(xsize, ysize, zsize);
 	uint iter = 0;
-	dim3 dimBlock(THREAD_BLOCK_X, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
+	dim3 dimBlock(THREAD_BLOCK_X, THREAD_BLOCK_Y, THREAD_BLOCK_Z * VALUES_IN_BLOCK);
 	dim3 dimGrid((xsize + THREAD_BLOCK_X - 1) / THREAD_BLOCK_X,
 		(ysize + THREAD_BLOCK_Y - 1) / THREAD_BLOCK_Y,
 		((zsize + THREAD_BLOCK_Z - 1) / THREAD_BLOCK_Z));
@@ -404,7 +396,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 			{
 				const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
 				double norm = sqrt(h_evenPsi[idx].values[0].x * h_evenPsi[idx].values[0].x + h_evenPsi[idx].values[0].y * h_evenPsi[idx].values[0].y);
-		
+
 				pic.setColor(i, j, INTENSITY * Vector4(h_evenPsi[idx].values[0].x, norm, h_evenPsi[idx].values[0].y, 1.0));
 			}
 		}
@@ -433,7 +425,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 				}
 			}
 		}
-		ddouble errorAbs = normsq - error.norm();
+		ddouble errorAbs = abs(normsq - error.norm());
 		std::cout << "normsq=" << normsq << " error=" << errorAbs << std::endl;
 		errorText << errorAbs << " ";
 #endif
@@ -477,8 +469,6 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 			// update even values
 			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_pot, d_blockDirs, d_valueInds, d_hodges, g, dimensions);
 		}
-		gpuErrchk(cudaPeekAtLastError());
-		gpuErrchk(cudaDeviceSynchronize());
 #if SAVE_PICTURE || SAVE_VOLUME
 		// Copy back from device memory to host memory
 		checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
@@ -512,8 +502,8 @@ int main(int argc, char** argv)
 	VortexState state0;
 	state0.setKappa(KAPPA);
 	state0.setG(G);
-	//if(IS_3D) state0.setRange(0.0, 15.0, 35.0, 0.2, 0.2); // use this for 3d
-	if (IS_3D) state0.setRange(0.0, 15.0, 10.0, 0.2, 0.2); // use this for 3d
+	if (IS_3D) state0.setRange(0.0, 15.0, 35.0, 0.2, 0.2); // use this for 3d
+	//if (IS_3D) state0.setRange(0.0, 15.0, 10.0, 0.2, 0.2); // use this for 3d
 	else state0.setRange(0.0, 15.0, 1.0, 0.2, 1.0); // use this for 2d
 	state0.iterateSolution(potentialRZ, 10000, 1e-29);
 	const ddouble eps = 1e-5 * state0.searchFunctionMax();
@@ -537,7 +527,7 @@ int main(int argc, char** argv)
 #endif
 
 	const int number_of_iterations = 10;
-	const ddouble iteration_period = 1;
+	const ddouble iteration_period = 1.0;
 	const ddouble block_scale = PIx2 / (20.0 * sqrt(state.integrateCurvature()));
 
 	std::cout << "1 GPU version" << std::endl;

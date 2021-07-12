@@ -16,7 +16,7 @@ ddouble RATIO = 1.0;
 ddouble KAPPA = 10;
 ddouble G = 300;
 
-#define LOAD_STATE_FROM_DISK 0
+#define LOAD_STATE_FROM_DISK 1
 #define SAVE_PICTURE 1
 #define SAVE_VOLUME 0
 
@@ -101,21 +101,11 @@ inline __host__ __device__ double2 operator*(double b, double2 a)
 	return make_double2(b * a.x, b * a.y);
 }
 
-__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr potentials, int2* lapInd, double* hodges, double g, uint3 dimensions)
+__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr potentials, int3* blockDirs, int* valueInds, double* hodges, double g, uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
-
-	// Load Laplacian indices into LDS // TODO: Load prevStep also into LDS?
-	//__shared__ int2 ldsLapInd[INDICES_PER_BLOCK];
-	//size_t threadIdxInBlock = blockDim.x * blockDim.y * threadIdx.z + blockDim.x * threadIdx.y + threadIdx.x;
-	//if (threadIdxInBlock < INDICES_PER_BLOCK)
-	//{
-	//	ldsLapInd[threadIdxInBlock] = lapInd[threadIdxInBlock];
-	//}
-	//__syncthreads();
-
 	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 
 	// Exit leftover threads
@@ -124,21 +114,43 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 		return;
 	}
 
+	__shared__ BlockPsis ldsPrevPsis[THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X];
+	size_t threadIdxInBlock = threadIdx.z / VALUES_IN_BLOCK * THREAD_BLOCK_Y * THREAD_BLOCK_X + threadIdx.y * THREAD_BLOCK_X + threadIdx.x;
+
 	// Calculate the pointers for this block
 	char* prevPsi = prevStep.ptr + prevStep.slicePitch * dataZid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
-	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * dataZid + nextStep.pitch * yid) + xid;
 	BlockPots* pot = (BlockPots*)(potentials.ptr + potentials.slicePitch * dataZid + potentials.pitch * yid) + xid;
+	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * dataZid + nextStep.pitch * yid) + xid;
 
-	// Update psi
 	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 	double2 prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
+	ldsPrevPsis[threadIdxInBlock].values[dualNodeId] = prev;
 
+	// Update psi
 	uint primaryFace = dualNodeId * FACE_COUNT;
 	double2 sum = make_double2(0, 0);
+	__syncthreads();
 #pragma unroll
 	for (int i = 0; i < FACE_COUNT; ++i)
-		//sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + ldsLapInd[primaryFace].x))->values[ldsLapInd[primaryFace++].y] - prev);
-		sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + lapInd[primaryFace].x))->values[lapInd[primaryFace++].y] - prev);
+	{
+		int neighbourX = threadIdx.x + blockDirs[primaryFace].x;
+		int neighbourY = threadIdx.y + blockDirs[primaryFace].y * THREAD_BLOCK_X;
+		int neighbourZ = threadIdx.z + blockDirs[primaryFace].z * THREAD_BLOCK_X * THREAD_BLOCK_Y;
+		if ((0 <= neighbourX) && (neighbourX < THREAD_BLOCK_X) &&
+			(0 <= neighbourY) && (neighbourY < THREAD_BLOCK_Y) &&
+			(0 <= neighbourZ) && (neighbourZ < THREAD_BLOCK_Z))
+		{
+			int neighbourIdx = neighbourZ * THREAD_BLOCK_Y * THREAD_BLOCK_X + neighbourY * THREAD_BLOCK_X + neighbourX;
+			double2 prevPsis = ldsPrevPsis[neighbourIdx].values[valueInds[primaryFace]];
+			sum += hodges[primaryFace] * (prevPsis - prev);
+		}
+		else
+		{
+			int offset = blockDirs[primaryFace].z * prevStep.slicePitch + blockDirs[primaryFace].y * prevStep.pitch + blockDirs[primaryFace].x * sizeof(BlockPsis);
+			sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + offset))->values[valueInds[primaryFace]] - prev);
+		}
+		primaryFace++;
+	}
 
 	double normsq = prev.x * prev.x + prev.y * prev.y;
 	sum += (pot->values[dualNodeId] + g * normsq) * prev;
@@ -220,19 +232,21 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	PitchedPtr d_pot = { (char*)d_cudaPot.ptr + potOffset, d_cudaPot.pitch, d_cudaPot.pitch * dysize };
 
 	// find terms for laplacian
-	Buffer<int2> lapind;
+	Buffer<int3> blockDirs;
+	Buffer<int> valueInds;
 	Buffer<ddouble> hodges;
-	ddouble lapfac = -0.5 * getLaplacian(lapind, hodges, sizeof(BlockPsis), d_evenPsi.pitch, d_evenPsi.slicePitch) / (block_scale * block_scale);
-	const uint lapsize = lapind.size() / bsize;
+	ddouble lapfac = -0.5 * getLaplacian(blockDirs, valueInds, hodges) / (block_scale * block_scale);
+	const uint lapsize = blockDirs.size() / bsize;
 	ddouble lapfac0 = lapsize * (-lapfac);
 
 	//std::cout << "lapsize = " << lapsize << ", lapfac = " << lapfac << ", lapfac0 = " << lapfac0 << std::endl;
 
 	// compute time step size
-	const uint steps_per_iteration = 600; // uint(iteration_period * (maxpot + lapfac0)) + 1; // number of time steps per iteration period
+	const uint steps_per_iteration = uint(iteration_period * (maxpot + lapfac0)) + 1; // number of time steps per iteration period
 	const ddouble time_step_size = iteration_period / ddouble(steps_per_iteration); // time step in time units
 
 	std::cout << "steps_per_iteration = " << steps_per_iteration << std::endl;
+
 	std::cout << "ALU operations per unit time = " << bodies * steps_per_iteration * FACE_COUNT << std::endl;
 
 	// multiply terms with time_step_size
@@ -242,8 +256,11 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	for (i = 0; i < vsize; i++) pot[i] *= time_step_size;
 	for (int i = 0; i < hodges.size(); ++i) hodges[i] = -0.5 * hodges[i] / (block_scale * block_scale) * time_step_size;
 
-	int2* d_lapind;
-	checkCudaErrors(cudaMalloc(&d_lapind, lapind.size() * sizeof(int2)));
+	int3* d_blockDirs;
+	checkCudaErrors(cudaMalloc(&d_blockDirs, blockDirs.size() * sizeof(int3)));
+
+	int* d_valueInds;
+	checkCudaErrors(cudaMalloc(&d_valueInds, valueInds.size() * sizeof(int)));
 
 	ddouble* d_hodges;
 	checkCudaErrors(cudaMalloc(&d_hodges, hodges.size() * sizeof(ddouble)));
@@ -329,7 +346,8 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	checkCudaErrors(cudaMemcpy3D(&evenPsiParams));
 	checkCudaErrors(cudaMemcpy3D(&oddPsiParams));
 	checkCudaErrors(cudaMemcpy3D(&potParams));
-	checkCudaErrors(cudaMemcpy(d_lapind, &lapind[0], lapind.size() * sizeof(int2), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpy(d_blockDirs, &blockDirs[0], blockDirs.size() * sizeof(int3), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpy(d_valueInds, &valueInds[0], valueInds.size() * sizeof(int), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_hodges, &hodges[0], hodges.size() * sizeof(ddouble), cudaMemcpyHostToDevice));
 
 	// Clear host memory after data has been copied to devices
@@ -337,7 +355,8 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	//Psi0.clear();
 	pot.clear();
 	bpos.clear();
-	lapind.clear();
+	blockDirs.clear();
+	valueInds.clear();
 	hodges.clear();
 	cudaFreeHost(h_oddPsi);
 	cudaFreeHost(h_pot);
@@ -348,10 +367,10 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	// Integrate in time
 	uint3 dimensions = make_uint3(xsize, ysize, zsize);
 	uint iter = 0;
-	dim3 dimBlock(THREAD_BLOCK_X, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
+	dim3 dimBlock(THREAD_BLOCK_X, THREAD_BLOCK_Y, THREAD_BLOCK_Z * VALUES_IN_BLOCK);
 	dim3 dimGrid((xsize + THREAD_BLOCK_X - 1) / THREAD_BLOCK_X,
 		(ysize + THREAD_BLOCK_Y - 1) / THREAD_BLOCK_Y,
-		((zsize + THREAD_BLOCK_Z - 1) / THREAD_BLOCK_Z) * VALUES_IN_BLOCK);
+		((zsize + THREAD_BLOCK_Z - 1) / THREAD_BLOCK_Z));
 #if SAVE_PICTURE || SAVE_VOLUME
 	cudaMemcpy3DParms evenPsiBackParams = { 0 };
 	evenPsiBackParams.srcPtr = d_cudaEvenPsi;
@@ -446,9 +465,9 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 		for (uint step = 0; step < steps_per_iteration; step++)
 		{
 			// update odd values
-			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_pot, d_lapind, d_hodges, g, dimensions);
+			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_pot, d_blockDirs, d_valueInds, d_hodges, g, dimensions);
 			// update even values
-			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_pot, d_lapind, d_hodges, g, dimensions);
+			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_pot, d_blockDirs, d_valueInds, d_hodges, g, dimensions);
 		}
 #if SAVE_PICTURE || SAVE_VOLUME
 		// Copy back from device memory to host memory
@@ -507,7 +526,7 @@ int main(int argc, char** argv)
 	//std::cout << "maxf=" << state.searchFunctionMax() << std::endl;
 #endif
 
-	const int number_of_iterations = 100;
+	const int number_of_iterations = 10;
 	const ddouble iteration_period = 1.0;
 	const ddouble block_scale = PIx2 / (20.0 * sqrt(state.integrateCurvature()));
 
