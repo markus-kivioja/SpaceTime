@@ -21,8 +21,10 @@ ddouble G = 300;
 #define SAVE_VOLUME 0
 
 #define THREAD_BLOCK_X 8
-#define THREAD_BLOCK_Y 8
+#define THREAD_BLOCK_Y 4
 #define THREAD_BLOCK_Z 1
+
+#define WARP_SIZE 32
 
 ddouble potentialRZ(const ddouble r, const ddouble z)
 {
@@ -70,6 +72,12 @@ struct BlockPsis
 	double2 values[VALUES_IN_BLOCK];
 };
 
+struct LdsBlockPsis
+{
+	double2 values[VALUES_IN_BLOCK];
+	double padding;
+};
+
 struct BlockPots
 {
 	double values[VALUES_IN_BLOCK];
@@ -114,7 +122,7 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 		return;
 	}
 
-	__shared__ BlockPsis ldsPrevPsis[THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X];
+	__shared__ LdsBlockPsis ldsPrevPsis[THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X];
 	size_t threadIdxInBlock = threadIdx.z / VALUES_IN_BLOCK * THREAD_BLOCK_Y * THREAD_BLOCK_X + threadIdx.y * THREAD_BLOCK_X + threadIdx.x;
 
 	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
@@ -132,14 +140,52 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 		return;
 	}
 
-	// Update psi
-	uint primaryFace = dualNodeId * FACE_COUNT;
+	uint idxInWarp = threadIdxInBlock % WARP_SIZE;
+
+	uint primaryFaceStart = dualNodeId * FACE_COUNT;
 	double2 sum = make_double2(0, 0);
+
+	uint perms[32][FACE_COUNT] = {
+		{0, 1, 2, 3}, // 1
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{0, 1, 2, 3}, // 2
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{0, 1, 2, 3}, // 3
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{0, 1, 2, 3}, // 4
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{3, 2, 1, 0}, // 5
+		{3, 2, 1, 0},
+		{3, 2, 1, 0},
+		{3, 2, 1, 0},
+		{3, 2, 1, 0}, // 6
+		{3, 2, 1, 0},
+		{3, 2, 1, 0},
+		{3, 2, 1, 0},
+		{3, 2, 1, 0}, // 7
+		{3, 2, 1, 0},
+		{3, 2, 1, 0},
+		{3, 2, 1, 0},
+		{3, 2, 1, 0}, // 8
+		{3, 2, 1, 0},
+		{3, 2, 1, 0},
+		{3, 2, 1, 0}
+	};
 
 	__syncthreads();
 #pragma unroll
 	for (int i = 0; i < FACE_COUNT; ++i)
 	{
+		uint primaryFace = primaryFaceStart + perms[idxInWarp][i];
+
 		int neighbourX = threadIdx.x + blockDirs[primaryFace].x;
 		int neighbourY = threadIdx.y + blockDirs[primaryFace].y;
 		int neighbourZ = threadIdx.z / VALUES_IN_BLOCK + blockDirs[primaryFace].z;
@@ -160,7 +206,6 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 			neighbourPsi = ((BlockPsis*)(prevPsi + offset))->values[valueInds[primaryFace]];
 		}
 		sum += hodges[primaryFace] * (neighbourPsi - prev);
-		primaryFace++;
 	}
 
 	sum += (pot->values[dualNodeId] + g * normsq) * prev;
