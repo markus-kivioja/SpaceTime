@@ -109,6 +109,41 @@ inline __host__ __device__ double2 operator*(double b, double2 a)
 	return make_double2(b * a.x, b * a.y);
 }
 
+__device__ const uint perms[32][FACE_COUNT] = {
+		{0, 1, 2, 3}, // 1
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{0, 1, 2, 3}, // 2
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{0, 1, 2, 3}, // 3
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{0, 1, 2, 3}, // 4
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{0, 1, 2, 3},
+		{3, 2, 1, 0}, // 5
+		{3, 2, 1, 0},
+		{3, 2, 1, 0},
+		{3, 2, 1, 0},
+		{3, 2, 1, 0}, // 6
+		{3, 2, 1, 0},
+		{3, 2, 1, 0},
+		{3, 2, 1, 0},
+		{3, 2, 1, 0}, // 7
+		{3, 2, 1, 0},
+		{3, 2, 1, 0},
+		{3, 2, 1, 0},
+		{3, 2, 1, 0}, // 8
+		{3, 2, 1, 0},
+		{3, 2, 1, 0},
+		{3, 2, 1, 0}
+};
+
 __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr potentials, int3* blockDirs, int* valueInds, double* hodges, double g, uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -144,41 +179,6 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 
 	uint primaryFaceStart = dualNodeId * FACE_COUNT;
 	double2 sum = make_double2(0, 0);
-
-	uint perms[32][FACE_COUNT] = {
-		{0, 1, 2, 3}, // 1
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{0, 1, 2, 3}, // 2
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{0, 1, 2, 3}, // 3
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{0, 1, 2, 3}, // 4
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{3, 2, 1, 0}, // 5
-		{3, 2, 1, 0},
-		{3, 2, 1, 0},
-		{3, 2, 1, 0},
-		{3, 2, 1, 0}, // 6
-		{3, 2, 1, 0},
-		{3, 2, 1, 0},
-		{3, 2, 1, 0},
-		{3, 2, 1, 0}, // 7
-		{3, 2, 1, 0},
-		{3, 2, 1, 0},
-		{3, 2, 1, 0},
-		{3, 2, 1, 0}, // 8
-		{3, 2, 1, 0},
-		{3, 2, 1, 0},
-		{3, 2, 1, 0}
-	};
 
 	__syncthreads();
 #pragma unroll
