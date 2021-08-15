@@ -24,100 +24,124 @@ void getPositions(Buffer<Vector3> &pos)
 ddouble getLaplacian(Buffer<int3> &blockDirs, Buffer<int> &valueInds, Buffer<ddouble> &hodges)
 {
 	blockDirs.resize(INDICES_PER_BLOCK);
+	// Dual node idx:  0
 	blockDirs[0] = make_int3(0, 0, 0);
 	blockDirs[1] = make_int3(0, 0, 0);
 	blockDirs[2] = make_int3(-1, 0, 1);
 	blockDirs[3] = make_int3(-1, 0, 0);
+	// Dual node idx:  1
 	blockDirs[4] = make_int3(0, 0, 0);
 	blockDirs[5] = make_int3(0, 0, 0);
 	blockDirs[6] = make_int3(1, -1, 0);
 	blockDirs[7] = make_int3(0, -1, 0);
+	// Dual node idx:  2
 	blockDirs[8] = make_int3(0, 0, 0);
 	blockDirs[9] = make_int3(0, 0, 0);
 	blockDirs[10] = make_int3(1, 0, -1);
 	blockDirs[11] = make_int3(0, 0, -1);
+	// Dual node idx:  3
 	blockDirs[12] = make_int3(0, 0, 0);
 	blockDirs[13] = make_int3(0, 0, 0);
 	blockDirs[14] = make_int3(1, 0, 0);
 	blockDirs[15] = make_int3(0, 0, 0);
+	// Dual node idx:  4
 	blockDirs[16] = make_int3(0, 0, 0);
 	blockDirs[17] = make_int3(0, 0, 0);
 	blockDirs[18] = make_int3(1, 0, 0);
 	blockDirs[19] = make_int3(0, 0, 0);
+	// Dual node idx:  5
 	blockDirs[20] = make_int3(0, 0, 0);
 	blockDirs[21] = make_int3(0, 0, 0);
 	blockDirs[22] = make_int3(-1, 1, 0);
 	blockDirs[23] = make_int3(-1, 0, 0);
+	// Dual node idx:  6
 	blockDirs[24] = make_int3(0, 0, 0);
 	blockDirs[25] = make_int3(0, 0, 0);
 	blockDirs[26] = make_int3(0, 1, -1);
 	blockDirs[27] = make_int3(0, 0, -1);
+	// Dual node idx:  7
 	blockDirs[28] = make_int3(0, 0, 0);
 	blockDirs[29] = make_int3(0, 0, 0);
 	blockDirs[30] = make_int3(0, 1, 0);
 	blockDirs[31] = make_int3(0, 0, 0);
+	// Dual node idx:  8
 	blockDirs[32] = make_int3(0, 0, 0);
 	blockDirs[33] = make_int3(0, 0, 0);
 	blockDirs[34] = make_int3(0, 1, 0);
 	blockDirs[35] = make_int3(0, 0, 0);
+	// Dual node idx:  9
 	blockDirs[36] = make_int3(0, 0, 0);
 	blockDirs[37] = make_int3(0, 0, 0);
 	blockDirs[38] = make_int3(0, -1, 1);
 	blockDirs[39] = make_int3(0, -1, 0);
+	// Dual node idx:  10
 	blockDirs[40] = make_int3(0, 0, 0);
 	blockDirs[41] = make_int3(0, 0, 0);
 	blockDirs[42] = make_int3(0, 0, 1);
 	blockDirs[43] = make_int3(0, 0, 0);
+	// Dual node idx:  11
 	blockDirs[44] = make_int3(0, 0, 0);
 	blockDirs[45] = make_int3(0, 0, 0);
 	blockDirs[46] = make_int3(0, 0, 1);
 	blockDirs[47] = make_int3(0, 0, 0);
 
 	valueInds.resize(INDICES_PER_BLOCK);
+	// Dual node idx:  0
 	valueInds[0] = 9;
 	valueInds[1] = 10;
 	valueInds[2] = 2;
 	valueInds[3] = 3;
+	// Dual node idx:  1
 	valueInds[4] = 2;
 	valueInds[5] = 3;
 	valueInds[6] = 5;
 	valueInds[7] = 8;
+	// Dual node idx:  2
 	valueInds[8] = 1;
 	valueInds[9] = 4;
 	valueInds[10] = 0;
 	valueInds[11] = 11;
+	// Dual node idx:  3
 	valueInds[12] = 1;
 	valueInds[13] = 4;
 	valueInds[14] = 0;
 	valueInds[15] = 11;
+	// Dual node idx:  4
 	valueInds[16] = 2;
 	valueInds[17] = 3;
 	valueInds[18] = 5;
 	valueInds[19] = 8;
+	// Dual node idx:  5
 	valueInds[20] = 6;
 	valueInds[21] = 7;
 	valueInds[22] = 1;
 	valueInds[23] = 4;
+	// Dual node idx:  6
 	valueInds[24] = 5;
 	valueInds[25] = 8;
 	valueInds[26] = 9;
 	valueInds[27] = 10;
+	// Dual node idx:  7
 	valueInds[28] = 5;
 	valueInds[29] = 8;
 	valueInds[30] = 9;
 	valueInds[31] = 10;
+	// Dual node idx:  8
 	valueInds[32] = 6;
 	valueInds[33] = 7;
 	valueInds[34] = 1;
 	valueInds[35] = 4;
+	// Dual node idx:  9
 	valueInds[36] = 0;
 	valueInds[37] = 11;
 	valueInds[38] = 6;
 	valueInds[39] = 7;
+	// Dual node idx:  10
 	valueInds[40] = 0;
 	valueInds[41] = 11;
 	valueInds[42] = 6;
 	valueInds[43] = 7;
+	// Dual node idx:  11
 	valueInds[44] = 9;
 	valueInds[45] = 10;
 	valueInds[46] = 2;

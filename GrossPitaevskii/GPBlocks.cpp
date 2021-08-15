@@ -132,7 +132,8 @@ void generateCode() // generates code section for different grid structures
 		text.precision(17);
 		hodgesText.precision(17);
 		bool constantFaceCount = totalFaceCount == (f0.size() * inds);
-		text << "#define FACE_COUNT " << totalFaceCount / inds << std::endl;
+		uint faceCount = totalFaceCount / inds;
+		text << "#define FACE_COUNT " << faceCount << std::endl;
 		text << "#define DUAL_EDGE_LENGTH " << dualEdgeLength << std::endl;
 		text << "#define VALUES_IN_BLOCK " << inds << std::endl;
 		text << "#define INDICES_PER_BLOCK " << totalFaceCount << std::endl;
@@ -206,6 +207,8 @@ void generateCode() // generates code section for different grid structures
 					return;
 				}
 				if (link.str().empty()) link << "0";
+				if (j == 0)
+					text << "\t// Dual node idx:  " << i << std::endl;
 				text << "\tblockDirs[" << fsize << "] = make_int3(" << std::to_string(x) << ", " << std::to_string(y) << ", " << std::to_string(z) << ");" << std::endl;
 				ddouble hodge = bodyHodge / mesh.getFaceHodge(f[j]);
 				factor = max(factor, hodge);
@@ -216,6 +219,8 @@ void generateCode() // generates code section for different grid structures
 		text << std::endl << "\tvalueInds.resize(INDICES_PER_BLOCK);" << std::endl;
 		for (size_t i = 0; i < valueInds.size(); ++i)
 		{
+			if (i % faceCount == 0)
+				text << "\t// Dual node idx:  " << i / faceCount << std::endl;
 			text << "\tvalueInds[" << i << "] = " << valueInds[i] << ";" << std::endl;
 		}
 		text << std::endl << "\thodges.resize(INDICES_PER_BLOCK);" << std::endl;

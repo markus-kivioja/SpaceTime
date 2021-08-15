@@ -13,6 +13,7 @@ void getPositions(Buffer<Vector3> &pos)
 ddouble getLaplacian(Buffer<int3> &blockDirs, Buffer<int> &valueInds, Buffer<ddouble> &hodges)
 {
 	blockDirs.resize(INDICES_PER_BLOCK);
+	// Dual node idx:  0
 	blockDirs[0] = make_int3(0, 0, -1);
 	blockDirs[1] = make_int3(-1, 0, 0);
 	blockDirs[2] = make_int3(0, -1, 0);
@@ -21,6 +22,7 @@ ddouble getLaplacian(Buffer<int3> &blockDirs, Buffer<int> &valueInds, Buffer<ddo
 	blockDirs[5] = make_int3(0, 0, 1);
 
 	valueInds.resize(INDICES_PER_BLOCK);
+	// Dual node idx:  0
 	valueInds[0] = 0;
 	valueInds[1] = 0;
 	valueInds[2] = 0;

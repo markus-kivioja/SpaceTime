@@ -20,9 +20,9 @@ ddouble G = 300;
 #define SAVE_PICTURE 1
 #define SAVE_VOLUME 0
 
-#define THREAD_BLOCK_X 8
-#define THREAD_BLOCK_Y 4
-#define THREAD_BLOCK_Z 1
+#define THREAD_BLOCK_X 1
+#define THREAD_BLOCK_Y 8
+#define THREAD_BLOCK_Z 4
 
 #define WARP_SIZE 32
 
@@ -75,7 +75,6 @@ struct BlockPsis
 struct LdsBlockPsis
 {
 	double2 values[VALUES_IN_BLOCK];
-	double padding;
 };
 
 struct BlockPots
@@ -109,39 +108,19 @@ inline __host__ __device__ double2 operator*(double b, double2 a)
 	return make_double2(b * a.x, b * a.y);
 }
 
-__device__ const uint perms[32][FACE_COUNT] = {
-		{0, 1, 2, 3}, // 1
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{0, 1, 2, 3}, // 2
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{0, 1, 2, 3}, // 3
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{0, 1, 2, 3}, // 4
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{0, 1, 2, 3},
-		{3, 2, 1, 0}, // 5
-		{3, 2, 1, 0},
-		{3, 2, 1, 0},
-		{3, 2, 1, 0},
-		{3, 2, 1, 0}, // 6
-		{3, 2, 1, 0},
-		{3, 2, 1, 0},
-		{3, 2, 1, 0},
-		{3, 2, 1, 0}, // 7
-		{3, 2, 1, 0},
-		{3, 2, 1, 0},
-		{3, 2, 1, 0},
-		{3, 2, 1, 0}, // 8
-		{3, 2, 1, 0},
-		{3, 2, 1, 0},
-		{3, 2, 1, 0}
+__device__ const uint perms[VALUES_IN_BLOCK][FACE_COUNT] = {
+		{3, 2, 0, 1}, // 0
+		{2, 0, 1, 3}, // 1
+		{1, 0, 2, 3}, // 2
+		{1, 0, 2, 3}, // 3 
+		{2, 0, 1, 3}, // 4
+		{3, 1, 0, 2}, // 5
+		{0, 1, 2, 3}, // 6
+		{0, 1, 2, 3}, // 7
+		{3, 1, 0, 2}, // 8
+		{2, 3, 0, 1}, // 9
+		{2, 3, 0, 1}, // 10
+		{3, 2, 0, 1}  // 11
 };
 
 __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr potentials, int3* blockDirs, int* valueInds, double* hodges, double g, uint3 dimensions)
@@ -149,28 +128,28 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
-	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 
 	// Kill the leftover threads but leave threads for the additional zero buffer at the edges
-	if (xid > dimensions.x || yid > dimensions.y || dataZid > dimensions.z)
+	if (dataXid > dimensions.x || yid > dimensions.y || zid > dimensions.z)
 	{
 		return;
 	}
 
 	__shared__ LdsBlockPsis ldsPrevPsis[THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X];
-	size_t threadIdxInBlock = threadIdx.z / VALUES_IN_BLOCK * THREAD_BLOCK_Y * THREAD_BLOCK_X + threadIdx.y * THREAD_BLOCK_X + threadIdx.x;
+	size_t threadIdxInBlock = threadIdx.z * THREAD_BLOCK_Y * THREAD_BLOCK_X + threadIdx.y * THREAD_BLOCK_X + threadIdx.x / VALUES_IN_BLOCK;
 
-	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 
-	char* prevPsi = prevStep.ptr + prevStep.slicePitch * dataZid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
-	BlockPots* pot = (BlockPots*)(potentials.ptr + potentials.slicePitch * dataZid + potentials.pitch * yid) + xid;
-	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * dataZid + nextStep.pitch * yid) + xid;
+	char* prevPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
+	BlockPots* pot = (BlockPots*)(potentials.ptr + potentials.slicePitch * zid + potentials.pitch * yid) + dataXid;
+	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + dataXid;
 	double2 prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
 	ldsPrevPsis[threadIdxInBlock].values[dualNodeId] = prev;
 	double normsq = prev.x * prev.x + prev.y * prev.y;
 
 	// Kill also the leftover edge threads
-	if (xid == dimensions.x || yid == dimensions.y || dataZid == dimensions.z)
+	if (dataXid == dimensions.x || yid == dimensions.y || zid == dimensions.z)
 	{
 		return;
 	}
@@ -184,11 +163,11 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 #pragma unroll
 	for (int i = 0; i < FACE_COUNT; ++i)
 	{
-		uint primaryFace = primaryFaceStart + perms[idxInWarp][i];
+		uint primaryFace = primaryFaceStart + perms[dualNodeId][i];
 
-		int neighbourX = threadIdx.x + blockDirs[primaryFace].x;
+		int neighbourX = threadIdx.x / VALUES_IN_BLOCK + blockDirs[primaryFace].x;
 		int neighbourY = threadIdx.y + blockDirs[primaryFace].y;
-		int neighbourZ = threadIdx.z / VALUES_IN_BLOCK + blockDirs[primaryFace].z;
+		int neighbourZ = threadIdx.z + blockDirs[primaryFace].z;
 
 		double2 neighbourPsi;
 
@@ -422,7 +401,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	// Integrate in time
 	uint3 dimensions = make_uint3(xsize, ysize, zsize);
 	uint iter = 0;
-	dim3 dimBlock(THREAD_BLOCK_X, THREAD_BLOCK_Y, THREAD_BLOCK_Z * VALUES_IN_BLOCK);
+	dim3 dimBlock(THREAD_BLOCK_X * VALUES_IN_BLOCK, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
 	dim3 dimGrid((xsize + THREAD_BLOCK_X - 1) / THREAD_BLOCK_X,
 		(ysize + THREAD_BLOCK_Y - 1) / THREAD_BLOCK_Y,
 		((zsize + THREAD_BLOCK_Z - 1) / THREAD_BLOCK_Z));
