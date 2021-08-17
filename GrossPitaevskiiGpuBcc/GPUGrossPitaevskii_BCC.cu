@@ -21,8 +21,8 @@ ddouble G = 300;
 #define SAVE_VOLUME 0
 
 #define THREAD_BLOCK_X 1
-#define THREAD_BLOCK_Y 8
-#define THREAD_BLOCK_Z 4
+#define THREAD_BLOCK_Y 1
+#define THREAD_BLOCK_Z 16
 
 #define WARP_SIZE 32
 
