@@ -447,7 +447,9 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 #endif
 
 		// finish iteration
-		if (++iter > number_of_iterations) break;
+		//if (++iter > number_of_iterations) break;
+		++iter;
+		if (errorAbs > 0.01) break;
 
 		// integrate one iteration
 		std::cout << "Iteration " << iter << std::endl;
@@ -491,9 +493,7 @@ int main(int argc, char** argv)
 	VortexState state0;
 	state0.setKappa(KAPPA);
 	state0.setG(G);
-	//if(IS_3D) state0.setRange(0.0, 15.0, 35.0, 0.2, 0.2); // use this for 3d
-	if (IS_3D) state0.setRange(0.0, 15.0, 10.0, 0.2, 0.2); // use this for 3d
-	else state0.setRange(0.0, 15.0, 1.0, 0.2, 1.0); // use this for 2d
+	if(IS_3D) state0.setRange(0.0, 15.0, 35.0, 0.2, 0.2); // use this for 3d
 	state0.iterateSolution(potentialRZ, 10000, 1e-29);
 	const ddouble eps = 1e-5 * state0.searchFunctionMax();
 	const ddouble minr = state0.searchMinR(eps);
@@ -506,7 +506,6 @@ int main(int argc, char** argv)
 	state.setKappa(KAPPA);
 	state.setG(G);
 	if (IS_3D) state.setRange(minr, maxr, maxz, 0.03, 0.03); // use this for 3d
-	else state.setRange(minr, maxr, 1.0, 0.03, 1.0); // use this for 2d
 	state.initialize(state0);
 	state.iterateSolution(potentialRZ, 10000, 1e-29);
 	state.save("state.dat");

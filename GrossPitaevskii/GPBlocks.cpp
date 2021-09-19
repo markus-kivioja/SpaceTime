@@ -21,7 +21,7 @@ enum GridType
 	COUNT
 };
 
-constexpr double scales[] = { 1.0, 3.25, 2.27, 4.86, 4.5, 4.57 };
+constexpr double scales[] = { 1.00, 2.51, 2.27, 3.91, 5.39, 3.70 };
 // integration times = 1.9923, 1.9928, 1.9826, 1.9852, 1.9265, 1.9898
 
 ddouble potentialRZ(const ddouble r, const ddouble z)
@@ -54,6 +54,7 @@ void generateCode() // generates code section for different grid structures
 		const ddouble scale = scales[gridType];
 		Vector3 dim;
 		std::string filename;
+		std::string gridName;
 
 		switch (gridType)
 		{
@@ -61,31 +62,37 @@ void generateCode() // generates code section for different grid structures
 			mesh.createGrid(scale * Vector4(-1, -1, -1, 0), scale * Vector4(2, 2, 2, 0), scale);
 			dim = Vector3(scale, scale, scale); // maximum block coordinates
 			filename = "../../GrossPitaevskiiGpuCube/mesh.h";
+			gridName = "CUBE";
 			break;
 		case FCC:
 			mesh.createFccGrid(scale * Vector3(-1.125, -1.125, -1.125), scale * Vector3(1.875, 1.875, 1.875), scale);
 			dim = Vector3(scale, scale, scale); // maximum block coordinates
 			filename = "../../GrossPitaevskiiGpuFcc/mesh.h";
+			gridName = "FCC";
 			break;
 		case BCC:
 			mesh.createBccGrid(scale * Vector3(-1.125, -1.125, -1.125), scale * Vector3(1.875, 1.875, 1.875), scale);
 			dim = Vector3(scale, scale, scale); // maximum block coordinates
 			filename = "../../GrossPitaevskiiGpuBcc/mesh.h";
+			gridName = "BCC";
 			break;
 		case A15:
 			mesh.createA15Grid(scale * Vector3(-1.125, -1.125, -1.125), scale * Vector3(1.875, 1.875, 1.875), scale);
 			dim = Vector3(scale, scale, scale); // maximum block coordinates
 			filename = "../../GrossPitaevskiiGpuA15/mesh.h";
+			gridName = "A15";
 			break;
 		case C15:
 			mesh.createC15Grid(scale * Vector3(-1.125, -1.125, -1.125), scale * Vector3(1.875, 1.875, 1.875), scale);
 			dim = Vector3(scale, scale, scale); // maximum block coordinates
 			filename = "../../GrossPitaevskiiGpuC15/mesh.h";
+			gridName = "C15";
 			break;
 		case Z:
 			mesh.createZGrid(scale * Vector3(-1.125, -1.125, -1.125), scale * Vector3(1.875, 1.875 * sqrt(3.0), 1.875), scale);
 			dim = Vector3(scale, scale * sqrt(3.0), scale); // maximum block coordinates
 			filename = "../../GrossPitaevskiiGpuZ/mesh.h";
+			gridName = "Z";
 			break;
 		default:
 			break;
@@ -120,7 +127,7 @@ void generateCode() // generates code section for different grid structures
 			{
 				factor = bhodge / mesh.getFaceHodge(f0[i]);
 				dualEdgeLength = mesh.getFaceDualVector(f0[i]).len();
-				std::cout << "dual edge length = " << dualEdgeLength << std::endl;
+				//std::cout << "dual edge length = " << dualEdgeLength << std::endl;
 			}
 			fsize++;
 		}
@@ -196,8 +203,23 @@ void generateCode() // generates code section for different grid structures
 		text << "\treturn " << factor << ";" << std::endl;
 		text << "}" << std::endl;
 
-		std::cout << text.str() << std::endl;
+		//std::cout << text.str() << std::endl;
 		text.save(filename);
+
+		ddouble block_scale = 0.096821;
+		const Vector3 domain = Vector3(14.6203, 14.6203, 10.62);
+		const uint64_t xsize = uint64_t(domain.x / (block_scale * dim.x)) + 1;
+		const uint64_t ysize = uint64_t(domain.y / (block_scale * dim.y)) + 1;
+		const uint64_t zsize = uint64_t(domain.z / (block_scale * dim.z)) + 1;
+		uint64_t bodies = xsize * ysize * zsize * inds;
+		ddouble maxpot = 68.0;
+		ddouble lapfac = -0.5 * factor / (block_scale * block_scale);
+		const uint64_t lapsize = totalFaceCount / inds;
+		ddouble lapfac0 = lapsize * (-lapfac);
+		const uint64_t steps_per_iteration = uint64_t(1.0 * (maxpot + lapfac0)) + 1;
+
+		//std::cout << gridName << " bodies: " << bodies << ", steps per iteration: " << steps_per_iteration << ", ALU op count : " << steps_per_iteration * bodies * (totalFaceCount / inds) << std::endl;
+		std::cout << steps_per_iteration * xsize * ysize * zsize * totalFaceCount << ", " << dualEdgeLength << std::endl;
 	}
 }
 /*
@@ -521,7 +543,6 @@ int main ( int argc, char** argv )
 	state0.setKappa(10);
 	state0.setG(40);
 	if(IS_3D) state0.setRange(0.0, 15.0, 10.0, 0.2, 0.2); // use this for 3d
-	else state0.setRange(0.0, 15.0, 1.0, 0.2, 1.0); // use this for 2d
 	state0.iterateSolution(potentialRZ, 10000, 1e-29);
 	const ddouble eps = 1e-5 * state0.searchFunctionMax();
 	const ddouble minr = state0.searchMinR(eps);
@@ -534,7 +555,6 @@ int main ( int argc, char** argv )
 	state.setKappa(10);
 	state.setG(40);
 	if(IS_3D) state.setRange(minr, maxr, maxz, 0.03, 0.03); // use this for 3d
-	else state.setRange(minr, maxr, 1.0, 0.03, 1.0); // use this for 2d
 	state.initialize(state0);
 	state.iterateSolution(potentialRZ, 10000, 1e-29);
 	std::cout << "maxf=" << state.searchFunctionMax() << std::endl;
