@@ -20,9 +20,9 @@ ddouble G = 300;
 #define SAVE_PICTURE 1
 #define SAVE_VOLUME 0
 
-#define THREAD_BLOCK_X 1
+#define THREAD_BLOCK_X 16
 #define THREAD_BLOCK_Y 1
-#define THREAD_BLOCK_Z 16
+#define THREAD_BLOCK_Z 1
 
 #define WARP_SIZE 32
 
@@ -74,7 +74,7 @@ struct BlockPsis
 
 struct LdsBlockPsis
 {
-	double2 values[VALUES_IN_BLOCK];
+	double3 values[VALUES_IN_BLOCK];
 };
 
 struct BlockPots
@@ -145,7 +145,7 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 	BlockPots* pot = (BlockPots*)(potentials.ptr + potentials.slicePitch * zid + potentials.pitch * yid) + dataXid;
 	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + dataXid;
 	double2 prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
-	ldsPrevPsis[threadIdxInBlock].values[dualNodeId] = prev;
+	ldsPrevPsis[threadIdxInBlock].values[dualNodeId] = make_double3(prev.x, prev.y, 0);
 	double normsq = prev.x * prev.x + prev.y * prev.y;
 
 	// Kill also the leftover edge threads
@@ -177,7 +177,8 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 			(0 <= neighbourZ) && (neighbourZ < THREAD_BLOCK_Z))
 		{
 			int neighbourIdx = neighbourZ * THREAD_BLOCK_Y * THREAD_BLOCK_X + neighbourY * THREAD_BLOCK_X + neighbourX;
-			neighbourPsi = ldsPrevPsis[neighbourIdx].values[valueInds[primaryFace]];
+			double3 temp = ldsPrevPsis[neighbourIdx].values[valueInds[primaryFace]];
+			neighbourPsi = make_double2(temp.x, temp.y);
 		}
 		else // Read from the global memory
 		{
