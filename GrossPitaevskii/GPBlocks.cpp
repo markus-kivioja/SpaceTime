@@ -102,7 +102,7 @@ void generateCode() // generates code section for different grid structures
 		Buffer<Vector3> p(mesh.getBodySize());
 		Buffer<uint> ind;
 		uint inds = 0;
-		uint totalFaceCount = 0;
+		uint64_t totalFaceCount = 0;
 		for (i = 0; i < p.size(); i++)
 		{
 			p[i] = mesh.getBodyPosition(i).toVector3();
@@ -219,7 +219,9 @@ void generateCode() // generates code section for different grid structures
 		const uint64_t steps_per_iteration = uint64_t(1.0 * (maxpot + lapfac0)) + 1;
 
 		//std::cout << gridName << " bodies: " << bodies << ", steps per iteration: " << steps_per_iteration << ", ALU op count : " << steps_per_iteration * bodies * (totalFaceCount / inds) << std::endl;
-		std::cout << steps_per_iteration * xsize * ysize * zsize * totalFaceCount << ", " << dualEdgeLength << std::endl;
+		uint64_t opCount = steps_per_iteration * xsize * ysize * zsize * totalFaceCount;
+		std::cout << gridName << ": Steps/t:" << steps_per_iteration << ", Domain size: (" << xsize << ", " << ysize << ", " << zsize <<
+			"), #J * m_s: " << totalFaceCount  <<", Operations: " << opCount << ", Dual edge length: " << dualEdgeLength << std::endl;
 	}
 }
 /*
