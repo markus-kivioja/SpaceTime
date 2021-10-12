@@ -20,7 +20,7 @@ ddouble G = 300;
 #define SAVE_PICTURE 1
 #define SAVE_VOLUME 0
 
-#define THREAD_BLOCK_X 2
+#define THREAD_BLOCK_X 1
 #define THREAD_BLOCK_Y 1
 #define THREAD_BLOCK_Z 1
 
@@ -270,15 +270,13 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + dataXid;
 	double2 prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
 	ldsPrevPsis[threadIdxInBlock].values[dualNodeId] = prev;
-	double normsq = prev.x * prev.x + prev.y * prev.y;
+
 
 	// Kill also the leftover edge threads
 	if (dataXid == dimensions.x || yid == dimensions.y || zid == dimensions.z)
 	{
 		return;
 	}
-
-	uint idxInWarp = threadIdxInBlock % WARP_SIZE;
 
 	uint primaryFaceStart = dualNodeId * FACE_COUNT;
 	double2 sum = make_double2(0, 0);
@@ -311,7 +309,7 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 		sum += hodges[primaryFace] * (neighbourPsi - prev);
 	}
 
-	sum += (pot->values[dualNodeId] + g * normsq) * prev;
+	sum += (pot->values[dualNodeId] + g * (prev.x * prev.x + prev.y * prev.y)) * prev;
 
 	nextPsi->values[dualNodeId] += make_double2(sum.y, -sum.x);
 };
