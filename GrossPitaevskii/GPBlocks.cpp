@@ -21,7 +21,7 @@ enum GridType
 	COUNT
 };
 
-constexpr double scales[] = { 1.0, 3.25, 2.27, 4.86, 4.5, 4.57 };
+constexpr double scales[] = { 1.00, 2.51, 2.27, 3.91, 5.39, 3.70 };
 // integration times = 1.9923, 1.9928, 1.9826, 1.9852, 1.9265, 1.9898
 
 ddouble potentialRZ(const ddouble r, const ddouble z)

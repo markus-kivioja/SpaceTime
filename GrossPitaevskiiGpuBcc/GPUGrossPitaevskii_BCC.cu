@@ -17,7 +17,7 @@ ddouble KAPPA = 10;
 ddouble G = 300;
 
 #define LOAD_STATE_FROM_DISK 1
-#define SAVE_PICTURE 1
+#define SAVE_PICTURE 0
 #define SAVE_VOLUME 0
 
 #define THREAD_BLOCK_X 16
@@ -109,18 +109,18 @@ inline __host__ __device__ double2 operator*(double b, double2 a)
 }
 
 __device__ const uint perms[VALUES_IN_BLOCK][FACE_COUNT] = {
-		{3, 2, 0, 1}, // 0
-		{2, 0, 1, 3}, // 1
-		{1, 0, 2, 3}, // 2
-		{1, 0, 2, 3}, // 3 
-		{2, 0, 1, 3}, // 4
-		{3, 1, 0, 2}, // 5
-		{0, 1, 2, 3}, // 6
-		{0, 1, 2, 3}, // 7
-		{3, 1, 0, 2}, // 8
-		{2, 3, 0, 1}, // 9
-		{2, 3, 0, 1}, // 10
-		{3, 2, 0, 1}  // 11
+{0, 1, 2, 3}, // 0
+{0, 1, 2, 3}, // 1
+{3, 1, 2, 0}, // 2
+{3, 1, 2, 0}, // 3
+{0, 1, 2, 3}, // 4
+{3, 2, 1, 0}, // 5
+{2, 3, 0, 1}, // 6
+{2, 3, 0, 1}, // 7
+{3, 2, 1, 0}, // 8
+{1, 3, 0, 2}, // 9
+{1, 3, 0, 2}, // 10
+{0, 1, 2, 3} // 11
 };
 
 __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr potentials, int3* blockDirs, int* valueInds, double* hodges, double g, uint3 dimensions)
