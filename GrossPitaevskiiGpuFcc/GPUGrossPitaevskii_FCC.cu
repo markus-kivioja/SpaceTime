@@ -17,8 +17,8 @@ ddouble KAPPA = 10;
 ddouble G = 300;
 
 #define LOAD_STATE_FROM_DISK 1
-#define SAVE_PICTURE 1
-#define SAVE_VOLUME 0
+#define SAVE_PICTURE 0
+#define SAVE_VOLUME 1
 
 #define THREAD_BLOCK_X 8
 #define THREAD_BLOCK_Y 8
@@ -374,26 +374,28 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	{
 #if SAVE_PICTURE
 		// draw picture
-		const float INTENSITY = 20.0f;
-		const int SIZE = 2;
-		int width = dxsize * SIZE, height = dysize * SIZE;
-		Picture pic(width, height);
-		k = zsize / 2 + 1;
-		for (j = 0; j < height; j++)
-		{
-			for (i = 0; i < width; i++)
-			{
-				const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
-				double norm = sqrt(h_evenPsi[idx].values[0].x * h_evenPsi[idx].values[0].x + h_evenPsi[idx].values[0].y * h_evenPsi[idx].values[0].y);
-
-				pic.setColor(i, j, INTENSITY * Vector4(h_evenPsi[idx].values[0].x, norm, h_evenPsi[idx].values[0].y, 1.0));
-			}
-		}
-		std::ostringstream picpath;
-		picpath << "results/kuva" << iter << ".bmp";
-		pic.save(picpath.str(), false);
+		//const float INTENSITY = 20.0f;
+		//const int SIZE = 2;
+		//int width = dxsize * SIZE, height = dysize * SIZE;
+		//Picture pic(width, height);
+		//k = zsize / 2 + 1;
+		//for (j = 0; j < height; j++)
+		//{
+		//	for (i = 0; i < width; i++)
+		//	{
+		//		const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
+		//		double norm = sqrt(h_evenPsi[idx].values[0].x * h_evenPsi[idx].values[0].x + h_evenPsi[idx].values[0].y * h_evenPsi[idx].values[0].y);
+		//
+		//		pic.setColor(i, j, INTENSITY * Vector4(h_evenPsi[idx].values[0].x, norm, h_evenPsi[idx].values[0].y, 1.0));
+		//	}
+		//}
+		//std::ostringstream picpath;
+		//picpath << "results/kuva" << iter << ".bmp";
+		//pic.save(picpath.str(), false);
 
 		// print squared norm and error
+		const Complex currentPhase = state.getPhase(iter * steps_per_iteration * time_step_size);
+		ddouble errorNormSq = 0;
 		ddouble normsq = 0.0;
 		Complex error(0.0, 0.0);
 		for (k = 0; k < zsize; k++)
@@ -410,13 +412,17 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 						Complex evenPsi(h_evenPsi[dstI].values[l].x, h_evenPsi[dstI].values[l].y);
 						normsq += evenPsi.normsq() * volume;
 						error += (Psi0[srcI].con() * evenPsi) * volume;
+
+						Complex groundTruth = currentPhase * Psi0[srcI];
+						errorNormSq += (groundTruth - evenPsi).normsq();
 					}
 				}
 			}
 		}
+		ddouble RMSE = sqrt(errorNormSq / (double)(zsize * ysize * xsize * bsize));
 		ddouble errorAbs = abs(normsq - error.norm());
 		std::cout << "normsq=" << normsq << " error=" << errorAbs << std::endl;
-		errorText << errorAbs << " ";
+		errorText << RMSE << " ";
 #endif
 
 #if SAVE_VOLUME
@@ -447,9 +453,9 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 #endif
 
 		// finish iteration
-		//if (++iter > number_of_iterations) break;
-		++iter;
-		if (errorAbs > 0.01) break;
+		if (++iter > number_of_iterations) break;
+		//++iter;
+		//if (errorAbs > 0.01) break;
 
 		// integrate one iteration
 		std::cout << "Iteration " << iter << std::endl;
