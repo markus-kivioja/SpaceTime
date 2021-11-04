@@ -70,6 +70,11 @@ struct BlockPsis
 	double values[VALUES_IN_BLOCK];
 };
 
+struct BlockEdges
+{
+	double values[EDGES_IN_BLOCK];
+};
+
 struct BlockPots
 {
 	double values[VALUES_IN_BLOCK];
@@ -82,20 +87,35 @@ struct PitchedPtr
 	size_t slicePitch;
 };
 
-__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr potentials, int2* lapInd, double* hodges, double g, uint3 dimensions)
+__global__ void update1forms(PitchedPtr nextEdge, PitchedPtr prevEdge, PitchedPtr psis, int2* lapInd, double* hodges, double g, uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
 
-	// Load Laplacian indices into LDS // TODO: Load prevStep also into LDS?
-	__shared__ int2 ldsLapInd[INDICES_PER_BLOCK];
-	size_t threadIdxInBlock = blockDim.x * blockDim.y * threadIdx.z + blockDim.x * threadIdx.y + threadIdx.x;
-	if (threadIdxInBlock < INDICES_PER_BLOCK)
+	size_t dataZid = zid / EDGES_IN_BLOCK; // One thread per every dual edge so EDGES_IN_BLOCK threads per mesh block (on z-axis)
+
+	// Exit leftover threads
+	if (xid >= dimensions.x || yid >= dimensions.y || dataZid >= dimensions.z)
 	{
-		ldsLapInd[threadIdxInBlock] = lapInd[threadIdxInBlock];
+		return;
 	}
-	__syncthreads();
+
+	char* pPsi = psis.ptr + psis.slicePitch * dataZid + psis.pitch * yid + sizeof(BlockPsis) * xid;
+	double psi = ((BlockPsis*)pPsi)->values[0];
+	
+	double e0 = hodges[3] * (((BlockPsis*)(pPsi + lapInd[3].x))->values[lapInd[3].y] - psi);
+	double e1 = hodges[3] * (((BlockPsis*)(pPsi + lapInd[4].x))->values[lapInd[4].y] - psi);
+	double e2 = hodges[3] * (((BlockPsis*)(pPsi + lapInd[5].x))->values[lapInd[5].y] - psi);
+
+	BlockEdges* nextPsi = (BlockEdges*)(nextEdge.ptr + nextEdge.slicePitch * dataZid + nextEdge.pitch * yid) + xid;
+}
+
+__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr potentials, int2* lapInd, double* hodges, double g, uint3 dimensions, double sign)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
 
 	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 
@@ -112,18 +132,20 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 
 	// Update psi
 	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
-	double2 prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
+	double prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
 
 	uint primaryFace = dualNodeId * FACE_COUNT;
-	double2 sum = make_double2(0, 0);
+	double sum = 0;
 #pragma unroll
 	for (int i = 0; i < FACE_COUNT; ++i)
-		sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + ldsLapInd[primaryFace].x))->values[ldsLapInd[primaryFace++].y] - prev);
+		sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + lapInd[primaryFace].x))->values[lapInd[primaryFace++].y] - prev);
 
-	double normsq = prev.x * prev.x + prev.y * prev.y;
+	double next = nextPsi->values[dualNodeId];
+
+	double normsq = prev * prev + next * next;
 	sum += (pot->values[dualNodeId] + g * normsq) * prev;
 
-	nextPsi->values[dualNodeId] += make_double2(sum.y, -sum.x);
+	nextPsi->values[dualNodeId] = next + sign * sum;
 };
 
 uint integrateInTime(const VortexState& state, const ddouble block_scale, const Vector3& minp, const Vector3& maxp, const ddouble iteration_period, const uint number_of_iterations)
@@ -184,31 +206,31 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	cudaExtent psiExtent = make_cudaExtent(dxsize * sizeof(BlockPsis), dysize, dzsize);
 	cudaExtent potExtent = make_cudaExtent(dxsize * sizeof(BlockPots), dysize, dzsize);
 
-	cudaPitchedPtr d_cudaEvenPsi;
-	cudaPitchedPtr d_cudaOddPsi;
+	cudaPitchedPtr d_cudaR;
+	cudaPitchedPtr d_cudaI;
 	cudaPitchedPtr d_cudaPot;
 
-	checkCudaErrors(cudaMalloc3D(&d_cudaEvenPsi, psiExtent));
-	checkCudaErrors(cudaMalloc3D(&d_cudaOddPsi, psiExtent));
+	checkCudaErrors(cudaMalloc3D(&d_cudaR, psiExtent));
+	checkCudaErrors(cudaMalloc3D(&d_cudaI, psiExtent));
 	checkCudaErrors(cudaMalloc3D(&d_cudaPot, potExtent));
 
-	size_t offset = d_cudaEvenPsi.pitch * dysize + d_cudaEvenPsi.pitch + sizeof(BlockPsis);
+	size_t offset = d_cudaR.pitch * dysize + d_cudaR.pitch + sizeof(BlockPsis);
 	size_t potOffset = d_cudaPot.pitch * dysize + d_cudaPot.pitch + sizeof(BlockPots);
-	PitchedPtr d_evenPsi = { (char*)d_cudaEvenPsi.ptr + offset, d_cudaEvenPsi.pitch, d_cudaEvenPsi.pitch * dysize };
-	PitchedPtr d_oddPsi = { (char*)d_cudaOddPsi.ptr + offset, d_cudaOddPsi.pitch, d_cudaOddPsi.pitch * dysize };
+	PitchedPtr d_r = { (char*)d_cudaR.ptr + offset, d_cudaR.pitch, d_cudaR.pitch * dysize };
+	PitchedPtr d_i = { (char*)d_cudaI.ptr + offset, d_cudaI.pitch, d_cudaI.pitch * dysize };
 	PitchedPtr d_pot = { (char*)d_cudaPot.ptr + potOffset, d_cudaPot.pitch, d_cudaPot.pitch * dysize };
 
 	// find terms for laplacian
 	Buffer<int2> lapind;
 	Buffer<ddouble> hodges;
-	ddouble lapfac = -0.5 * getLaplacian(lapind, hodges, sizeof(BlockPsis), d_evenPsi.pitch, d_evenPsi.slicePitch) / (block_scale * block_scale);
+	ddouble lapfac = -0.5 * getLaplacian(lapind, hodges, sizeof(BlockPsis), d_r.pitch, d_r.slicePitch) / (block_scale * block_scale);
 	const uint lapsize = lapind.size() / bsize;
 	ddouble lapfac0 = lapsize * (-lapfac);
 
 	//std::cout << "lapsize = " << lapsize << ", lapfac = " << lapfac << ", lapfac0 = " << lapfac0 << std::endl;
 
 	// compute time step size
-	const uint steps_per_iteration = uint(iteration_period * (maxpot + lapfac0)) + 1; // number of time steps per iteration period
+	const uint steps_per_iteration = 4 * uint(iteration_period * (maxpot + lapfac0)); // number of time steps per iteration period
 	const ddouble time_step_size = iteration_period / ddouble(steps_per_iteration); // time step in time units
 
 	std::cout << "steps_per_iteration = " << steps_per_iteration << std::endl;
@@ -241,7 +263,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	memset(h_pot, 0, hostSize * sizeof(BlockPots));
 
 	// initialize discrete field
-	const Complex oddPhase = state.getPhase(-0.5 * time_step_size);
+	const Complex oddPhase = state.getPhase(-1 * time_step_size);
 	Random rnd(54363);
 	for (k = 0; k < zsize; k++)
 	{
@@ -263,19 +285,19 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 		}
 	}
 
-	cudaPitchedPtr h_cudaEvenPsi = { 0 };
-	cudaPitchedPtr h_cudaOddPsi = { 0 };
+	cudaPitchedPtr h_cudaR = { 0 };
+	cudaPitchedPtr h_cudaI = { 0 };
 	cudaPitchedPtr h_cudaPot = { 0 };
 
-	h_cudaEvenPsi.ptr = h_r;
-	h_cudaEvenPsi.pitch = dxsize * sizeof(BlockPsis);
-	h_cudaEvenPsi.xsize = d_cudaEvenPsi.xsize;
-	h_cudaEvenPsi.ysize = d_cudaEvenPsi.ysize;
+	h_cudaR.ptr = h_r;
+	h_cudaR.pitch = dxsize * sizeof(BlockPsis);
+	h_cudaR.xsize = d_cudaR.xsize;
+	h_cudaR.ysize = d_cudaR.ysize;
 
-	h_cudaOddPsi.ptr = h_i;
-	h_cudaOddPsi.pitch = dxsize * sizeof(BlockPsis);
-	h_cudaOddPsi.xsize = d_cudaOddPsi.xsize;
-	h_cudaOddPsi.ysize = d_cudaOddPsi.ysize;
+	h_cudaI.ptr = h_i;
+	h_cudaI.pitch = dxsize * sizeof(BlockPsis);
+	h_cudaI.xsize = d_cudaI.xsize;
+	h_cudaI.ysize = d_cudaI.ysize;
 
 	h_cudaPot.ptr = h_pot;
 	h_cudaPot.pitch = dxsize * sizeof(BlockPots);
@@ -283,27 +305,27 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	h_cudaPot.ysize = d_cudaPot.ysize;
 
 	// Copy from host memory to device memory
-	cudaMemcpy3DParms evenPsiParams = { 0 };
-	cudaMemcpy3DParms oddPsiParams = { 0 };
+	cudaMemcpy3DParms rParams = { 0 };
+	cudaMemcpy3DParms iParams = { 0 };
 	cudaMemcpy3DParms potParams = { 0 };
 
-	evenPsiParams.srcPtr = h_cudaEvenPsi;
-	evenPsiParams.dstPtr = d_cudaEvenPsi;
-	evenPsiParams.extent = psiExtent;
-	evenPsiParams.kind = cudaMemcpyHostToDevice;
+	rParams.srcPtr = h_cudaR;
+	rParams.dstPtr = d_cudaR;
+	rParams.extent = psiExtent;
+	rParams.kind = cudaMemcpyHostToDevice;
 
-	oddPsiParams.srcPtr = h_cudaOddPsi;
-	oddPsiParams.dstPtr = d_cudaOddPsi;
-	oddPsiParams.extent = psiExtent;
-	oddPsiParams.kind = cudaMemcpyHostToDevice;
+	iParams.srcPtr = h_cudaI;
+	iParams.dstPtr = d_cudaI;
+	iParams.extent = psiExtent;
+	iParams.kind = cudaMemcpyHostToDevice;
 
 	potParams.srcPtr = h_cudaPot;
 	potParams.dstPtr = d_cudaPot;
 	potParams.extent = potExtent;
 	potParams.kind = cudaMemcpyHostToDevice;
 
-	checkCudaErrors(cudaMemcpy3D(&evenPsiParams));
-	checkCudaErrors(cudaMemcpy3D(&oddPsiParams));
+	checkCudaErrors(cudaMemcpy3D(&rParams));
+	checkCudaErrors(cudaMemcpy3D(&iParams));
 	checkCudaErrors(cudaMemcpy3D(&potParams));
 	checkCudaErrors(cudaMemcpy(d_lapind, &lapind[0], lapind.size() * sizeof(int2), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_hodges, &hodges[0], hodges.size() * sizeof(ddouble), cudaMemcpyHostToDevice));
@@ -328,11 +350,17 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 		(ysize + THREAD_BLOCK_Y - 1) / THREAD_BLOCK_Y,
 		((zsize + THREAD_BLOCK_Z - 1) / THREAD_BLOCK_Z) * VALUES_IN_BLOCK);
 #if SAVE_PICTURE || SAVE_VOLUME
-	cudaMemcpy3DParms evenPsiBackParams = { 0 };
-	evenPsiBackParams.srcPtr = d_cudaEvenPsi;
-	evenPsiBackParams.dstPtr = h_cudaEvenPsi;
-	evenPsiBackParams.extent = psiExtent;
-	evenPsiBackParams.kind = cudaMemcpyDeviceToHost;
+	cudaMemcpy3DParms rBackParams = { 0 };
+	rBackParams.srcPtr = d_cudaR;
+	rBackParams.dstPtr = h_cudaR;
+	rBackParams.extent = psiExtent;
+	rBackParams.kind = cudaMemcpyDeviceToHost;
+
+	cudaMemcpy3DParms iBackParams = { 0 };
+	iBackParams.srcPtr = d_cudaI;
+	iBackParams.dstPtr = h_cudaI;
+	iBackParams.extent = psiExtent;
+	iBackParams.kind = cudaMemcpyDeviceToHost;
 #endif
 	Text errorText;
 	const uint time0 = clock();
@@ -407,7 +435,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 					ddouble sum = 0.0;
 					for (l = 0; l < bsize; l++)
 					{
-						sum += h_evenPsi[idx].values[0].x * h_evenPsi[idx].values[0].x + h_evenPsi[idx].values[0].y * h_evenPsi[idx].values[0].y;
+						sum += h_r[idx].values[0] * h_r[idx].values[0] + h_evenPsi[idx].values[0].y * h_evenPsi[idx].values[0].y;
 					}
 					sum *= unit;
 					vol[idx] = (sum > 65535.0 ? 65535 : ushort(sum));
@@ -429,13 +457,14 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 		for (uint step = 0; step < steps_per_iteration; step++)
 		{
 			// update odd values
-			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_pot, d_lapind, d_hodges, g, dimensions);
+			update << <dimGrid, dimBlock >> > (d_i, d_r, d_pot, d_lapind, d_hodges, g, dimensions, -1.0f);
 			// update even values
-			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_pot, d_lapind, d_hodges, g, dimensions);
+			update << <dimGrid, dimBlock >> > (d_r, d_i, d_pot, d_lapind, d_hodges, g, dimensions, 1.0f);
 		}
 #if SAVE_PICTURE || SAVE_VOLUME
 		// Copy back from device memory to host memory
-		checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
+		checkCudaErrors(cudaMemcpy3D(&rBackParams));
+		checkCudaErrors(cudaMemcpy3D(&iBackParams));
 #endif
 	}
 	errorText.save("results/errors.txt");
