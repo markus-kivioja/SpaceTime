@@ -103,15 +103,14 @@ __global__ void update1forms(PitchedPtr nextEdge, PitchedPtr prevEdge, PitchedPt
 
 	char* pPsi = psis.ptr + psis.slicePitch * dataZid + psis.pitch * yid + sizeof(BlockPsis) * xid;
 	double psi = ((BlockPsis*)pPsi)->values[0];
-	
-	double e0 = hodges[3] * (((BlockPsis*)(pPsi + lapInd[3].x))->values[lapInd[3].y] - psi);
-	double e1 = hodges[3] * (((BlockPsis*)(pPsi + lapInd[4].x))->values[lapInd[4].y] - psi);
-	double e2 = hodges[3] * (((BlockPsis*)(pPsi + lapInd[5].x))->values[lapInd[5].y] - psi);
 
-	BlockEdges* nextPsi = (BlockEdges*)(nextEdge.ptr + nextEdge.slicePitch * dataZid + nextEdge.pitch * yid) + xid;
+	BlockEdges* pNext = (BlockEdges*)(nextEdge.ptr + nextEdge.slicePitch * dataZid + nextEdge.pitch * yid) + xid;
+	pNext->values[0] = ((BlockPsis*)(pPsi + lapInd[3].x))->values[lapInd[3].y] - psi; // +x
+	pNext->values[1] = ((BlockPsis*)(pPsi + lapInd[4].x))->values[lapInd[4].y] - psi; // +y
+	pNext->values[2] = ((BlockPsis*)(pPsi + lapInd[5].x))->values[lapInd[5].y] - psi; // +z
 }
 
-__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr potentials, int2* lapInd, double* hodges, double g, uint3 dimensions, double sign)
+__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr edges, PitchedPtr potentials, int2* lapInd, double* hodges, double g, uint3 dimensions, double sign)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -127,6 +126,7 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 
 	// Calculate the pointers for this block
 	char* prevPsi = prevStep.ptr + prevStep.slicePitch * dataZid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
+	char* pEdges = edges.ptr + edges.slicePitch * dataZid + edges.pitch * yid + sizeof(BlockEdges) * xid;
 	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * dataZid + nextStep.pitch * yid) + xid;
 	BlockPots* pot = (BlockPots*)(potentials.ptr + potentials.slicePitch * dataZid + potentials.pitch * yid) + xid;
 
@@ -136,9 +136,12 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr pote
 
 	uint primaryFace = dualNodeId * FACE_COUNT;
 	double sum = 0;
-#pragma unroll
-	for (int i = 0; i < FACE_COUNT; ++i)
-		sum += hodges[primaryFace] * (((BlockPsis*)(prevPsi + lapInd[primaryFace].x))->values[lapInd[primaryFace++].y] - prev);
+	sum += hodges[0] * ((BlockEdges*)(pEdges + lapInd[0].x))->values[lapInd[5].y]; // -z
+	sum += hodges[1] * ((BlockEdges*)(pEdges + lapInd[1].x))->values[lapInd[3].y]; // -x
+	sum += hodges[2] * ((BlockEdges*)(pEdges + lapInd[2].x))->values[lapInd[4].y]; // -y
+	sum += hodges[3] * ((BlockEdges*)(pEdges + lapInd[3].x))->values[lapInd[3].y]; // +x
+	sum += hodges[4] * ((BlockEdges*)(pEdges + lapInd[4].x))->values[lapInd[4].y]; // +y
+	sum += hodges[5] * ((BlockEdges*)(pEdges + lapInd[5].x))->values[lapInd[5].y]; // +z
 
 	double next = nextPsi->values[dualNodeId];
 
@@ -207,11 +210,15 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	cudaExtent potExtent = make_cudaExtent(dxsize * sizeof(BlockPots), dysize, dzsize);
 
 	cudaPitchedPtr d_cudaR;
+	cudaPitchedPtr d_cudaEdgeR;
 	cudaPitchedPtr d_cudaI;
+	cudaPitchedPtr d_cudaEdgeI;
 	cudaPitchedPtr d_cudaPot;
 
 	checkCudaErrors(cudaMalloc3D(&d_cudaR, psiExtent));
+	checkCudaErrors(cudaMalloc3D(&d_cudaEdgeR, psiExtent));
 	checkCudaErrors(cudaMalloc3D(&d_cudaI, psiExtent));
+	checkCudaErrors(cudaMalloc3D(&d_cudaEdgeI, psiExtent));
 	checkCudaErrors(cudaMalloc3D(&d_cudaPot, potExtent));
 
 	size_t offset = d_cudaR.pitch * dysize + d_cudaR.pitch + sizeof(BlockPsis);
