@@ -93,7 +93,7 @@ __global__ void updateEdges(PitchedPtr nextEdge, PitchedPtr prevEdge, PitchedPtr
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
 
-	size_t dataZid = zid; // / EDGES_IN_BLOCK; // One thread per every dual edge so EDGES_IN_BLOCK threads per mesh block (on z-axis)
+	size_t dataZid = zid / EDGES_IN_BLOCK; // One thread per every dual edge so EDGES_IN_BLOCK threads per mesh block (on z-axis)
 
 	// Exit leftover threads
 	if (xid >= dimensions.x || yid >= dimensions.y || dataZid >= dimensions.z)
@@ -104,13 +104,13 @@ __global__ void updateEdges(PitchedPtr nextEdge, PitchedPtr prevEdge, PitchedPtr
 	char* pPsi = psis.ptr + psis.slicePitch * dataZid + psis.pitch * yid + sizeof(BlockPsis) * xid;
 	double psi = ((BlockPsis*)pPsi)->values[0];
 
+	size_t dualEdgeId = zid % EDGES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+
 	BlockEdges* pNext = (BlockEdges*)(nextEdge.ptr + nextEdge.slicePitch * dataZid + nextEdge.pitch * yid) + xid;
-	pNext->values[0] = ((BlockPsis*)(pPsi + psiLapInd[3].x))->values[psiLapInd[3].y] - psi; // +x
-	pNext->values[1] = ((BlockPsis*)(pPsi + psiLapInd[4].x))->values[psiLapInd[4].y] - psi; // +y
-	pNext->values[2] = ((BlockPsis*)(pPsi + psiLapInd[5].x))->values[psiLapInd[5].y] - psi; // +z
+	pNext->values[dualEdgeId] = ((BlockPsis*)(pPsi + psiLapInd[dualEdgeId + 3].x))->values[psiLapInd[dualEdgeId + 3].y] - psi;
 }
 
-__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr edges, PitchedPtr potentials, int2* edgeLapInd, double* hodges, double g, uint3 dimensions, double sign)
+__global__ void updateNodes(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr edges, PitchedPtr potentials, int2* edgeLapInd, double* hodges, double g, uint3 dimensions, double sign)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -364,9 +364,12 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	uint3 dimensions = make_uint3(xsize, ysize, zsize);
 	uint iter = 0;
 	dim3 dimBlock(THREAD_BLOCK_X, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
-	dim3 dimGrid((xsize + THREAD_BLOCK_X - 1) / THREAD_BLOCK_X,
+	dim3 psiDimGrid((xsize + THREAD_BLOCK_X - 1) / THREAD_BLOCK_X,
 		(ysize + THREAD_BLOCK_Y - 1) / THREAD_BLOCK_Y,
 		((zsize + THREAD_BLOCK_Z - 1) / THREAD_BLOCK_Z) * VALUES_IN_BLOCK);
+	dim3 edgeDimGrid((xsize + THREAD_BLOCK_X - 1) / THREAD_BLOCK_X,
+		(ysize + THREAD_BLOCK_Y - 1) / THREAD_BLOCK_Y,
+		((zsize + THREAD_BLOCK_Z - 1) / THREAD_BLOCK_Z) * EDGES_IN_BLOCK);
 #if SAVE_PICTURE || SAVE_VOLUME
 	cudaMemcpy3DParms rBackParams = { 0 };
 	rBackParams.srcPtr = d_cudaR;
@@ -475,11 +478,11 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 		for (uint step = 0; step < steps_per_iteration; step++)
 		{
 			// update odd values
-			updateEdges << <dimGrid, dimBlock >> > (d_rEdge, d_rEdge, d_r, d_psiLapind, d_hodges, g, dimensions);
-			update << <dimGrid, dimBlock >> > (d_i, d_r, d_rEdge, d_pot, d_edgeLapind, d_hodges, g, dimensions, -1.0f);
+			updateEdges << <edgeDimGrid, dimBlock >> > (d_rEdge, d_rEdge, d_r, d_psiLapind, d_hodges, g, dimensions);
+			updateNodes << <psiDimGrid, dimBlock >> > (d_i, d_r, d_rEdge, d_pot, d_edgeLapind, d_hodges, g, dimensions, -1.0f);
 			// update even values
-			updateEdges << <dimGrid, dimBlock >> > (d_iEdge, d_iEdge, d_i, d_psiLapind, d_hodges, g, dimensions);
-			update << <dimGrid, dimBlock >> > (d_r, d_i, d_iEdge, d_pot, d_edgeLapind, d_hodges, g, dimensions, 1.0f);
+			updateEdges << <edgeDimGrid, dimBlock >> > (d_iEdge, d_iEdge, d_i, d_psiLapind, d_hodges, g, dimensions);
+			updateNodes << <psiDimGrid, dimBlock >> > (d_r, d_i, d_iEdge, d_pot, d_edgeLapind, d_hodges, g, dimensions, 1.0f);
 		}
 #if SAVE_PICTURE || SAVE_VOLUME
 		// Copy back from device memory to host memory
