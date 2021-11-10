@@ -6,6 +6,7 @@
 #include "../Mesh/DelaunayMesh.hpp"
 #include <iostream>
 #include <sstream>
+#include <vector>
 
 ddouble RATIO = 1.0;
 ddouble RATIOSQ = 1.0;
@@ -46,7 +47,8 @@ void generateCode() // generates code section for different grid structures
 	mesh.stretchLinear(Vector4(0,0,1,0), 1, 0, 0, 0);
 	const Vector3 dim(SQ3,3,1); // maximum block coordinates
 */
-	for (GridType gridType = CUBIC; gridType < GridType::COUNT; gridType = (GridType)(gridType + 1))
+	//for (GridType gridType = CUBIC; gridType < GridType::COUNT; gridType = (GridType)(gridType + 1))
+	GridType gridType = BCC;
 	{
 		uint i, j, k;
 		DelaunayMesh mesh(3);
@@ -73,7 +75,8 @@ void generateCode() // generates code section for different grid structures
 		case BCC:
 			mesh.createBccGrid(scale * Vector3(-1.125, -1.125, -1.125), scale * Vector3(1.875, 1.875, 1.875), scale);
 			dim = Vector3(scale, scale, scale); // maximum block coordinates
-			filename = "../../GrossPitaevskiiGpuBcc/mesh.h";
+			//filename = "../../GrossPitaevskiiGpuBcc/mesh.h";
+			filename = "../../RelativisticGpeBCC/mesh.h";
 			gridName = "BCC";
 			break;
 		case A15:
@@ -135,13 +138,16 @@ void generateCode() // generates code section for different grid structures
 		// print code
 		Text text;
 		Text hodgesText;
+		Text edgesText;
 		Text indicesAndFaceCountsText;
 		text.precision(17);
 		hodgesText.precision(17);
 		bool constantFaceCount = totalFaceCount == (f0.size() * inds);
-		text << "#define FACE_COUNT " << totalFaceCount / inds << std::endl;
+		int facesPerBody = totalFaceCount / inds;
+		text << "#define FACE_COUNT " << facesPerBody << std::endl;
 		text << "#define DUAL_EDGE_LENGTH " << dualEdgeLength << std::endl;
 		text << "#define VALUES_IN_BLOCK " << inds << std::endl;
+		text << "#define EDGES_IN_BLOCK " << totalFaceCount / 2 << std::endl;
 		text << "#define INDICES_PER_BLOCK " << totalFaceCount << std::endl;
 		text << "const Vector3 BLOCK_WIDTH = Vector3(" << dim.x << ", " << dim.y << ", " << dim.z << "); // dimensions of unit block" << std::endl;
 		text << "const ddouble VOLUME = " << 1.0 / bhodge << "; // volume of body elements" << std::endl;
@@ -153,12 +159,21 @@ void generateCode() // generates code section for different grid structures
 		for (i = 0; i < inds; i++) text << "\tpos[" << i << "] = Vector3(" << p[ind[i]].x << ", " << p[ind[i]].y << ", " << p[ind[i]].z << ");" << std::endl;
 		text << "}" << std::endl;
 		if (constantFaceCount)
-			text << "ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz) // nx, ny, nz in bytes" << std::endl;
+			text << "ddouble getLaplacian(Buffer<ddouble>& hodges, Buffer<int3>& edges, Buffer<int2>& edgeInds, const int nx, const int ny, const int nz) // nx, ny, nz in bytes" << std::endl;
 		else
 			text << "ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz, Buffer<int2> &indicesAndFaceCounts) // nx, ny, nz in bytes" << std::endl;
 		text << "{" << std::endl;
-		text << "\tind.resize(INDICES_PER_BLOCK);" << std::endl;
+		text << "\tedges.resize(EDGES_IN_BLOCK);" << std::endl;
 		fsize = 0;
+		int edgeId = 0;
+		struct int2
+		{
+			int id = 0;
+			std::string offset;
+			int sign;
+		};
+		std::vector<std::vector<int2>> edgeMap(inds);
+		std::vector<ddouble> hodges(totalFaceCount);
 		for (i = 0; i < inds; i++)
 		{
 			ddouble bodyHodge = mesh.getBodyHodge(ind[i]);
@@ -171,12 +186,30 @@ void generateCode() // generates code section for different grid structures
 				const uint other = (b[0] == ind[i] ? b[1] : b[0]);
 				Vector3 pp = p[other];
 				Text link;
-				if (pp.x < 0.0) { pp.x += dim.x; link << "-nx"; }
-				else if (pp.x >= dim.x) { pp.x -= dim.x; link << "nx"; }
-				if (pp.y < 0.0) { pp.y += dim.y; link << (link.str().empty() ? "-ny" : " - ny"); }
-				else if (pp.y >= dim.y) { pp.y -= dim.y; link << (link.str().empty() ? "ny" : " + ny"); }
-				if (pp.z < 0.0) { pp.z += dim.z; link << (link.str().empty() ? "-nz" : " - nz"); }
-				else if (pp.z >= dim.z) { pp.z -= dim.z; link << (link.str().empty() ? "nz" : " + nz"); }
+				if (pp.x < 0.0)
+				{
+					pp.x += dim.x; link << "-nx";
+				}
+				else if (pp.x >= dim.x)
+				{
+					pp.x -= dim.x; link << "nx";
+				}
+				if (pp.y < 0.0)
+				{
+					pp.y += dim.y; link << (link.str().empty() ? "-ny" : " - ny");
+				}
+				else if (pp.y >= dim.y)
+				{
+					pp.y -= dim.y; link << (link.str().empty() ? "ny" : " + ny");
+				}
+				if (pp.z < 0.0)
+				{
+					pp.z += dim.z; link << (link.str().empty() ? "-nz" : " - nz");
+				}
+				else if (pp.z >= dim.z)
+				{
+					pp.z -= dim.z; link << (link.str().empty() ? "nz" : " + nz");
+				}
 				for (k = 0; k < inds; k++)
 				{
 					if ((p[ind[k]] - pp).lensq() < 1e-13) break;
@@ -186,12 +219,41 @@ void generateCode() // generates code section for different grid structures
 					std::cout << "FAILED" << std::endl;
 					return;
 				}
-				if (link.str().empty()) link << "0";
-				text << "\tind[" << fsize << "] = make_int2(" << link.str() << ", " << k << ");" << std::endl;
+				if (link.str().empty())
+				{
+					link << "0";
+				}
+				ddouble hodgeSign = 1;
+				if (i < k)
+				{
+					edgesText << "\tedges[" << edgeId << "] = {make_int3(" << i << ", " << link.str() << ", " << k << ")};" << std::endl;
+					edgeMap[i].push_back({ edgeId, "0", 1});
+					std::string negLink = "-(" + link.str() + ")";
+					edgeMap[k].push_back({ edgeId, negLink, -1});
+					edgeId++;
+				}
+				//text << "\tind[" << fsize << "] = make_int2(" << link.str() << ", " << k << ");" << std::endl;
 				ddouble hodge = bodyHodge / mesh.getFaceHodge(f[j]);
 				factor = max(factor, hodge);
-				hodgesText << "\thodges[" << fsize++ << "] = " << hodge << ";" << std::endl;
+				hodges[fsize++] = hodge;
 			}
+		}
+		for (int hId = 0; hId < totalFaceCount; ++hId)
+		{
+			hodges[hId] *= edgeMap[hId / facesPerBody][hId % facesPerBody].sign;
+			hodgesText << "\thodges[" << hId << "] = " << hodges[hId] << ";" << std::endl;
+		}
+		text << std::endl;
+		text << "\tedgeInds.resize(VALUES_IN_BLOCK);" << std::endl;
+		text << std::endl << edgesText.str() << std::endl;
+		int edgeIndsId = 0;
+		for (int index = 0; index < inds; index++)
+		{
+			text << "\t//" << index << std::endl;
+			text << "\tedgeInds[" << edgeIndsId++ << "] = make_int2(" << edgeMap[index][0].offset << ", " << edgeMap[index][0].id << ");" << std::endl;
+			text << "\tedgeInds[" << edgeIndsId++ << "] = make_int2(" << edgeMap[index][1].offset << ", " << edgeMap[index][1].id << ");" << std::endl;
+			text << "\tedgeInds[" << edgeIndsId++ << "] = make_int2(" << edgeMap[index][2].offset << ", " << edgeMap[index][2].id << ");" << std::endl;
+			text << "\tedgeInds[" << edgeIndsId++ << "] = make_int2(" << edgeMap[index][3].offset << ", " << edgeMap[index][3].id << ");" << std::endl;
 		}
 		text << std::endl << "\thodges.resize(INDICES_PER_BLOCK);" << std::endl;
 		text << hodgesText.str() << std::endl;
@@ -200,6 +262,7 @@ void generateCode() // generates code section for different grid structures
 			text << std::endl << "\tindicesAndFaceCounts.resize(VALUES_IN_BLOCK);" << std::endl;
 			text << indicesAndFaceCountsText.str() << std::endl;
 		}
+
 		text << "\treturn " << factor << ";" << std::endl;
 		text << "}" << std::endl;
 

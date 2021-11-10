@@ -368,24 +368,24 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	{
 #if SAVE_PICTURE
 		// draw picture
-		//const float INTENSITY = 20.0f;
-		//const int SIZE = 2;
-		//int width = dxsize * SIZE, height = dysize * SIZE;
-		//Picture pic(width, height);
-		//k = zsize / 2 + 1;
-		//for (j = 0; j < height; j++)
-		//{
-		//	for (i = 0; i < width; i++)
-		//	{
-		//		const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
-		//		double norm = sqrt(h_evenPsi[idx].values[0].x * h_evenPsi[idx].values[0].x + h_evenPsi[idx].values[0].y * h_evenPsi[idx].values[0].y);
-		//
-		//		pic.setColor(i, j, INTENSITY * Vector4(h_evenPsi[idx].values[0].x, norm, h_evenPsi[idx].values[0].y, 1.0));
-		//	}
-		//}
-		//std::ostringstream picpath;
-		//picpath << "results/kuva" << iter << ".bmp";
-		//pic.save(picpath.str(), false);
+		const float INTENSITY = 20.0f;
+		const int SIZE = 2;
+		int width = dxsize * SIZE, height = dysize * SIZE;
+		Picture pic(width, height);
+		k = zsize / 2 + 1;
+		for (j = 0; j < height; j++)
+		{
+			for (i = 0; i < width; i++)
+			{
+				const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
+				double norm = sqrt(h_evenPsi[idx].values[0].x * h_evenPsi[idx].values[0].x + h_evenPsi[idx].values[0].y * h_evenPsi[idx].values[0].y);
+		
+				pic.setColor(i, j, INTENSITY * Vector4(h_evenPsi[idx].values[0].x, norm, h_evenPsi[idx].values[0].y, 1.0));
+			}
+		}
+		std::ostringstream picpath;
+		picpath << "results/kuva" << iter << ".bmp";
+		pic.save(picpath.str(), false);
 
 		// print squared norm and error
 		const Complex currentPhase = state.getPhase(iter * steps_per_iteration * time_step_size);
