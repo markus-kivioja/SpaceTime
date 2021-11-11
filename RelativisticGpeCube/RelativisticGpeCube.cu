@@ -235,12 +235,11 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	PitchedPtr d_pot = { (char*)d_cudaPot.ptr + potOffset, d_cudaPot.pitch, d_cudaPot.pitch * dysize };
 
 	// find terms for laplacian
-	Buffer<int2> psiLapind;
-	Buffer<int2> edgeLapind;
+	Buffer<int3> d0;
+	Buffer<int2> d1;
 	Buffer<ddouble> hodges;
-	ddouble lapfac = -0.5 * getLaplacian(psiLapind, hodges, sizeof(BlockPsis), d_psiR.pitch, d_psiR.slicePitch) / (block_scale * block_scale);
-	getLaplacian(edgeLapind, hodges, sizeof(BlockEdges), d_qR.pitch, d_qR.slicePitch);
-	const uint lapsize = psiLapind.size() / bsize;
+	ddouble lapfac = -0.5 * getLaplacian(hodges, d0, d1, sizeof(BlockPsis), d_psiR.pitch, d_psiR.slicePitch, sizeof(BlockEdges), d_qR.pitch, d_qR.slicePitch) / (block_scale * block_scale);
+	const uint lapsize = hodges.size() / bsize;
 	ddouble lapfac0 = lapsize * (-lapfac);
 
 	//std::cout << "lapsize = " << lapsize << ", lapfac = " << lapfac << ", lapfac0 = " << lapfac0 << std::endl;
@@ -261,11 +260,11 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	for (i = 0; i < vsize; i++) pot[i] *= dtime;
 	for (int i = 0; i < hodges.size(); ++i) hodges[i] = -0.5 * hodges[i] / (block_scale * block_scale) * dtime;
 
-	int2* d_psiLapind;
-	checkCudaErrors(cudaMalloc(&d_psiLapind, psiLapind.size() * sizeof(int2)));
+	int2* d_d0;
+	checkCudaErrors(cudaMalloc(&d_psiLapind, d0.size() * sizeof(int3)));
 
-	int2* d_edgeLapind;
-	checkCudaErrors(cudaMalloc(&d_edgeLapind, edgeLapind.size() * sizeof(int2)));
+	int2* d_d1;
+	checkCudaErrors(cudaMalloc(&d_edgeLapind, d1.size() * sizeof(int2)));
 
 	ddouble* d_hodges;
 	checkCudaErrors(cudaMalloc(&d_hodges, hodges.size() * sizeof(ddouble)));
