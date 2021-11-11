@@ -48,7 +48,7 @@ void generateCode() // generates code section for different grid structures
 	const Vector3 dim(SQ3,3,1); // maximum block coordinates
 */
 	//for (GridType gridType = CUBIC; gridType < GridType::COUNT; gridType = (GridType)(gridType + 1))
-	GridType gridType = CUBIC;
+	GridType gridType = BCC;
 	{
 		uint i, j, k;
 		DelaunayMesh mesh(3);
@@ -197,7 +197,7 @@ void generateCode() // generates code section for different grid structures
 				{
 					pp.x -= dim.x;
 					d0Link << "d0x";
-					d1Link << "nx";
+					d1Link << "d1x";
 				}
 				if (pp.y < 0.0)
 				{
@@ -235,6 +235,7 @@ void generateCode() // generates code section for different grid structures
 				if (d0Link.str().empty())
 				{
 					d0Link << "0";
+					d1Link << "0";
 				}
 				ddouble hodgeSign = 1;
 				if ((i <= k) && (edgeMap[i].size() < facesPerBody))

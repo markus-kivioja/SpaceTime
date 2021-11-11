@@ -22,7 +22,7 @@ void getPositions(Buffer<Vector3> &pos)
 	pos[10] = Vector3(0.85124999999999962, 1.4187499999999997, 1.9862500000000001);
 	pos[11] = Vector3(1.4187499999999997, 0.85124999999999962, 1.9862500000000001);
 }
-ddouble getLaplacian(Buffer<ddouble>& hodges, Buffer<int3>& d0, Buffer<int2>& d1, const int d0x, const int d0y, const int d0z, , const int d1x, const int d1y, const int d1z) // offsets in bytes
+ddouble getLaplacian(Buffer<ddouble>& hodges, Buffer<int3>& d0, Buffer<int2>& d1, const int d0x, const int d0y, const int d0z, const int d1x, const int d1y, const int d1z) // offsets in bytes
 {
 	d0.resize(EDGES_IN_BLOCK);
 	d0[0] = {make_int3(0, 0, 9)};
@@ -63,54 +63,54 @@ ddouble getLaplacian(Buffer<ddouble>& hodges, Buffer<int3>& d0, Buffer<int2>& d1
 	d1[7] = make_int2(0, 7);
 	//2
 	d1[8] = make_int2(-(-d1x + d1z), 2);
-	d1[9] = make_int2(-(), 4);
+	d1[9] = make_int2(-(0), 4);
 	d1[10] = make_int2(0, 8);
 	d1[11] = make_int2(0, 9);
 	//3
 	d1[12] = make_int2(-(-d1x), 3);
-	d1[13] = make_int2(-(), 5);
+	d1[13] = make_int2(-(0), 5);
 	d1[14] = make_int2(0, 10);
 	d1[15] = make_int2(0, 11);
 	//4
-	d1[16] = make_int2(-(), 8);
-	d1[17] = make_int2(-(), 10);
+	d1[16] = make_int2(-(0), 8);
+	d1[17] = make_int2(-(0), 10);
 	d1[18] = make_int2(0, 12);
 	d1[19] = make_int2(0, 13);
 	//5
-	d1[20] = make_int2(-(nx - d1y), 6);
-	d1[21] = make_int2(-(nx), 12);
+	d1[20] = make_int2(-(d1x - d1y), 6);
+	d1[21] = make_int2(-(d1x), 12);
 	d1[22] = make_int2(0, 14);
 	d1[23] = make_int2(0, 15);
 	//6
-	d1[24] = make_int2(-(), 14);
+	d1[24] = make_int2(-(0), 14);
 	d1[25] = make_int2(0, 16);
 	d1[26] = make_int2(0, 17);
 	d1[27] = make_int2(0, 18);
 	//7
-	d1[28] = make_int2(-(), 15);
+	d1[28] = make_int2(-(0), 15);
 	d1[29] = make_int2(0, 19);
 	d1[30] = make_int2(0, 20);
 	d1[31] = make_int2(0, 21);
 	//8
 	d1[32] = make_int2(-(-d1y), 7);
-	d1[33] = make_int2(-(), 13);
-	d1[34] = make_int2(-(), 16);
-	d1[35] = make_int2(-(), 19);
+	d1[33] = make_int2(-(0), 13);
+	d1[34] = make_int2(-(0), 16);
+	d1[35] = make_int2(-(0), 19);
 	//9
-	d1[36] = make_int2(-(), 0);
+	d1[36] = make_int2(-(0), 0);
 	d1[37] = make_int2(-(d1y - d1z), 17);
 	d1[38] = make_int2(-(d1y), 20);
 	d1[39] = make_int2(0, 22);
 	//10
-	d1[40] = make_int2(-(), 1);
+	d1[40] = make_int2(-(0), 1);
 	d1[41] = make_int2(-(-d1z), 18);
-	d1[42] = make_int2(-(), 21);
+	d1[42] = make_int2(-(0), 21);
 	d1[43] = make_int2(0, 23);
 	//11
 	d1[44] = make_int2(-(-d1z), 9);
-	d1[45] = make_int2(-(), 11);
-	d1[46] = make_int2(-(), 22);
-	d1[47] = make_int2(-(), 23);
+	d1[45] = make_int2(-(0), 11);
+	d1[46] = make_int2(-(0), 22);
+	d1[47] = make_int2(-(0), 23);
 
 	hodges.resize(INDICES_PER_BLOCK);
 	hodges[0] = 2.328785732306081;
