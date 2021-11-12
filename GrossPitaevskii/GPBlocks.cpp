@@ -48,7 +48,7 @@ void generateCode() // generates code section for different grid structures
 	const Vector3 dim(SQ3,3,1); // maximum block coordinates
 */
 	//for (GridType gridType = CUBIC; gridType < GridType::COUNT; gridType = (GridType)(gridType + 1))
-	GridType gridType = BCC;
+	GridType gridType = C15;
 	{
 		uint i, j, k;
 		DelaunayMesh mesh(3);
@@ -170,10 +170,10 @@ void generateCode() // generates code section for different grid structures
 		{
 			int id = 0;
 			std::string offset;
-			int sign;
+			ddouble hodge;
 		};
 		std::vector<std::vector<int2>> edgeMap(inds);
-		std::vector<ddouble> hodges(totalFaceCount);
+		//std::vector<ddouble> hodges(totalFaceCount);
 		for (i = 0; i < inds; i++)
 		{
 			ddouble bodyHodge = mesh.getBodyHodge(ind[i]);
@@ -237,25 +237,20 @@ void generateCode() // generates code section for different grid structures
 					d0Link << "0";
 					d1Link << "0";
 				}
-				ddouble hodgeSign = 1;
+				ddouble hodge = bodyHodge / mesh.getFaceHodge(f[j]);
 				if ((i <= k) && (edgeMap[i].size() < facesPerBody))
 				{
 					edgesText << "\td0[" << edgeId << "] = {make_int3(" << i << ", " << d0Link.str() << ", " << k << ")};" << std::endl;
-					edgeMap[i].push_back({ edgeId, "0", 1});
+					edgeMap[i].push_back({ edgeId, "0", hodge });
 					std::string negLink = "-(" + d1Link.str() + ")";
-					edgeMap[k].push_back({ edgeId, negLink, -1});
+					edgeMap[k].push_back({ edgeId, negLink, -hodge });
 					edgeId++;
 				}
 				//text << "\tind[" << fsize << "] = make_int2(" << link.str() << ", " << k << ");" << std::endl;
-				ddouble hodge = bodyHodge / mesh.getFaceHodge(f[j]);
+				
 				factor = max(factor, hodge);
-				hodges[fsize++] = hodge;
+				fsize++;
 			}
-		}
-		for (int hId = 0; hId < totalFaceCount; ++hId)
-		{
-			hodges[hId] *= edgeMap[hId / facesPerBody][hId % facesPerBody].sign;
-			hodgesText << "\thodges[" << hId << "] = " << hodges[hId] << ";" << std::endl;
 		}
 
 		text << std::endl << edgesText.str() << std::endl;
@@ -267,7 +262,9 @@ void generateCode() // generates code section for different grid structures
 			text << "\t//" << index << std::endl;
 			for (int edgeIndInd = 0; edgeIndInd < facesPerBody; ++edgeIndInd)
 			{
-				text << "\td1[" << edgeIndsId++ << "] = make_int2(" << edgeMap[index][edgeIndInd].offset << ", " << edgeMap[index][edgeIndInd].id << ");" << std::endl;
+				text << "\td1[" << edgeIndsId << "] = make_int2(" << edgeMap[index][edgeIndInd].offset << ", " << edgeMap[index][edgeIndInd].id << ");" << std::endl;
+				hodgesText << "\thodges[" << edgeIndsId << "] = " << edgeMap[index][edgeIndInd].hodge << ";" << std::endl;
+				edgeIndsId++;
 			}
 		}
 		text << std::endl << "\thodges.resize(INDICES_PER_BLOCK);" << std::endl;
