@@ -5,7 +5,7 @@
 const Vector3 BLOCK_WIDTH = Vector3(2.27, 2.27, 2.27); // dimensions of unit block
 const ddouble VOLUME = 0.97475691666666664; // volume of body elements
 const bool IS_3D = true; // 3-dimensional
-void getPositions(Buffer<Vector3> &pos)
+void getPositions(Buffer<Vector3>& pos)
 {
 	pos.resize(VALUES_IN_BLOCK);
 	pos[0] = Vector3(0.28374999999999967, 0.85124999999999962, 1.9862500000000001);
@@ -21,7 +21,7 @@ void getPositions(Buffer<Vector3> &pos)
 	pos[10] = Vector3(0.85124999999999962, 1.4187499999999997, 1.9862500000000001);
 	pos[11] = Vector3(1.4187499999999997, 0.85124999999999962, 1.9862500000000001);
 }
-ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, Buffer<int2> &edges, const int nx, const int ny, const int nz) // nx, ny, nz in bytes
+ddouble getLaplacian(Buffer<int2>& ind, Buffer<ddouble>& hodges, const int nx, const int ny, const int nz) // nx, ny, nz in bytes
 {
 	ind.resize(INDICES_PER_BLOCK);
 	ind[0] = make_int2(0, 9);
@@ -72,56 +72,6 @@ ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, Buffer<int2> &e
 	ind[45] = make_int2(0, 10);
 	ind[46] = make_int2(nz, 2);
 	ind[47] = make_int2(0, 3);
-
-	edges[0] = make_int2(22, 271);
-	edges[1] = make_int2(22, 272);
-	edges[2] = make_int2(22, 275);
-	edges[3] = make_int2(22, 177);
-	edges[4] = make_int2(183, 184);
-	edges[5] = make_int2(183, 185);
-	edges[6] = make_int2(183, 187);
-	edges[7] = make_int2(183, 182);
-	edges[8] = make_int2(184, 183);
-	edges[9] = make_int2(184, 186);
-	edges[10] = make_int2(184, 31);
-	edges[11] = make_int2(184, 174);
-	edges[12] = make_int2(185, 183);
-	edges[13] = make_int2(185, 186);
-	edges[14] = make_int2(185, 131);
-	edges[15] = make_int2(185, 273);
-	edges[16] = make_int2(186, 184);
-	edges[17] = make_int2(186, 185);
-	edges[18] = make_int2(186, 216);
-	edges[19] = make_int2(186, 212);
-	edges[20] = make_int2(209, 210);
-	edges[21] = make_int2(209, 211);
-	edges[22] = make_int2(209, 205);
-	edges[23] = make_int2(209, 178);
-	edges[24] = make_int2(210, 209);
-	edges[25] = make_int2(210, 212);
-	edges[26] = make_int2(210, 16);
-	edges[27] = make_int2(210, 173);
-	edges[28] = make_int2(211, 209);
-	edges[29] = make_int2(211, 212);
-	edges[30] = make_int2(211, 25);
-	edges[31] = make_int2(211, 272);
-	edges[32] = make_int2(212, 210);
-	edges[33] = make_int2(212, 211);
-	edges[34] = make_int2(212, 80);
-	edges[35] = make_int2(212, 186);
-	edges[36] = make_int2(271, 22);
-	edges[37] = make_int2(271, 273);
-	edges[38] = make_int2(271, 279);
-	edges[39] = make_int2(271, 181);
-	edges[40] = make_int2(272, 22);
-	edges[41] = make_int2(272, 273);
-	edges[42] = make_int2(272, 309);
-	edges[43] = make_int2(272, 211);
-	edges[44] = make_int2(273, 271);
-	edges[45] = make_int2(273, 272);
-	edges[46] = make_int2(273, 283);
-	edges[47] = make_int2(273, 185);
-
 
 	hodges.resize(INDICES_PER_BLOCK);
 	hodges[0] = 2.328785732306081;
