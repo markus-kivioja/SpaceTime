@@ -16,6 +16,8 @@ ddouble RATIO = 1.0;
 ddouble KAPPA = 10;
 ddouble G = 300;
 
+#define RELATIVISTIC 0
+
 #define LOAD_STATE_FROM_DISK 1
 #define SAVE_PICTURE 1
 #define SAVE_VOLUME 0
@@ -107,10 +109,14 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 
 	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * dataZid + prev_q.pitch * yid) + xid; // I or R
 	BlockEdges* next = (BlockEdges*)(next_q.ptr + next_q.slicePitch * dataZid + next_q.pitch * yid) + xid; // R or I
-	double d0_psi = ((BlockPsis*)(pPsi + d0[dualEdgeId].y))->values[d0[dualEdgeId].z] -
+	double d0psi = ((BlockPsis*)(pPsi + d0[dualEdgeId].y))->values[d0[dualEdgeId].z] -
 		((BlockPsis*)(pPsi))->values[d0[dualEdgeId].x];
 
-	next->values[dualEdgeId] += sign * dtime_per_sigma * (prev->values[dualEdgeId] + d0_psi);
+#if RELATIVISTIC
+	next->values[dualEdgeId] += sign * dtime_per_sigma * (prev->values[dualEdgeId] + d0psi);
+#else
+	next->values[dualEdgeId] = d0psi;
+#endif
 }
 
 __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, PitchedPtr potentials, int2* d1, ddouble* hodges, ddouble g, uint3 dimensions, ddouble sign)
@@ -149,7 +155,11 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 
 	double normsq = prev_psi * prev_psi + next_psi * next_psi;
 
+#if RELATIVISTIC
 	next_psi += sign * ((pot->values[dualNodeId] + g * normsq) * prev_psi - d1q);
+#else
+	next_psi += sign * ((pot->values[dualNodeId] + g * normsq) * prev_psi + d1q);
+#endif
 
 	p_next_psi->values[dualNodeId] = next_psi;
 };
@@ -392,7 +402,9 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	Text errorText;
 	const uint time0 = clock();
 	const ddouble volume = (IS_3D ? block_scale : 1.0) * block_scale * block_scale * VOLUME;
+#if RELATIVISTIC
 	update_q << <edgeDimGrid, dimBlock >> > (d_qR, d_qR, d_psiR, d_d0, dimensions, dt_per_sigma / (dt - dt_per_sigma), 1.0f);
+#endif
 	while (true)
 	{
 #if SAVE_PICTURE
@@ -413,7 +425,11 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 			}
 		}
 		std::ostringstream picpath;
-		picpath << "results/kuva" << iter << ".bmp";
+#if RELATIVISTIC
+		picpath << "results/hyper_" << iter << ".bmp";
+#else
+		picpath << "results/para_" << iter << ".bmp";
+#endif
 		pic.save(picpath.str(), false);
 
 		// print squared norm and error
@@ -484,12 +500,21 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 		std::cout << "Iteration " << iter << std::endl;
 		for (uint step = 0; step < steps_per_iteration; step++)
 		{
+#if RELATIVISTIC
 			// update odd values (imaginary terms)
 			update_psi << <psiDimGrid, dimBlock >> > (d_psiI, d_psiR, d_qR, d_pot, d_d1, d_hodges, g, dimensions, -1.0);
 			update_q << <edgeDimGrid, dimBlock >> > (d_qI, d_qR, d_psiR, d_d0, dimensions, dt_per_sigma, 1.0);
 			// update even values (real terms)
 			update_psi << <psiDimGrid, dimBlock >> > (d_psiR, d_psiI, d_qI, d_pot, d_d1, d_hodges, g, dimensions, 1.0);
 			update_q << <edgeDimGrid, dimBlock >> > (d_qR, d_qI, d_psiI, d_d0, dimensions, dt_per_sigma, -1.0);
+#else
+			// update odd values (imaginary terms)
+			update_q << <edgeDimGrid, dimBlock >> > (d_qR, d_qR, d_psiR, d_d0, dimensions, dt_per_sigma, 1.0);
+			update_psi << <psiDimGrid, dimBlock >> > (d_psiI, d_psiR, d_qR, d_pot, d_d1, d_hodges, g, dimensions, -1.0);
+			// update even values (real terms)
+			update_q << <edgeDimGrid, dimBlock >> > (d_qI, d_qI, d_psiI, d_d0, dimensions, dt_per_sigma, -1.0);
+			update_psi << <psiDimGrid, dimBlock >> > (d_psiR, d_psiI, d_qI, d_pot, d_d1, d_hodges, g, dimensions, 1.0);
+#endif
 		}
 #if SAVE_PICTURE || SAVE_VOLUME
 		// Copy back from device memory to host memory
