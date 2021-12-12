@@ -13,10 +13,10 @@
 #include <mesh.h>
 
 ddouble RATIO = 1.0;
-ddouble KAPPA = 10;
+ddouble KAPPA = 4;
 ddouble G = 300;
 
-#define LOAD_STATE_FROM_DISK 1
+#define LOAD_STATE_FROM_DISK 0
 #define SAVE_PICTURE 1
 #define SAVE_VOLUME 0
 

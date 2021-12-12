@@ -21,22 +21,22 @@ void VortexState::setDimensions(const uint rsize, const ddouble rstep, const ddo
 	m_mu = 1.0;
 	m_f.resize(m_rsize * m_zsize);
 	ddouble prob = 0.0;
-	uint ii = 0;
+	uint idx = 0;
 	for(uint i=0; i<m_rsize; i++)
 	{
-		const ddouble fr = 1.0 - cos(i * PIx2 / ddouble(m_rsize));
+		const ddouble fr = 1.0 - cos(i * 4 * PIx2 / ddouble(m_rsize));
 		const ddouble r = m_rplug + i * m_rstep;
 		uint times = 1;
-		for(uint j=0; j<m_zsize; j++, ii++)
+		for(uint zIdx =0; zIdx <m_zsize; zIdx++, idx++)
 		{
-			m_f[ii] = (1.0 + cos(j * PI / ddouble(m_zsize))) * fr;
-			prob += times * m_f[ii] * m_f[ii] * r;
+			m_f[idx] =  (1.0 + cos(zIdx * 4 * PI / ddouble(m_zsize)))* fr;
+			prob += times * m_f[idx] * m_f[idx] * r;
 			times = 2;
 		}
 	}
 	prob *= PIx2 * m_rstep * m_zstep;
 	const ddouble scale = 1.0 / sqrt(prob);
-	for(ii=0; ii<m_f.size(); ii++) m_f[ii] *= scale;
+	for(idx=0; idx<m_f.size(); idx++) m_f[idx] *= scale;
 }
 
 void VortexState::setRange(const ddouble rmin, const ddouble rmax, const ddouble zmax, const ddouble rstep, const ddouble zstep)
@@ -106,80 +106,80 @@ void VortexState::initialize(const VortexState &state)
 	}
 }
 
-void VortexState::iterateSolution(ddouble (*potential)(const ddouble, const ddouble), const uint maxiters, const ddouble eps)
+void VortexState::iterateSolution(ddouble (*potential)(const ddouble, const ddouble), const uint maxIters, const ddouble eps)
 {
-	uint i, j, k, ii;
+	uint rIdx, zIdx, iter, idx;
 	const ddouble PIx2drdz = PIx2 * m_rstep * m_zstep;
-	const ddouble kk = 0.5 * ddouble(m_kappa * m_kappa);
+	const ddouble kSqr = 0.5 *ddouble(m_kappa * m_kappa);
 	const ddouble laplr = 0.5 / (m_rstep * m_rstep);
 	const ddouble laplz = (m_zsize > 1 ? 0.5 / (m_zstep * m_zstep) : 0.0);
 
 	// set function to zero at r = m_rplug
-	for(j=0; j<m_zsize; j++) m_f[j] = 0.0;
+	for(zIdx=0; zIdx<m_zsize; zIdx++) m_f[zIdx] = 0.0;
 
 	// iterate solution by relaxation method
-	for(k=0; k<maxiters; k++)
+	for (iter = 0; iter < maxIters; iter++)
 	{
 		ddouble diff = 0.0;
-		for(i=1,ii=m_zsize; i<m_rsize; i++)
+		for (rIdx = 1, idx = m_zsize; rIdx < m_rsize; rIdx++)
 		{
-			const ddouble r = m_rplug + i * m_rstep;
-			const ddouble lapl = kk / (r * r) + 2.0 * (laplr + laplz);
+			const ddouble r = m_rplug + rIdx * m_rstep;
+			const ddouble lapl = kSqr / (r * r) + 2.0 * (laplr + laplz);
 			const ddouble gradr = 0.25 / (r * m_rstep);
 			ddouble dv = PIx2drdz * r;
-			for(j=0; j<m_zsize; j++, ii++)
+			for (zIdx = 0; zIdx < m_zsize; zIdx++, idx++)
 			{
-				const ddouble pot = potential(r, j * m_zstep) + m_g * m_f[ii] * m_f[ii];
+				const ddouble pot = potential(r, zIdx * m_zstep) + m_g * m_f[idx] * m_f[idx];
 
-				const ddouble fiir = (i + 1 < m_rsize ? m_f[ii + m_zsize] : 0.0);
-				const ddouble frii = m_f[ii - m_zsize];
-				const ddouble fiiz = (j + 1 < m_zsize ? m_f[ii + 1] : 0.0);
-				const ddouble fzii = (j > 0 ? m_f[ii - 1] : fiiz);
+				const ddouble fRight = (rIdx + 1 < m_rsize ? m_f[idx + m_zsize] : 0.0);
+				const ddouble fLeft = m_f[idx - m_zsize];
+				const ddouble fUp = (zIdx + 1 < m_zsize ? m_f[idx + 1] : 0.0);
+				const ddouble fDown = (zIdx > 0 ? m_f[idx - 1] : fUp);
 
-				ddouble dfii = m_f[ii];
-				m_f[ii] = (gradr * (frii - fiir) - laplr * (frii + fiir) - laplz * (fzii + fiiz)) / (m_mu - lapl - pot);
-				dfii -= m_f[ii];
-				diff += dfii * dfii * dv;
-				if(j == 0) dv *= 2.0;
+				ddouble prev = m_f[idx];
+				m_f[idx] = (-gradr * (fLeft - fRight) - laplr * (fLeft + fRight) - laplz * (fDown + fUp)) / (m_mu - lapl - pot);
+				ddouble df = prev - m_f[idx];
+				diff += df * df * dv;
+				if (zIdx == 0) dv *= 2.0;
 			}
 		}
 
 		ddouble prob = 0.0;
 		ddouble prob2 = 0.0;
-		for(i=1,ii=m_zsize; i<m_rsize; i++)
+		for (rIdx = 1, idx = m_zsize; rIdx < m_rsize; rIdx++)
 		{
-			const ddouble r = m_rplug + i * m_rstep;
-			const ddouble lapl = kk / (r * r) + 2.0 * (laplr + laplz);
+			const ddouble r = m_rplug + rIdx * m_rstep;
+			const ddouble lapl = kSqr / (r * r) + 2.0 * (laplr + laplz);
 			const ddouble gradr = 0.25 / (r * m_rstep);
 			ddouble dv = PIx2drdz * r;
-			for(j=0; j<m_zsize; j++, ii++)
+			for (zIdx = 0; zIdx < m_zsize; zIdx++, idx++)
 			{
-				const ddouble pot = potential(r, j * m_zstep) + m_g * m_f[ii] * m_f[ii];
+				const ddouble pot = potential(r, zIdx * m_zstep) + m_g * m_f[idx] * m_f[idx];
 
-				const ddouble fiir = (i + 1 < m_rsize ? m_f[ii + m_zsize] : 0.0);
-				const ddouble frii = m_f[ii - m_zsize];
-				const ddouble fiiz = (j + 1 < m_zsize ? m_f[ii + 1] : 0.0);
-				const ddouble fzii = (j > 0 ? m_f[ii - 1] : fiiz);
+				const ddouble fRight = (rIdx + 1 < m_rsize ? m_f[idx + m_zsize] : 0.0);
+				const ddouble fLeft = m_f[idx - m_zsize];
+				const ddouble fUp = (zIdx + 1 < m_zsize ? m_f[idx + 1] : 0.0);
+				const ddouble fDown = (zIdx > 0 ? m_f[idx - 1] : fUp);
 
-				prob += m_f[ii] * m_f[ii] * dv;
-				prob2 += ((pot + lapl) * m_f[ii] + gradr * (frii - fiir) - laplr * (frii + fiir) - laplz * (fzii + fiiz)) * m_f[ii] * dv;
-				if(j == 0) dv *= 2.0;
+				prob += m_f[idx] * m_f[idx] * dv;
+				prob2 += ((pot + lapl) * m_f[idx] - gradr * (fLeft - fRight) - laplr * (fLeft + fRight) - laplz * (fDown + fUp)) * m_f[idx] * dv;
+				if (zIdx == 0) dv *= 2.0;
 			}
 		}
 		m_mu = prob2 / prob;
 		const ddouble scale = 1.0 / sqrt(prob);
-		for(ii=m_zsize; ii<m_f.size(); ii++) m_f[ii] *= scale;
+		for (idx = m_zsize; idx < m_f.size(); idx++) m_f[idx] *= scale;
 
-		if(k % 1000 == 0) std::cout << "iter=" << k << " diff=" << diff << " prob=" << prob << std::endl;
-		if(diff < eps) break;
+		if (iter % 1000 == 0) std::cout << "iter=" << iter << " diff=" << diff << " prob=" << prob << std::endl;
+		if (diff < eps) break;
 	}
 
 	// make f non-negative
 	ddouble sum = 0.0;
-	for(ii=m_zsize; ii<m_f.size(); ii++) sum += m_f[ii];
+	for(idx=m_zsize; idx<m_f.size(); idx++) sum += m_f[idx];
 	if(sum < 0.0)
 	{
-		for(ii=m_zsize; ii<m_f.size(); ii++) m_f[ii] = -m_f[ii];
+		for(idx=m_zsize; idx<m_f.size(); idx++) m_f[idx] = -m_f[idx];
 	}
 
 	// print statistics
@@ -234,7 +234,7 @@ ddouble VortexState::getFunction(const ddouble r, const ddouble z) const
 	const ddouble fiir = (ir + 1 < m_rsize ? m_f[ii + m_zsize] : 0.0);
 	const ddouble fiiz = (iz + 1 < m_zsize ? m_f[ii + 1] : 0.0);
 	const ddouble fiirz = (ir + 1 < m_rsize && iz + 1 < m_zsize ? m_f[ii + m_zsize + 1] : 0.0);
-	return (1.0 - dz) * ((1.0 - dr) * m_f[ii] + dr * fiir) + dz * ((1.0 - dr) * fiiz + dr * fiirz);
+	return (1.0 - dz) * ((1.0 - dr) * m_f[ii] + dr * fiir) + dz * ((1.0 - dr) * fiiz + dr * fiirz); // Interpolate between the discrete grid points 
 }
 
 ddouble VortexState::searchFunctionMax() const
