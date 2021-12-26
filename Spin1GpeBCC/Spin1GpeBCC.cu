@@ -17,6 +17,13 @@ static constexpr ddouble C0 = 7500.0;
 static constexpr ddouble C1 = -75.0;
 static constexpr ddouble gF = -0.5; // Lande g factor
 
+// The external magnetic field
+static constexpr ddouble Bq = -0.05; // Quadrupole gradient TODO: Scale from T/m to diemensionless
+static constexpr ddouble Bz0 = 1.0; // Bias field at t = 0 TODO: Scale from uT to dimensionless
+static constexpr ddouble BzVelocity = 0; // Time derivative of the bias field TODO: Set
+
+#define INV_SQRT_2 0.70710678118655
+
 #define LOAD_STATE_FROM_DISK 0
 #define SAVE_PICTURE 1
 #define SAVE_VOLUME 0
@@ -33,6 +40,13 @@ ddouble potentialRZ(const ddouble r, const ddouble z)
 ddouble potentialV3(const Vector3& p)
 {
 	return 0.5 * (p.x * p.x + p.y * p.y + RATIO * RATIO * p.z * p.z);
+}
+
+Vector3 magneticField(const Vector3& p, ddouble t)
+{
+	ddouble Bz = Bz0 + BzVelocity * t;
+
+	return Bq * Vector3(p.x, p.y, -2 * p.z + Bz);
 }
 
 bool saveVolumeMap(const std::string& path, const Buffer<ushort>& vol, const uint xsize, const uint ysize, const uint zsize, const Vector3& h)
@@ -83,6 +97,11 @@ struct BlockPots
 	double values[VALUES_IN_BLOCK];
 };
 
+struct BlockBs
+{
+	double3 values[VALUES_IN_BLOCK];
+};
+
 struct PitchedPtr
 {
 	char* ptr;
@@ -117,20 +136,11 @@ inline __host__ __device__ double2 operator*(double2 a, double2 b) // Complex nu
 	return make_double2(a.x * b.x - a.y * b.y, a.y * b.x + a.x * b.y);
 }
 
-__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr trapPots, int2* lapInd, double* hodges, ddouble c0, ddouble c1, uint3 dimensions)
+__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr trapPots, PitchedPtr Bptr, int2* lapInd, double* hodges, ddouble c0, ddouble c1, uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
-
-	// Load Laplacian indices into LDS // TODO: Load prevStep also into LDS?
-	//__shared__ int2 ldsLapInd[INDICES_PER_BLOCK];
-	//size_t threadIdxInBlock = blockDim.x * blockDim.y * threadIdx.z + blockDim.x * threadIdx.y + threadIdx.x;
-	//if (threadIdxInBlock < INDICES_PER_BLOCK)
-	//{
-	//	ldsLapInd[threadIdxInBlock] = lapInd[threadIdxInBlock];
-	//}
-	//__syncthreads();
 
 	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 
@@ -144,6 +154,7 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr trap
 	char* prevPsi = prevStep.ptr + prevStep.slicePitch * dataZid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
 	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * dataZid + nextStep.pitch * yid) + xid;
 	BlockPots* trapPot = (BlockPots*)(trapPots.ptr + trapPots.slicePitch * dataZid + trapPots.pitch * yid) + xid;
+	BlockBs* magField = (BlockBs*)(Bptr.ptr + Bptr.slicePitch * dataZid + Bptr.pitch * yid) + xid;
 
 	// Update psi
 	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
@@ -155,7 +166,9 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr trap
 	H.s1 = make_double2(0, 0);
 	H.s0 = make_double2(0, 0);
 	H.s_1 = make_double2(0, 0);
-#pragma unroll // Add Laplacian to Hamiltonian
+
+	// Add Laplacian to Hamiltonian
+#pragma unroll
 	for (int i = 0; i < FACE_COUNT; ++i)
 	{
 		H.s1 += hodges[primaryFace] * (((BlockPsis*)(prevPsi + lapInd[primaryFace].x))->values[lapInd[primaryFace++].y].s1 - prev.s1);
@@ -172,7 +185,13 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr trap
 	double totalPot = trapPot->values[dualNodeId] + (c0 + c1) * normSq;
 	H.s1 += totalPot * prev.s1 + c1 * (-2 * normSq_s_1 * prev.s1 + star(prev.s_1) * prev.s0 * prev.s0 + 0 * prev.s_1);
 	H.s0 += totalPot * prev.s0 + c1 * (star(prev.s0) * prev.s_1 * prev.s1 - normSq_s0 * prev.s0 + star(prev.s0) * prev.s1 * prev.s_1);
-	H.s_1 += totalPot * prev.s_1 + c1 * (0 * prev.s1 + star(prev.s1) * prev.s0 - 2 * normSq_s1 * prev.s_1);
+	H.s_1 += totalPot * prev.s_1 + c1 * (0 * prev.s1 + star(prev.s1) * prev.s0 * prev.s0 - 2 * normSq_s1 * prev.s_1);
+
+	// Add the Zeeman term
+	double3 B = magField->values[dualNodeId];
+	H.s1 += B.z * prev.s1 + INV_SQRT_2 * make_double2(B.x, -B.y) * prev.s0;
+	H.s0 += INV_SQRT_2 * make_double2(B.x, B.y) * prev.s1 + INV_SQRT_2 * make_double2(B.x, -B.y) * prev.s_1;
+	H.s_1 += INV_SQRT_2 * make_double2(B.x, B.y) * prev.s0 - B.z * prev.s_1;
 
 	nextPsi->values[dualNodeId].s1 += make_double2(H.s1.y, -H.s1.x);
 	nextPsi->values[dualNodeId].s0 += make_double2(H.s0.y, -H.s0.x);
