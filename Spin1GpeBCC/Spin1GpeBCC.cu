@@ -12,10 +12,10 @@
 
 #include <mesh.h>
 
-ddouble RATIO = 1.0;
-ddouble KAPPA = 10;
-ddouble C0 = 1.0;
-ddouble C1 = 1.0;
+static constexpr ddouble RATIO = 1.0;
+static constexpr ddouble C0 = 7500.0;
+static constexpr ddouble C1 = -75.0;
+static constexpr ddouble gF = -0.5; // Lande g factor
 
 #define LOAD_STATE_FROM_DISK 0
 #define SAVE_PICTURE 1
@@ -530,7 +530,6 @@ int main(int argc, char** argv)
 #else
 	// preliminary vortex state to find vortex size
 	VortexState state0;
-	state0.setKappa(KAPPA);
 	state0.setC0(C0);
 	state0.setC1(C1);
 	if(IS_3D) state0.setRange(0.0, 15.0, 35.0, 0.2, 0.2); // use this for 3d
@@ -543,7 +542,6 @@ int main(int argc, char** argv)
 
 	// more accurate vortex state
 	VortexState state;
-	state.setKappa(KAPPA);
 	state.setC0(C0);
 	state.setC1(C1);
 	if (IS_3D) state.setRange(minr, maxr, maxz, 0.03, 0.03); // use this for 3d
@@ -560,7 +558,6 @@ int main(int argc, char** argv)
 	const ddouble block_scale = PIx2 / (20.0 * sqrt(state.integrateCurvature()));
 
 	std::cout << "1 GPU version" << std::endl;
-	std::cout << "kappa = " << KAPPA << std::endl;
 	std::cout << "g = " << G << std::endl;
 	std::cout << "ranks = 576" << std::endl;
 	std::cout << "block_scale = " << block_scale << std::endl;

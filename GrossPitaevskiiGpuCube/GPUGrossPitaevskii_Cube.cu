@@ -13,10 +13,10 @@
 #include <mesh.h>
 
 ddouble RATIO = 1.0;
-ddouble KAPPA = 4;
+ddouble KAPPA = 10;
 ddouble G = 300;
 
-#define LOAD_STATE_FROM_DISK 0
+#define LOAD_STATE_FROM_DISK 1
 #define SAVE_PICTURE 1
 #define SAVE_VOLUME 0
 
@@ -366,12 +366,14 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 #if SAVE_PICTURE
 		// draw picture
 		const float INTENSITY = 20.0f;
-		const int SIZE = 2;
+		const int SIZE = 1;
 		int width = dxsize * SIZE, height = dysize * SIZE;
 		Picture pic(width, height);
-		k = zsize / 2 + 1;
-		for (j = 0; j < height; j++)
+		//k = zsize / 2 + 5;
+		for (k = 0; k < zsize; ++k)
+		//for (j = 0; j < height; j++)
 		{
+			j = height / 2;
 			for (i = 0; i < width; i++)
 			{
 				const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;

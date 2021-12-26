@@ -230,11 +230,16 @@ ddouble VortexState::getFunction(const ddouble r, const ddouble z) const
 	if(iz >= m_zsize) return 0.0; // z is out of boundaries
 	const ddouble dz = zz - ddouble(iz);
 
-	const uint ii = ir * m_zsize + iz;
-	const ddouble fiir = (ir + 1 < m_rsize ? m_f[ii + m_zsize] : 0.0);
-	const ddouble fiiz = (iz + 1 < m_zsize ? m_f[ii + 1] : 0.0);
-	const ddouble fiirz = (ir + 1 < m_rsize && iz + 1 < m_zsize ? m_f[ii + m_zsize + 1] : 0.0);
-	return (1.0 - dz) * ((1.0 - dr) * m_f[ii] + dr * fiir) + dz * ((1.0 - dr) * fiiz + dr * fiirz);
+	//const uint ii = ir * m_zsize + iz;
+	//const ddouble fiir = (ir + 1 < m_rsize ? m_f[ii + m_zsize] : 0.0);
+	//const ddouble fiiz = (iz + 1 < m_zsize ? m_f[ii + 1] : 0.0);
+	//const ddouble fiirz = (ir + 1 < m_rsize && iz + 1 < m_zsize ? m_f[ii + m_zsize + 1] : 0.0);
+	//return (1.0 - dz) * ((1.0 - dr) * m_f[ii] + dr * fiir) + dz * ((1.0 - dr) * fiiz + dr * fiirz);
+	
+	const ddouble fiir = (ir + 1 < m_rsize ? 1.0 : 0.0);
+	const ddouble fiiz = (iz + 1 < m_zsize ? 1.0 : 0.0);
+	const ddouble fiirz = (ir + 1 < m_rsize && iz + 1 < m_zsize ? 1.0 : 0.0);
+	return (1.0 - dz) * ((1.0 - dr) * 1.0 + dr * fiir) + dz * ((1.0 - dr) * fiiz + dr * fiirz);
 }
 
 ddouble VortexState::searchFunctionMax() const
