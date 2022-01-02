@@ -19,7 +19,7 @@ static constexpr ddouble gF = -0.5; // Lande g factor
 
 // The external magnetic field
 static constexpr ddouble Bq = -0.05; // Quadrupole gradient TODO: Scale from T/m to diemensionless
-static constexpr ddouble Bz0 = 1.0; // Bias field at t = 0 TODO: Scale from uT to dimensionless
+static constexpr ddouble Bz0 = 55.985f; // Bias field at t = 0 TODO: Scale from uT to dimensionless
 static constexpr ddouble BzVelocity = 0; // Time derivative of the bias field TODO: Set
 
 #define INV_SQRT_2 0.70710678118655
@@ -189,9 +189,9 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr trap
 
 	// Add the Zeeman term
 	double3 B = magField->values[dualNodeId];
-	H.s1 += B.z * prev.s1 + INV_SQRT_2 * make_double2(B.x, -B.y) * prev.s0;
-	H.s0 += INV_SQRT_2 * make_double2(B.x, B.y) * prev.s1 + INV_SQRT_2 * make_double2(B.x, -B.y) * prev.s_1;
-	H.s_1 += INV_SQRT_2 * make_double2(B.x, B.y) * prev.s0 - B.z * prev.s_1;
+	H.s1 += gF * (B.z * prev.s1 + INV_SQRT_2 * make_double2(B.x, -B.y) * prev.s0);
+	H.s0 += gF * (INV_SQRT_2 * make_double2(B.x, B.y) * prev.s1 + INV_SQRT_2 * make_double2(B.x, -B.y) * prev.s_1);
+	H.s_1 += gF * (INV_SQRT_2 * make_double2(B.x, B.y) * prev.s0 - B.z * prev.s_1);
 
 	nextPsi->values[dualNodeId].s1 += make_double2(H.s1.y, -H.s1.x);
 	nextPsi->values[dualNodeId].s0 += make_double2(H.s0.y, -H.s0.x);
