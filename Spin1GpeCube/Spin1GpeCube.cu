@@ -44,9 +44,11 @@ const float Bq = dimensionalBq * BqScale;
 const float Bz0 = dimensionalBz0 * Bz0Scale;
 constexpr float BzVel = 0; // Time derivative of the bias field TODO: Set
 
+const std::string STATE_FILENAME = "ground_state.dat";
+
 #define INV_SQRT_2 0.70710678118655
 
-#define COMPUTE_GROUND_STATE 1
+#define COMPUTE_GROUND_STATE 0
 
 #define SAVE_PICTURE 1
 #define SAVE_VOLUME 0
@@ -55,6 +57,8 @@ constexpr float BzVel = 0; // Time derivative of the bias field TODO: Set
 #define THREAD_BLOCK_X 8
 #define THREAD_BLOCK_Y 8
 #define THREAD_BLOCK_Z 1
+
+#include <utils.h>
 
 __host__ __device__ __inline__ float trap(float3 p)
 {
@@ -67,92 +71,6 @@ __host__ __device__ __inline__ float trap(float3 p)
 __device__ __inline__ float3 magneticField(float3 p, float Bq, float Bz)
 {
 	return make_float3(Bq * p.x, Bq * p.y, Bq * -2 * p.z + Bz);
-}
-
-bool saveVolumeMap(const std::string& path, const Buffer<ushort>& vol, const uint xsize, const uint ysize, const uint zsize, const Vector3& h)
-{
-	Text rawpath;
-	rawpath << path << ".raw";
-
-	// save raw
-	std::ofstream fs(rawpath.str().c_str(), std::ios_base::binary | std::ios::trunc);
-	if (fs.fail()) return false;
-	fs.write((char*)&vol[0], 2 * xsize * ysize * zsize);
-	fs.close();
-
-	// save header
-	Text text;
-
-	text << "ObjectType              = Image" << std::endl;
-	text << "NDims                   = 3" << std::endl;
-	text << "BinaryData              = True" << std::endl;
-	text << "CompressedData          = False" << std::endl;
-	text << "BinaryDataByteOrderMSB  = False" << std::endl;
-	text << "TransformMatrix         = 1 0 0 0 1 0 0 0 1" << std::endl;
-	text << "Offset                  = " << -0.5 * xsize * h.x << " " << -0.5 * ysize * h.y << " " << -0.5 * zsize * h.z << std::endl;
-	text << "CenterOfRotation        = 0 0 0" << std::endl;
-	text << "DimSize                 = " << xsize << " " << ysize << " " << zsize << std::endl;
-	text << "ElementSpacing          = " << h.x << " " << h.y << " " << h.z << std::endl;
-	text << "ElementNumberOfChannels = 1" << std::endl;
-	text << "ElementType             = MET_USHORT" << std::endl;
-	text << "ElementDataFile         = " << rawpath.str() << std::endl;
-	text.save(path);
-	return true;
-}
-
-struct Complex3Vec
-{
-	float2 s1 = make_float2(0, 0);
-	float2 s0 = make_float2(0, 0);
-	float2 s_1 = make_float2(0, 0);
-};
-
-struct BlockPsis
-{
-	Complex3Vec values[VALUES_IN_BLOCK];
-};
-
-struct PitchedPtr
-{
-	char* __restrict__ ptr;
-	size_t pitch;
-	size_t slicePitch;
-};
-
-// Arithmetic operators for cuda vector types
-inline __host__ __device__ __inline__ float2 operator+(float2 a, float2 b)
-{
-	return make_float2(a.x + b.x, a.y + b.y);
-}
-inline __host__ __device__ __inline__ float2 operator-(float2 a, float2 b)
-{
-	return make_float2(a.x - b.x, a.y - b.y);
-}
-inline __host__ __device__ __inline__ void operator+=(float2& a, float2 b)
-{
-	a.x += b.x;
-	a.y += b.y;
-}
-inline __host__ __device__ __inline__ void operator-=(float2& a, float2 b)
-{
-	a.x -= b.x;
-	a.y -= b.y;
-}
-inline __host__ __device__ __inline__ float2 operator*(float b, float2 a)
-{
-	return make_float2(b * a.x, b * a.y);
-}
-inline __host__ __device__ __inline__ float2 operator/(float2 a, float b)
-{
-	return make_float2(a.x / b, a.y / b);
-}
-inline __host__ __device__ __inline__ float2 star(float2 a) // Complex conjugate
-{
-	return make_float2(a.x, -a.y);
-}
-inline __host__ __device__ __inline__ float2 operator*(float2 a, float2 b) // Complex number multiplication
-{
-	return make_float2(a.x * b.x - a.y * b.y, a.y * b.x + a.x * b.y);
 }
 
 __global__ void density(float* density, PitchedPtr prevStep, uint3 dimensions, float dv)
@@ -285,8 +203,8 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__
 	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
 
 	nextPsi->values[dualNodeId].s1 = prev.s1 - dt * make_float2(H.s1.x, H.s1.y);
-	nextPsi->values[dualNodeId].s0 = make_float2(0, 0); // prev.s0 - dt * make_float2(H.s0.x, H.s0.y);
-	nextPsi->values[dualNodeId].s_1 = make_float2(0, 0); //prev.s_1 - dt * make_float2(H.s_1.x, H.s_1.y);
+	nextPsi->values[dualNodeId].s0 = prev.s0 - dt * make_float2(H.s0.x, H.s0.y);
+	nextPsi->values[dualNodeId].s_1 =prev.s_1 - dt * make_float2(H.s_1.x, H.s_1.y);
 };
 #else
 __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, float* __restrict__ hodges, float Bq, float Bz, uint3 dimensions, float block_scale, float3 p0, float dt)
@@ -420,8 +338,8 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 	const uint bsize = VALUES_IN_BLOCK; // bpos.size(); // number of values inside a block
 	const uint bxsize = (xsize + 1) * bsize; // number of values on x-row
 	const uint bxysize = (ysize + 1) * bxsize; // number of values on xy-plane
-	const uint ii0 = (IS_3D ? bxysize : 0) + bxsize + bsize; // reserved zeros in the beginning of value table
-	const uint vsize = ii0 + (IS_3D ? zsize + 1 : zsize) * bxysize; // total number of values
+	const uint ii0 = bxysize + bxsize + bsize; // reserved zeros in the beginning of value table
+	const uint vsize = ii0 + (zsize + 1) * bxysize; // total number of values
 
 	std::cout << "bsize: " << bsize << ", xsize: " << xsize << ", yszie: " << ysize << ", zsize: " << zsize << std::endl;
 	uint64_t bodies = xsize * ysize * zsize * bsize;
@@ -457,7 +375,7 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 	//std::cout << "lapsize = " << lapsize << ", lapfac = " << lapfac << ", lapfac0 = " << lapfac0 << std::endl;
 
 	// compute time step size
-	const uint steps_per_iteration = 1.0 / 0.000199999994947575; // uint(iteration_period * (maxpot + lapfac0)) + 1; // number of time steps per iteration period
+	const uint steps_per_iteration = 1; // 1.0 / 0.000199999994947575; // uint(iteration_period * (maxpot + lapfac0)) + 1; // number of time steps per iteration period
 	const float dt = 0.000199999994947575; // iteration_period / float(steps_per_iteration); // time step in time units
 
 	std::cout << "steps_per_iteration = " << steps_per_iteration << std::endl;
@@ -481,7 +399,8 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 	memset(h_evenPsi, 0, hostSize * sizeof(BlockPsis));
 	memset(h_oddPsi, 0, hostSize * sizeof(BlockPsis));
 
-	// initialize discrete field
+#if COMPUTE_GROUND_STATE
+	// Initialize discrete field
 	Random rnd(54363);
 	for (k = 0; k < zsize; k++)
 	{
@@ -503,6 +422,16 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 			}
 		}
 	}
+#else
+	std::ifstream fs(STATE_FILENAME, std::ios::binary | std::ios::in);
+	if (fs.fail() != 0)
+	{
+		std::cout << "Failed to open file " << STATE_FILENAME << std::endl;
+		return 1;
+	}
+	fs.read((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+	fs.close();
+#endif
 
 	cudaPitchedPtr h_cudaEvenPsi = { 0 };
 	cudaPitchedPtr h_cudaOddPsi = { 0 };
@@ -560,91 +489,30 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 	evenPsiBackParams.kind = cudaMemcpyDeviceToHost;
 #endif
 
-	const float volume = (IS_3D ? block_scale : 1.0) * block_scale * block_scale * VOLUME;
+	const float volume = block_scale * block_scale * block_scale * VOLUME;
+	float t = 0;
 
 #if COMPUTE_GROUND_STATE
 	normalize_h(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
-	float t = 0;
+
 	float mu = 0;
 	float E = 1e20;
 	auto Hpsi = d_oddPsi;
 	while (true)
 	{
+		if (iter == 50000)
+		{
+			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
+			std::ofstream fs(STATE_FILENAME, std::ios::binary | std::ios_base::trunc);
+			if (fs.fail() != 0) return 1;
+			fs.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+			fs.close();
+			return 0;
+		}
 		if ((iter % SAVE_FREQUENCY) == 0)
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-			{
-				// draw picture
-				const int SIZE = 2;
-				int width = dxsize * SIZE, height = dysize * SIZE;
-				Picture pic1(width, height);
-				Picture pic0(width, height);
-				Picture pic_1(width, height);
-				uint k = zsize / 2 + 1;
-				float intensity_s1 = 0;
-				float intensity_s0 = 0;
-				float intensity_s_1 = 0;
-				for (uint j = 0; j < height; j++)
-				{
-					for (uint i = 0; i < width; i++)
-					{
-						const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
-						float norm_s1 = sqrt(h_evenPsi[idx].values[0].s1.x * h_evenPsi[idx].values[0].s1.x + h_evenPsi[idx].values[0].s1.y * h_evenPsi[idx].values[0].s1.y);
-						float norm_s0 = sqrt(h_evenPsi[idx].values[0].s0.x * h_evenPsi[idx].values[0].s0.x + h_evenPsi[idx].values[0].s0.y * h_evenPsi[idx].values[0].s0.y);
-						float norm_s_1 = sqrt(h_evenPsi[idx].values[0].s_1.x * h_evenPsi[idx].values[0].s_1.x + h_evenPsi[idx].values[0].s_1.y * h_evenPsi[idx].values[0].s_1.y);
-
-						intensity_s1 = max(intensity_s1, norm_s1);
-						intensity_s0 = max(intensity_s0, norm_s0);
-						intensity_s_1 = max(intensity_s_1, norm_s_1);
-					}
-				}
-				intensity_s1 = 1.0f / intensity_s1;
-				intensity_s0 = 1.0f / intensity_s0;
-				intensity_s_1 = 1.0f / intensity_s_1;
-				for (uint j = 0; j < height; j++)
-				{
-					for (uint i = 0; i < width; i++)
-					{
-						const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
-						float norm_s1 = sqrt(h_evenPsi[idx].values[0].s1.x * h_evenPsi[idx].values[0].s1.x + h_evenPsi[idx].values[0].s1.y * h_evenPsi[idx].values[0].s1.y);
-						float norm_s0 = sqrt(h_evenPsi[idx].values[0].s0.x* h_evenPsi[idx].values[0].s0.x + h_evenPsi[idx].values[0].s0.y * h_evenPsi[idx].values[0].s0.y);
-						float norm_s_1 = sqrt(h_evenPsi[idx].values[0].s_1.x * h_evenPsi[idx].values[0].s_1.x + h_evenPsi[idx].values[0].s_1.y * h_evenPsi[idx].values[0].s_1.y);
-
-						//pic.setColor(i, j, INTENSITY * Vector4(norm_s1, norm_s0, norm_s_1, 1.0));
-						pic1.setColor(i, j, intensity_s1 * Vector4(norm_s1, 0, 0, 1.0));
-						pic0.setColor(i, j, intensity_s0 * Vector4(0, norm_s0, 0, 1.0));
-						pic_1.setColor(i, j, intensity_s_1 * Vector4(0, 0, norm_s_1, 1.0));
-					}
-				}
-				pic1.save("results/kuva_" + std::to_string(iter) + "_s1.bmp", false);
-				pic0.save("results/kuva_" + std::to_string(iter) + "_s0.bmp", false);
-				pic_1.save("results/kuva_" + std::to_string(iter) + "_s-1.bmp", false);
-			}
-			//{
-			//	// draw picture
-			//	const int SIZE = 2;
-			//	int width = dxsize * SIZE, height = dysize * SIZE, depth = dzsize * SIZE;
-			//	Picture pic(height, depth);
-			//	uint j = height / 2;
-			//	for (uint k = 0; k < depth; ++k)
-			//	{
-			//		for (uint i = 0; i < width; i++)
-			//		{
-			//			const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
-			//			float norm_s1 = sqrt(h_evenPsi[idx].values[0].s1.x * h_evenPsi[idx].values[0].s1.x + h_evenPsi[idx].values[0].s1.y * h_evenPsi[idx].values[0].s1.y);
-			//			float norm_s0 = sqrt(h_evenPsi[idx].values[0].s0.x * h_evenPsi[idx].values[0].s0.x + h_evenPsi[idx].values[0].s0.y * h_evenPsi[idx].values[0].s0.y);
-			//			float norm_s_1 = sqrt(h_evenPsi[idx].values[0].s_1.x * h_evenPsi[idx].values[0].s_1.x + h_evenPsi[idx].values[0].s_1.y * h_evenPsi[idx].values[0].s_1.y);
-			//
-			//			//pic.setColor(k, i, INTENSITY * Vector4(norm_s1, norm_s0, norm_s_1, 1.0));
-			//			pic.setColor(k, i, INTENSITY * Vector4(norm_s1, norm_s1, norm_s1, 1.0));
-			//		}
-			//	}
-			//	std::ostringstream picpath;
-			//	picpath << "results/kuvaXZ" << iter << ".bmp";
-			//	pic.save(picpath.str(), false);
-			//}
-			std::cout << iter << ": ";
-			printDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+			drawPicture("GS", h_evenPsi, dxsize, dysize, dzsize, iter);
 		}
 		float Bz = Bz0 + BzVel * t;
 		// Take an imaginary time step
@@ -689,83 +557,10 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 	while (true)
 	{
 #if SAVE_PICTURE
-		// draw picture
-		const float INTENSITY = 20.0f;
-		const int SIZE = 2;
-		int width = dxsize * SIZE, height = dysize * SIZE;
-		Picture pic(width, height);
-		k = zsize / 2 + 1;
-		for (j = 0; j < height; j++)
-		{
-			for (i = 0; i < width; i++)
-			{
-				const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
-				float norm = sqrt(h_evenPsi[idx].values[0].x * h_evenPsi[idx].values[0].x + h_evenPsi[idx].values[0].y * h_evenPsi[idx].values[0].y);
-		
-				pic.setColor(i, j, INTENSITY * Vector4(h_evenPsi[idx].values[0].x, norm, h_evenPsi[idx].values[0].y, 1.0));
-			}
-		}
-		std::ostringstream picpath;
-		picpath << "results/kuva" << iter << ".bmp";
-		pic.save(picpath.str(), false);
-
-		// print squared norm and error
-		const Complex currentPhase = state.getPhase(iter * steps_per_iteration * dt);
-		float errorNormSq = 0;
-		float normsq = 0.0;
-		Complex error(0.0, 0.0);
-		for (k = 0; k < zsize; k++)
-		{
-			for (j = 0; j < ysize; j++)
-			{
-				for (i = 0; i < xsize; i++)
-				{
-					for (l = 0; l < bsize; l++)
-					{
-						const uint srcI = ii0 + k * bxysize + j * bxsize + i * bsize + l;
-						const uint dstI = (k + 1) * dxsize * dysize + (j + 1) * dxsize + (i + 1);
-
-						Complex evenPsi(h_evenPsi[dstI].values[l].x, h_evenPsi[dstI].values[l].y);
-						normsq += evenPsi.normsq() * volume;
-						error += (Psi0[srcI].con() * evenPsi) * volume;
-
-						Complex groundTruth = currentPhase * Psi0[srcI];
-						errorNormSq += (groundTruth - evenPsi).normsq();
-					}
-				}
-			}
-		}
-		float RMSE = sqrt(errorNormSq / (float)(zsize * ysize * xsize * bsize));
-		float errorAbs = abs(normsq - error.norm());
-		std::cout << "normsq=" << normsq << " error=" << errorAbs << std::endl;
-		errorText << RMSE << " ";
+		drawPicture("TI", h_evenPsi, dxsize, dysize, dzsize, iter);
 #endif
-
 #if SAVE_VOLUME
-		// save volume map
-		const float fmax = state.searchFunctionMax();
-		const float unit = 60000.0 / (bsize * fmax * fmax);
-		Buffer<ushort> vol(dxsize * dysize * dzsize);
-		for (k = 0; k < dzsize; k++)
-		{
-			for (j = 0; j < dysize; j++)
-			{
-				for (i = 0; i < dxsize; i++)
-				{
-					const uint idx = k * dxsize * dysize + j * dxsize + i;
-					float sum = 0.0;
-					for (l = 0; l < bsize; l++)
-					{
-						sum += h_evenPsi[idx].values[0].x * h_evenPsi[idx].values[0].x + h_evenPsi[idx].values[0].y * h_evenPsi[idx].values[0].y;
-					}
-					sum *= unit;
-					vol[idx] = (sum > 65535.0 ? 65535 : ushort(sum));
-				}
-			}
-		}
-		Text volpath;
-		volpath << "volume" << iter << ".mhd";
-		saveVolumeMap(volpath.str(), vol, dxsize, dysize, dzsize, block_scale * BLOCK_WIDTH);
+		saveVolue(h_evenPsi, dxsize, dysize, dzsize, iter);
 #endif
 
 		// finish iteration
@@ -777,10 +572,14 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 		std::cout << "Iteration " << iter << std::endl;
 		for (uint step = 0; step < steps_per_iteration; step++)
 		{
+			float Bz = Bz0 + BzVel * t;
+
 			// update odd values
-			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, dimensions, block_scale, d_p0, dt);
+			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, dt);
 			// update even values
-			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, dimensions, block_scale, d_p0, dt);
+			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, dt);
+
+			t += dt;
 		}
 
 #if SAVE_PICTURE || SAVE_VOLUME
@@ -806,7 +605,7 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 
 int main(int argc, char** argv)
 {
-	const int number_of_iterations = 100;
+	const int number_of_iterations = 1000000;
 	const float iteration_period = 1.0;
 	const float block_scale = Lx / Nx;
 	

@@ -1,3 +1,6 @@
+#ifndef MESH_H
+#define MESH_H
+
 #define FACE_COUNT 6
 #define DUAL_EDGE_LENGTH 1
 #define VALUES_IN_BLOCK 1
@@ -35,3 +38,5 @@ ddouble getLaplacian(Buffer<int2> &ind, Buffer<float> &hodges, const int nx, con
 
 	return 1;
 }
+
+#endif // MESH_H
