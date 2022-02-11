@@ -1048,8 +1048,8 @@ inline void __printLastCudaError(const char *errorMessage, const char *file, con
 #define MAX(a,b) (a > b ? a : b)
 #endif
 
-// Float To Int conversion
-inline int ftoi(float value)
+// double To Int conversion
+inline int ftoi(double value)
 {
     return (value >= 0 ? (int)(value + 0.5) : (int)(value - 0.5));
 }

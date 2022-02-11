@@ -13,9 +13,9 @@
 
 struct Complex3Vec
 {
-	float2 s1 = make_float2(0, 0);
-	float2 s0 = make_float2(0, 0);
-	float2 s_1 = make_float2(0, 0);
+	double2 s1 = make_double2(0, 0);
+	double2 s0 = make_double2(0, 0);
+	double2 s_1 = make_double2(0, 0);
 };
 
 struct BlockPsis
@@ -30,79 +30,103 @@ struct PitchedPtr
 	size_t slicePitch;
 };
 
-void drawPicture(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, uint iter)
+void drawPicture(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, uint iter, double Bq, double Bz, double block_scale, double3 p0)
 {
 	const int SIZE = 2;
 
-	float intensity_s1 = 0;
-	float intensity_s0 = 0;
-	float intensity_s_1 = 0;
+	double intensity_s1 = 0;
+	double intensity_s0 = 0;
+	double intensity_s_1 = 0;
+	int width = dxsize * SIZE, height = dysize * SIZE, depth = dzsize * SIZE;
+	Picture pic1(width * 2, height);
 	{
-		int width = dxsize * SIZE, height = dysize * SIZE;
-		Picture pic1(width, height);
-		Picture pic0(width, height);
-		Picture pic_1(width, height);
-		uint k = dzsize / 2 + 1;
+		//Picture pic0(width, height);
+		//Picture pic_1(width, height);
+		//uint k = dzsize / 2 + 1;
+		//for (uint j = 0; j < height; j++)
+		//{
+		//	for (uint i = 0; i < width; i++)
+		//	{
+		//		const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
+		//		double norm_s1 = h_evenPsi[idx].values[0].s1.x * h_evenPsi[idx].values[0].s1.x + h_evenPsi[idx].values[0].s1.y * h_evenPsi[idx].values[0].s1.y;
+		//		double norm_s0 = h_evenPsi[idx].values[0].s0.x * h_evenPsi[idx].values[0].s0.x + h_evenPsi[idx].values[0].s0.y * h_evenPsi[idx].values[0].s0.y;
+		//		double norm_s_1 = h_evenPsi[idx].values[0].s_1.x * h_evenPsi[idx].values[0].s_1.x + h_evenPsi[idx].values[0].s_1.y * h_evenPsi[idx].values[0].s_1.y;
+		//
+		//		intensity_s1 = max(intensity_s1, norm_s1);
+		//		intensity_s0 = max(intensity_s0, norm_s0);
+		//		intensity_s_1 = max(intensity_s_1, norm_s_1);
+		//	}
+		//}
+		//std::cout << intensity_s1 << ", " << intensity_s0 << ", " << intensity_s_1 << std::endl;
+
+		intensity_s1  = 5.0; // 1.0 / intensity_s1;
+		intensity_s0  = 5.0; // 1.0 / intensity_s0;
+		intensity_s_1 = 5.0; // 1.0 / intensity_s_1;
 		for (uint j = 0; j < height; j++)
 		{
 			for (uint i = 0; i < width; i++)
 			{
-				const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
-				float norm_s1 = sqrt(h_evenPsi[idx].values[0].s1.x * h_evenPsi[idx].values[0].s1.x + h_evenPsi[idx].values[0].s1.y * h_evenPsi[idx].values[0].s1.y);
-				float norm_s0 = sqrt(h_evenPsi[idx].values[0].s0.x * h_evenPsi[idx].values[0].s0.x + h_evenPsi[idx].values[0].s0.y * h_evenPsi[idx].values[0].s0.y);
-				float norm_s_1 = sqrt(h_evenPsi[idx].values[0].s_1.x * h_evenPsi[idx].values[0].s_1.x + h_evenPsi[idx].values[0].s_1.y * h_evenPsi[idx].values[0].s_1.y);
+				double norm_s1 = 0;
+				double norm_s0 = 0;
+				double norm_s_1 = 0;
+				for (uint k = 0; k < depth; ++k)
+				{
+					const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
+					norm_s1 += h_evenPsi[idx].values[0].s1.x * h_evenPsi[idx].values[0].s1.x + h_evenPsi[idx].values[0].s1.y * h_evenPsi[idx].values[0].s1.y;
+					norm_s0 += h_evenPsi[idx].values[0].s0.x * h_evenPsi[idx].values[0].s0.x + h_evenPsi[idx].values[0].s0.y * h_evenPsi[idx].values[0].s0.y;
+					norm_s_1 += h_evenPsi[idx].values[0].s_1.x * h_evenPsi[idx].values[0].s_1.x + h_evenPsi[idx].values[0].s_1.y * h_evenPsi[idx].values[0].s_1.y;
+				}
 
-				intensity_s1 = max(intensity_s1, norm_s1);
-				intensity_s0 = max(intensity_s0, norm_s0);
-				intensity_s_1 = max(intensity_s_1, norm_s_1);
-			}
-		}
-		intensity_s1 = 1.0f / intensity_s1;
-		intensity_s0 = 1.0f / intensity_s0;
-		intensity_s_1 = 1.0f / intensity_s_1;
-		for (uint j = 0; j < height; j++)
-		{
-			for (uint i = 0; i < width; i++)
-			{
-				const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
-				float norm_s1 = sqrt(h_evenPsi[idx].values[0].s1.x * h_evenPsi[idx].values[0].s1.x + h_evenPsi[idx].values[0].s1.y * h_evenPsi[idx].values[0].s1.y);
-				float norm_s0 = sqrt(h_evenPsi[idx].values[0].s0.x* h_evenPsi[idx].values[0].s0.x + h_evenPsi[idx].values[0].s0.y * h_evenPsi[idx].values[0].s0.y);
-				float norm_s_1 = sqrt(h_evenPsi[idx].values[0].s_1.x * h_evenPsi[idx].values[0].s_1.x + h_evenPsi[idx].values[0].s_1.y * h_evenPsi[idx].values[0].s_1.y);
+				double r = intensity_s1 * norm_s1;
+				double g = intensity_s_1 * norm_s_1;
+				double b = intensity_s0 * norm_s0;
 
-				pic1.setColor(i, j, Vector4(intensity_s1 * norm_s1, intensity_s0 * norm_s0, intensity_s_1 * norm_s_1, 1.0));
+				pic1.setColor(i, j, Vector4(r, g, b, 1.0));
 				//pic1.setColor(i, j, intensity_s1 * Vector4(norm_s1, 0, 0, 1.0));
 				//pic0.setColor(i, j, intensity_s0 * Vector4(0, norm_s0, 0, 1.0));
 				//pic_1.setColor(i, j, intensity_s_1 * Vector4(0, 0, norm_s_1, 1.0));
 			}
 		}
-		pic1.save("results/" + name + "_" + std::to_string(iter) + "_s1.bmp", false);
-		//pic0.save("results/" + name + "_" + std::to_string(iter) + "_s0.bmp", false);
-		//pic_1.save("results/" + name + "_" + std::to_string(iter) + "_s-1.bmp", false);
-	}
-	{
-		int width = dxsize * SIZE, height = dysize * SIZE, depth = dzsize * SIZE;
-		Picture pic1(width, height);
-		Picture pic0(width, height);
-		Picture pic_1(width, height);
-		uint j = height / 2;
+		intensity_s1 = 3.0; // 1.0 / intensity_s1;
+		intensity_s0 = 3.0; // 1.0 / intensity_s0;
+		intensity_s_1 = 3.0; // 1.0 / intensity_s_1;
 		for (uint k = 0; k < depth; ++k)
 		{
 			for (uint i = 0; i < width; i++)
 			{
-				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
-				float norm_s1 = sqrt(h_evenPsi[idx].values[0].s1.x * h_evenPsi[idx].values[0].s1.x + h_evenPsi[idx].values[0].s1.y * h_evenPsi[idx].values[0].s1.y);
-				float norm_s0 = sqrt(h_evenPsi[idx].values[0].s0.x * h_evenPsi[idx].values[0].s0.x + h_evenPsi[idx].values[0].s0.y * h_evenPsi[idx].values[0].s0.y);
-				float norm_s_1 = sqrt(h_evenPsi[idx].values[0].s_1.x * h_evenPsi[idx].values[0].s_1.x + h_evenPsi[idx].values[0].s_1.y * h_evenPsi[idx].values[0].s_1.y);
-	
-				pic1.setColor(k, i, Vector4(intensity_s1 * norm_s1, intensity_s0* norm_s0, intensity_s_1* norm_s_1, 1.0));
+				double norm_s1 = 0;
+				double norm_s0 = 0;
+				double norm_s_1 = 0;
+				for (uint j = 0; j < height; j++)
+				{
+					const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
+					norm_s1 += h_evenPsi[idx].values[0].s1.x * h_evenPsi[idx].values[0].s1.x + h_evenPsi[idx].values[0].s1.y * h_evenPsi[idx].values[0].s1.y;
+					norm_s0 += h_evenPsi[idx].values[0].s0.x * h_evenPsi[idx].values[0].s0.x + h_evenPsi[idx].values[0].s0.y * h_evenPsi[idx].values[0].s0.y;
+					norm_s_1 += h_evenPsi[idx].values[0].s_1.x * h_evenPsi[idx].values[0].s_1.x + h_evenPsi[idx].values[0].s_1.y * h_evenPsi[idx].values[0].s_1.y;
+				}
+
+				double r = intensity_s1 * norm_s1;
+				double g = intensity_s_1 * norm_s_1;
+				double b = intensity_s0 * norm_s0;
+
+				double3 localPos = getLocalPos(0);
+				double3 globalPos = make_double3(p0.x + block_scale * ((double)(i / SIZE) * H_BLOCK_WIDTH_X + localPos.x),
+					0,
+					p0.z + block_scale * ((k / SIZE) * H_BLOCK_WIDTH_Z + localPos.z));
+				double3 B = magneticField(globalPos, Bq, Bz);
+				double normB = sqrt(B.x * B.x + B.y * B.y + B.z * B.z);
+				if (normB < 0.1)
+					pic1.setColor(width + k, i, Vector4(1, 1, 1, 1.0));
+				else
+					pic1.setColor(width + k, i, Vector4(r, g, b, 1.0));
 				//pic1.setColor(k, i, intensity_s1 * Vector4(norm_s1, 0, 0, 1.0));
 				//pic0.setColor(k, i, intensity_s0 * Vector4(0, norm_s0, 0, 1.0));
 				//pic_1.setColor(k, i, intensity_s_1 * Vector4(0, 0, norm_s_1, 1.0));
 			}
 		}
-		pic1.save("results/" + name + "_XZ_" + std::to_string(iter) + "_s1.bmp", false);
-		//pic0.save("results/" + name + "_XZ_" + std::to_string(iter) + "_s0.bmp", false);
-		//pic_1.save("results/" + name + "_XZ_" + std::to_string(iter) + "_s-1.bmp", false);
+		pic1.save("results/" + name + "_" + std::to_string(iter) + "_s1.bmp", false);
+		//pic0.save("results/" + name + "_" + std::to_string(iter) + "_s0.bmp", false);
+		//pic_1.save("results/" + name + "_" + std::to_string(iter) + "_s-1.bmp", false);
 	}
 }
 
@@ -137,11 +161,11 @@ bool saveVolumeMap(const std::string& path, const Buffer<ushort>& vol, const uin
 	return true;
 }
 
-void saveVolume(const std::string& name, BlockPsis* h_evenPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, uint iter, float block_scale)
+void saveVolume(const std::string& name, BlockPsis* h_evenPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, uint iter, double block_scale)
 {
 	// save volume map
-	const float fmax = 1.0f; // state.searchFunctionMax();
-	const float unit = 60000.0 / (bsize * fmax * fmax);
+	const double fmax = 1.0f; // state.searchFunctionMax();
+	const double unit = 60000.0 / (bsize * fmax * fmax);
 	Buffer<ushort> vol(dxsize * dysize * dzsize);
 	for (uint k = 0; k < dzsize; k++)
 	{
@@ -150,7 +174,7 @@ void saveVolume(const std::string& name, BlockPsis* h_evenPsi, size_t bsize, siz
 			for (uint i = 0; i < dxsize; i++)
 			{
 				const uint idx = k * dxsize * dysize + j * dxsize + i;
-				float sum = 0.0;
+				double sum = 0.0;
 				for (uint l = 0; l < bsize; l++)
 				{
 					sum += h_evenPsi[idx].values[0].s1.x * h_evenPsi[idx].values[0].s1.x + h_evenPsi[idx].values[0].s1.y * h_evenPsi[idx].values[0].s1.y;
@@ -166,39 +190,39 @@ void saveVolume(const std::string& name, BlockPsis* h_evenPsi, size_t bsize, siz
 }
 
 // Arithmetic operators for cuda vector types
-inline __host__ __device__ __inline__ float2 operator+(float2 a, float2 b)
+inline __host__ __device__ __inline__ double2 operator+(double2 a, double2 b)
 {
-	return make_float2(a.x + b.x, a.y + b.y);
+	return make_double2(a.x + b.x, a.y + b.y);
 }
-inline __host__ __device__ __inline__ float2 operator-(float2 a, float2 b)
+inline __host__ __device__ __inline__ double2 operator-(double2 a, double2 b)
 {
-	return make_float2(a.x - b.x, a.y - b.y);
+	return make_double2(a.x - b.x, a.y - b.y);
 }
-inline __host__ __device__ __inline__ void operator+=(float2& a, float2 b)
+inline __host__ __device__ __inline__ void operator+=(double2& a, double2 b)
 {
 	a.x += b.x;
 	a.y += b.y;
 }
-inline __host__ __device__ __inline__ void operator-=(float2& a, float2 b)
+inline __host__ __device__ __inline__ void operator-=(double2& a, double2 b)
 {
 	a.x -= b.x;
 	a.y -= b.y;
 }
-inline __host__ __device__ __inline__ float2 operator*(float b, float2 a)
+inline __host__ __device__ __inline__ double2 operator*(double b, double2 a)
 {
-	return make_float2(b * a.x, b * a.y);
+	return make_double2(b * a.x, b * a.y);
 }
-inline __host__ __device__ __inline__ float2 operator/(float2 a, float b)
+inline __host__ __device__ __inline__ double2 operator/(double2 a, double b)
 {
-	return make_float2(a.x / b, a.y / b);
+	return make_double2(a.x / b, a.y / b);
 }
-inline __host__ __device__ __inline__ float2 star(float2 a) // Complex conjugate
+inline __host__ __device__ __inline__ double2 star(double2 a) // Complex conjugate
 {
-	return make_float2(a.x, -a.y);
+	return make_double2(a.x, -a.y);
 }
-inline __host__ __device__ __inline__ float2 operator*(float2 a, float2 b) // Complex number multiplication
+inline __host__ __device__ __inline__ double2 operator*(double2 a, double2 b) // Complex number multiplication
 {
-	return make_float2(a.x * b.x - a.y * b.y, a.y * b.x + a.x * b.y);
+	return make_double2(a.x * b.x - a.y * b.y, a.y * b.x + a.x * b.y);
 }
 
 #endif // UTILS

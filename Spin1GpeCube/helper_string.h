@@ -214,10 +214,10 @@ inline int getCmdLineArgumentInt(const int argc, const char **argv, const char *
     }
 }
 
-inline float getCmdLineArgumentFloat(const int argc, const char **argv, const char *string_ref)
+inline double getCmdLineArgumentdouble(const int argc, const char **argv, const char *string_ref)
 {
     bool bFound = false;
-    float value = -1;
+    double value = -1;
 
     if (argc >= 1)
     {
@@ -232,7 +232,7 @@ inline float getCmdLineArgumentFloat(const int argc, const char **argv, const ch
                 if (length+1 <= (int)strlen(string_argv))
                 {
                     int auto_inc = (string_argv[length] == '=') ? 1 : 0;
-                    value = (float)atof(&string_argv[length + auto_inc]);
+                    value = (double)atof(&string_argv[length + auto_inc]);
                 }
                 else
                 {

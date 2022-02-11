@@ -12,45 +12,47 @@
 
 #include <mesh.h>
 
-constexpr float Lx = 24.0;
-constexpr float Ly = 24.0;
-constexpr float Lz = 24.0;
+constexpr double Lx = 24.0;
+constexpr double Ly = 24.0;
+constexpr double Lz = 24.0;
 
-constexpr float Nx = 200.0;
-constexpr float Ny = 200.0;
-constexpr float Nz = 200.0;
+constexpr double Nx = 200.0;
+constexpr double Ny = 200.0;
+constexpr double Nz = 200.0;
 
-constexpr float omega_r = 160 * 2 * PI;
-constexpr float omega_z = 220 * 2 * PI;
-constexpr float lambda_x = 1.0;
-constexpr float lambda_y = 1.0;
-constexpr float lambda_z = omega_z / omega_r;
+constexpr double omega_r = 160 * 2 * PI;
+constexpr double omega_z = 220 * 2 * PI;
+constexpr double lambda_x = 1.0;
+constexpr double lambda_y = 1.0;
+constexpr double lambda_z = omega_z / omega_r;
 
-constexpr float c0 = 14161.2119140625;
-constexpr float c2 = -65.5179061889648;
+constexpr double c0 = 14161.2119140625;
+constexpr double c2 = -65.5179061889648;
 
-constexpr float hbar = 1.05457148e-34; // [m^2 kg / s]
-const float a_r = sqrt(hbar / ((1.44316060e-25) * omega_r)); //[m]
-constexpr float muB = 9.27400968e-24; // [m^2 kg / s^2 T^-1] bohr magneton
+constexpr double hbar = 1.05457148e-34; // [m^2 kg / s]
+const double a_r = sqrt(hbar / ((1.44316060e-25) * omega_r)); //[m]
+constexpr double muB = 9.27400968e-24; // [m^2 kg / s^2 T^-1] bohr magneton
 
-const float BqScale = -(0.5 * muB / (hbar * omega_r) * a_r) / 100.;
-constexpr float Bz0Scale = -(0.5 * muB / (hbar * omega_r)) / 10000.; //minus of -pm+qm hamiltonian gF positive [1/Gauss] // Scales the bias field to dimensionless units
+const double BqScale = -(0.5 * muB / (hbar * omega_r) * a_r) / 100.; // [cm/Gauss]
+constexpr double Bz0Scale = -(0.5 * muB / (hbar * omega_r)) / 10000.; // [1/Gauss]
 
-constexpr float dimensionalBq = 3.7;
-constexpr float dimensionalBz0 = 0.01;
+constexpr double dimensionalBq = 3.7;
+constexpr double dimensionalBz0 = 0.01;
 
 // The external magnetic field
-const float Bq = dimensionalBq * BqScale;
-const float Bz0 = dimensionalBz0 * Bz0Scale;
-constexpr float BzVel = 0; // Time derivative of the bias field TODO: Set
+const double Bq = dimensionalBq * BqScale;
+const double Bz0 = dimensionalBz0 * Bz0Scale;
+constexpr double BzVel = -1.0 * Bz0Scale / omega_r;
+constexpr double  Bzf = -0.0006;
 
-const std::string STATE_FILENAME = "ground_state.dat";
+const std::string STATE_FILENAME = "ground_state_double.dat";
 
 #define INV_SQRT_2 0.70710678118655
 
-#define COMPUTE_GROUND_STATE 0
+#define COMPUTE_GROUND_STATE 1
+#define FORCE_SPIN_POLARISATION 0
 
-#define SAVE_PICTURE 1
+#define SAVE_PICTURE 0
 #define SAVE_VOLUME 0
 #define SAVE_FREQUENCY 1000
 
@@ -58,22 +60,22 @@ const std::string STATE_FILENAME = "ground_state.dat";
 #define THREAD_BLOCK_Y 8
 #define THREAD_BLOCK_Z 1
 
-#include <utils.h>
-
-__host__ __device__ __inline__ float trap(float3 p)
+__host__ __device__ __inline__ double trap(double3 p)
 {
-	float x = p.x * lambda_x;
-	float y = p.y * lambda_y;
-	float z = p.z * lambda_z;
+	double x = p.x * lambda_x;
+	double y = p.y * lambda_y;
+	double z = p.z * lambda_z;
 	return 0.5 * (x * x + y * y + z * z) + 100.0;
 }
 
-__device__ __inline__ float3 magneticField(float3 p, float Bq, float Bz)
+__host__ __device__ __inline__ double3 magneticField(double3 p, double Bq, double Bz)
 {
-	return make_float3(Bq * p.x, Bq * p.y, Bq * -2 * p.z + Bz);
+	return make_double3(Bq * p.x, Bq * p.y, Bq * -2 * p.z + Bz);
 }
 
-__global__ void density(float* density, PitchedPtr prevStep, uint3 dimensions, float dv)
+#include <utils.h>
+
+__global__ void density(double* density, PitchedPtr prevStep, uint3 dimensions, double dv)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -95,7 +97,7 @@ __global__ void density(float* density, PitchedPtr prevStep, uint3 dimensions, f
 	density[idx] = dv * ((psi.s1 * star(psi.s1)).x + (psi.s0 * star(psi.s0)).x + (psi.s_1 * star(psi.s_1)).x);
 }
 
-__global__ void integrate(float* dataVec, size_t stride, bool addLast)
+__global__ void integrate(double* dataVec, size_t stride, bool addLast)
 {
 	size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -112,7 +114,7 @@ __global__ void integrate(float* dataVec, size_t stride, bool addLast)
 	}
 }
 
-__global__ void normalize(float* density, PitchedPtr psiPtr, uint3 dimensions)
+__global__ void normalize(double* density, PitchedPtr psiPtr, uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -128,7 +130,7 @@ __global__ void normalize(float* density, PitchedPtr psiPtr, uint3 dimensions)
 	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 	BlockPsis* blockPsis = (BlockPsis*)(psiPtr.ptr + psiPtr.slicePitch * dataZid + psiPtr.pitch * yid) + xid;
 	Complex3Vec psi = blockPsis->values[dualNodeId];
-	float sqrtDens = sqrt(density[0]);
+	double sqrtDens = sqrt(density[0]);
 	psi.s1 = psi.s1 / sqrtDens;
 	psi.s0 = psi.s0 / sqrtDens;
 	psi.s_1 = psi.s_1 / sqrtDens;
@@ -137,7 +139,7 @@ __global__ void normalize(float* density, PitchedPtr psiPtr, uint3 dimensions)
 }
 
 #if COMPUTE_GROUND_STATE
-__global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, float* __restrict__ hodges, float Bq, float Bz, uint3 dimensions, float block_scale, float3 p0, float dt)
+__global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, double* __restrict__ hodges, double Bq, double Bz, uint3 dimensions, double block_scale, double3 p0, double dt)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -162,9 +164,9 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__
 	uint primaryFace = dualNodeId * FACE_COUNT;
 
 	Complex3Vec H;
-	H.s1 = make_float2(0, 0);
-	H.s0 = make_float2(0, 0);
-	H.s_1 = make_float2(0, 0);
+	H.s1 = make_double2(0, 0);
+	H.s0 = make_double2(0, 0);
+	H.s_1 = make_double2(0, 0);
 
 #pragma unroll
 	for (int i = 0; i < FACE_COUNT; ++i)
@@ -177,37 +179,43 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__
 		primaryFace++;
 	}
 
-	float normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
-	float normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
-	float normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
-	float normSq = normSq_s1 + normSq_s0 + normSq_s_1;
+	double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
+	double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
+	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
+	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
 	
 	// Add the total potential to Hamiltonian
-	float3 localPos = getLocalPos(dualNodeId);
-	float3 globalPos = make_float3(p0.x + block_scale * (xid * BLOCK_WIDTH_X + localPos.x),
+	double3 localPos = getLocalPos(dualNodeId);
+	double3 globalPos = make_double3(p0.x + block_scale * (xid * BLOCK_WIDTH_X + localPos.x),
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (dataZid * BLOCK_WIDTH_Z + localPos.z));
-	float totalPot = trap(globalPos) + (c0 + c2) * normSq;
+	double totalPot = trap(globalPos) + (c0 + c2) * normSq;
 
 	H.s1 += totalPot * prev.s1 + c2 * (-2.0 * normSq_s_1 * prev.s1 + star(prev.s_1) * prev.s0 * prev.s0 + 0 * prev.s_1);
 	H.s0 += totalPot * prev.s0 + c2 * (star(prev.s0) * prev.s_1 * prev.s1 - normSq_s0 * prev.s0 + star(prev.s0) * prev.s1 * prev.s_1);
 	H.s_1 += totalPot * prev.s_1 + c2 * (0 * prev.s1 + star(prev.s1) * prev.s0 * prev.s0 - 2.0 * normSq_s1 * prev.s_1);
 
 	// Add the Zeeman term
-	float3 B = magneticField(globalPos, Bq, Bz);
-	float2 Bxy = INV_SQRT_2 * make_float2(B.x, B.y);
-	float2 Bxy_star = star(Bxy);
+	double3 B = magneticField(globalPos, Bq, Bz);
+	double2 Bxy = INV_SQRT_2 * make_double2(B.x, B.y);
+	double2 Bxy_star = star(Bxy);
 	
 	H.s1 += (B.z * prev.s1 + Bxy_star * prev.s0);
 	H.s0 += (Bxy * prev.s1 + Bxy_star * prev.s_1);
 	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
 
-	nextPsi->values[dualNodeId].s1 = prev.s1 - dt * make_float2(H.s1.x, H.s1.y);
-	nextPsi->values[dualNodeId].s0 = prev.s0 - dt * make_float2(H.s0.x, H.s0.y);
-	nextPsi->values[dualNodeId].s_1 =prev.s_1 - dt * make_float2(H.s_1.x, H.s_1.y);
+#if FORCE_SPIN_POLARISATION
+	nextPsi->values[dualNodeId].s1 = prev.s1 - dt * make_double2(H.s1.x, H.s1.y);
+	nextPsi->values[dualNodeId].s0 = make_double2(0.0, 0.0);
+	nextPsi->values[dualNodeId].s_1 = make_double2(0.0, 0.0);
+#else
+	nextPsi->values[dualNodeId].s1 = prev.s1 - dt * make_double2(H.s1.x, H.s1.y);
+	nextPsi->values[dualNodeId].s0 = prev.s0 - dt * make_double2(H.s0.x, H.s0.y);
+	nextPsi->values[dualNodeId].s_1 =prev.s_1 - dt * make_double2(H.s_1.x, H.s_1.y);
+#endif
 };
 #else
-__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, float* __restrict__ hodges, float Bq, float Bz, uint3 dimensions, float block_scale, float3 p0, float dt)
+__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, double* __restrict__ hodges, double Bq, double Bz, uint3 dimensions, double block_scale, double3 p0, double dt)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -232,9 +240,9 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restric
 	uint primaryFace = dualNodeId * FACE_COUNT;
 
 	Complex3Vec H;
-	H.s1 = make_float2(0, 0);
-	H.s0 = make_float2(0, 0);
-	H.s_1 = make_float2(0, 0);
+	H.s1 = make_double2(0, 0);
+	H.s0 = make_double2(0, 0);
+	H.s_1 = make_double2(0, 0);
 
 #pragma unroll
 	for (int i = 0; i < FACE_COUNT; ++i)
@@ -247,38 +255,38 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restric
 		primaryFace++;
 	}
 
-	float normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
-	float normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
-	float normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
-	float normSq = normSq_s1 + normSq_s0 + normSq_s_1;
+	double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
+	double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
+	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
+	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
 
 	// Add the total potential to Hamiltonian
-	float3 localPos = getLocalPos(dualNodeId);
-	float3 globalPos = make_float3(p0.x + block_scale * (xid * BLOCK_WIDTH_X + localPos.x),
+	double3 localPos = getLocalPos(dualNodeId);
+	double3 globalPos = make_double3(p0.x + block_scale * (xid * BLOCK_WIDTH_X + localPos.x),
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (dataZid * BLOCK_WIDTH_Z + localPos.z));
-	float totalPot = trap(globalPos) + (c0 + c2) * normSq;
+	double totalPot = trap(globalPos) + (c0 + c2) * normSq;
 
 	H.s1 += totalPot * prev.s1 + c2 * (-2.0 * normSq_s_1 * prev.s1 + star(prev.s_1) * prev.s0 * prev.s0 + 0 * prev.s_1);
 	H.s0 += totalPot * prev.s0 + c2 * (star(prev.s0) * prev.s_1 * prev.s1 - normSq_s0 * prev.s0 + star(prev.s0) * prev.s1 * prev.s_1);
 	H.s_1 += totalPot * prev.s_1 + c2 * (0 * prev.s1 + star(prev.s1) * prev.s0 * prev.s0 - 2.0 * normSq_s1 * prev.s_1);
 
 	// Add the Zeeman term
-	float3 B = magneticField(globalPos, Bq, Bz);
-	float2 Bxy = INV_SQRT_2 * make_float2(B.x, B.y);
-	float2 Bxy_star = star(Bxy);
+	double3 B = magneticField(globalPos, Bq, Bz);
+	double2 Bxy = INV_SQRT_2 * make_double2(B.x, B.y);
+	double2 Bxy_star = star(Bxy);
 
 	H.s1 += (B.z * prev.s1 + Bxy_star * prev.s0);
 	H.s0 += (Bxy * prev.s1 + Bxy_star * prev.s_1);
 	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
 
-	nextPsi->values[dualNodeId].s1 += dt * make_float2(H.s1.y, -H.s1.x);
-	nextPsi->values[dualNodeId].s0 += dt * make_float2(H.s0.y, -H.s0.x);
-	nextPsi->values[dualNodeId].s_1 += dt * make_float2(H.s_1.y, -H.s_1.x);
+	nextPsi->values[dualNodeId].s1 += dt * make_double2(H.s1.y, -H.s1.x);
+	nextPsi->values[dualNodeId].s0 += dt * make_double2(H.s0.y, -H.s0.x);
+	nextPsi->values[dualNodeId].s_1 += dt * make_double2(H.s_1.y, -H.s_1.x);
 };
 #endif
 
-//void energy_h(dim3 dimGrid, dim3 dimBlock, float* energyPtr, PitchedPtr psi, PitchedPtr potentials, int2* lapInd, float* hodges, float g, uint3 dimensions, float volume, size_t bodies)
+//void energy_h(dim3 dimGrid, dim3 dimBlock, double* energyPtr, PitchedPtr psi, PitchedPtr potentials, int2* lapInd, double* hodges, double g, uint3 dimensions, double volume, size_t bodies)
 //{
 //	energy << <dimGrid, dimBlock >> > (energyPtr, psi, potentials, lapInd, hodges, g, dimensions, volume);
 //	int prevStride = bodies;
@@ -290,7 +298,7 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restric
 //	}
 //}
 
-void normalize_h(dim3 dimGrid, dim3 dimBlock, float* densityPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, float volume)
+void normalize_h(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, double volume)
 {
 	density << <dimGrid, dimBlock >> > (densityPtr, psi, dimensions, volume);
 	int prevStride = bodies;
@@ -304,7 +312,7 @@ void normalize_h(dim3 dimGrid, dim3 dimBlock, float* densityPtr, PitchedPtr psi,
 	normalize << < dimGrid, dimBlock >> > (densityPtr, psi, dimensions);
 }
 
-void printDensity(dim3 dimGrid, dim3 dimBlock, float* densityPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, float volume)
+void printDensity(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, double volume)
 {
 	density << <dimGrid, dimBlock >> > (densityPtr, psi, dimensions, volume);
 	int prevStride = bodies;
@@ -314,13 +322,13 @@ void printDensity(dim3 dimGrid, dim3 dimBlock, float* densityPtr, PitchedPtr psi
 		integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (densityPtr, newStride, ((newStride * 2) != prevStride));
 		prevStride = newStride;
 	}
-	float hDensity = 0;
-	checkCudaErrors(cudaMemcpy(&hDensity, densityPtr, sizeof(float), cudaMemcpyDeviceToHost));
+	double hDensity = 0;
+	checkCudaErrors(cudaMemcpy(&hDensity, densityPtr, sizeof(double), cudaMemcpyDeviceToHost));
 
 	std::cout << "Total density: " << hDensity << std::endl;
 }
 
-uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3& maxp, const float iteration_period, const uint number_of_iterations)
+uint integrateInTime(const double block_scale, const Vector3& minp, const Vector3& maxp, const double iteration_period, const uint number_of_iterations)
 {
 	uint i, j, k, l;
 
@@ -330,7 +338,8 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 	const uint ysize = uint(domain.y / (block_scale * BLOCK_WIDTH.y)) + 1;
 	const uint zsize = uint(domain.z / (block_scale * BLOCK_WIDTH.z)) + 1;
 	const Vector3 p0 = 0.5 * (minp + maxp - block_scale * Vector3(BLOCK_WIDTH.x * xsize, BLOCK_WIDTH.y * ysize, BLOCK_WIDTH.z * zsize));
-	const float3 d_p0 = make_float3(p0.x, p0.y, p0.z);
+	std::cout << p0.x << ", " << p0.y << ", " << p0.z << std::endl;
+	const double3 d_p0 = make_double3(p0.x, p0.y, p0.z);
 
 	std::cout << xsize << ", " << ysize << ", " << zsize << std::endl;
 
@@ -356,10 +365,10 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 	checkCudaErrors(cudaMalloc3D(&d_cudaEvenPsi, psiExtent));
 	checkCudaErrors(cudaMalloc3D(&d_cudaOddPsi, psiExtent));
 
-	float* d_energy;
-	float* d_density;
-	checkCudaErrors(cudaMalloc(&d_energy, bodies * sizeof(float)));
-	checkCudaErrors(cudaMalloc(&d_density, bodies * sizeof(float)));
+	//double* d_energy;
+	double* d_density;
+	//checkCudaErrors(cudaMalloc(&d_energy, bodies * sizeof(double)));
+	checkCudaErrors(cudaMalloc(&d_density, bodies * sizeof(double)));
 
 	size_t offset = d_cudaEvenPsi.pitch * dysize + d_cudaEvenPsi.pitch + sizeof(BlockPsis);
 	PitchedPtr d_evenPsi = { (char*)d_cudaEvenPsi.ptr + offset, d_cudaEvenPsi.pitch, d_cudaEvenPsi.pitch * dysize };
@@ -367,16 +376,16 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 
 	// find terms for laplacian
 	Buffer<int2> lapind;
-	Buffer<float> hodges;
-	float lapfac = -0.5 * getLaplacian(lapind, hodges, sizeof(BlockPsis), d_evenPsi.pitch, d_evenPsi.slicePitch) / (block_scale * block_scale);
+	Buffer<double> hodges;
+	double lapfac = -0.5 * getLaplacian(lapind, hodges, sizeof(BlockPsis), d_evenPsi.pitch, d_evenPsi.slicePitch) / (block_scale * block_scale);
 	const uint lapsize = lapind.size() / bsize;
-	float lapfac0 = lapsize * (-lapfac);
+	double lapfac0 = lapsize * (-lapfac);
 
 	//std::cout << "lapsize = " << lapsize << ", lapfac = " << lapfac << ", lapfac0 = " << lapfac0 << std::endl;
 
 	// compute time step size
-	const uint steps_per_iteration = 1; // 1.0 / 0.000199999994947575; // uint(iteration_period * (maxpot + lapfac0)) + 1; // number of time steps per iteration period
-	const float dt = 0.000199999994947575; // iteration_period / float(steps_per_iteration); // time step in time units
+	const uint steps_per_iteration = 100; // 1.0 / 0.000199999994947575; // uint(iteration_period * (maxpot + lapfac0)) + 1; // number of time steps per iteration period
+	const double dt = 0.000199999994947575; // iteration_period / double(steps_per_iteration); // time step in time units
 
 	std::cout << "steps_per_iteration = " << steps_per_iteration << std::endl;
 
@@ -387,8 +396,8 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 	int2* d_lapind;
 	checkCudaErrors(cudaMalloc(&d_lapind, lapind.size() * sizeof(int2)));
 
-	float* d_hodges;
-	checkCudaErrors(cudaMalloc(&d_hodges, hodges.size() * sizeof(float)));
+	double* d_hodges;
+	checkCudaErrors(cudaMalloc(&d_hodges, hodges.size() * sizeof(double)));
 
 	// Initialize host memory
 	size_t hostSize = dxsize * dysize * (zsize + 2);
@@ -415,9 +424,9 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 					const Vector2 s1 = rnd.getUniformCircle();
 					const Vector2 s0 = rnd.getUniformCircle();
 					const Vector2 s_1 = rnd.getUniformCircle();
-					h_evenPsi[dstI].values[l].s1 = make_float2(s1.x, s1.y);
-					h_evenPsi[dstI].values[l].s0 = make_float2(s0.x, s0.y);
-					h_evenPsi[dstI].values[l].s_1 = make_float2(s_1.x, s_1.y);
+					h_evenPsi[dstI].values[l].s1 = make_double2(s1.x, s1.y);
+					h_evenPsi[dstI].values[l].s0 = make_double2(s0.x, s0.y);
+					h_evenPsi[dstI].values[l].s_1 = make_double2(s_1.x, s_1.y);
 				}
 			}
 		}
@@ -430,6 +439,7 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 		return 1;
 	}
 	fs.read((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+	memcpy(&h_oddPsi[0], &h_evenPsi[0], hostSize * sizeof(BlockPsis));
 	fs.close();
 #endif
 
@@ -463,7 +473,7 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 	checkCudaErrors(cudaMemcpy3D(&evenPsiParams));
 	checkCudaErrors(cudaMemcpy3D(&oddPsiParams));
 	checkCudaErrors(cudaMemcpy(d_lapind, &lapind[0], lapind.size() * sizeof(int2), cudaMemcpyHostToDevice));
-	checkCudaErrors(cudaMemcpy(d_hodges, &hodges[0], hodges.size() * sizeof(float), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpy(d_hodges, &hodges[0], hodges.size() * sizeof(double), cudaMemcpyHostToDevice));
 
 	// Clear host memory after data has been copied to devices
 	cudaDeviceSynchronize();
@@ -481,25 +491,25 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 	dim3 dimGrid((xsize + THREAD_BLOCK_X - 1) / THREAD_BLOCK_X,
 		(ysize + THREAD_BLOCK_Y - 1) / THREAD_BLOCK_Y,
 		((zsize + THREAD_BLOCK_Z - 1) / THREAD_BLOCK_Z) * VALUES_IN_BLOCK);
-#if SAVE_PICTURE || SAVE_VOLUME
+
 	cudaMemcpy3DParms evenPsiBackParams = { 0 };
 	evenPsiBackParams.srcPtr = d_cudaEvenPsi;
 	evenPsiBackParams.dstPtr = h_cudaEvenPsi;
 	evenPsiBackParams.extent = psiExtent;
 	evenPsiBackParams.kind = cudaMemcpyDeviceToHost;
-#endif
 
-	const float volume = block_scale * block_scale * block_scale * VOLUME;
-	float t = 0;
+	const double volume = block_scale * block_scale * block_scale * VOLUME;
+	double t = 0;
 
 #if COMPUTE_GROUND_STATE
 	normalize_h(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 
-	float mu = 0;
-	float E = 1e20;
+	double mu = 0;
+	double E = 1e20;
 	auto Hpsi = d_oddPsi;
 	while (true)
 	{
+		if ((iter % 1000) == 0) std::cout << "Iteration " << iter << std::endl;
 		if (iter == 50000)
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
@@ -509,12 +519,16 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 			fs.close();
 			return 0;
 		}
+#if SAVE_PICTURE
 		if ((iter % SAVE_FREQUENCY) == 0)
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-			drawPicture("GS", h_evenPsi, dxsize, dysize, dzsize, iter);
+			double Bz = Bz0 + BzVel * t;
+			drawPicture("GS", h_evenPsi, dxsize, dysize, dzsize, iter, Bq, Bz, block_scale, d_p0);
+			printDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 		}
-		float Bz = Bz0 + BzVel * t;
+#endif
+		double Bz = Bz0 + BzVel * t;
 		// Take an imaginary time step
 		itp << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, dt);
 		// Normalize
@@ -529,21 +543,17 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 		t += dt;
 
 		//energy_h(dimGrid, dimBlock, d_energy, d_evenPsi, d_pot, d_lapind, d_hodges, g, dimensions, volume, bodies);
-		//float hDensity = 0;
-		//float hEnergy = 0;
-		//checkCudaErrors(cudaMemcpy(&hDensity, d_density, sizeof(float), cudaMemcpyDeviceToHost));
-		//checkCudaErrors(cudaMemcpy(&hEnergy, d_energy, sizeof(float), cudaMemcpyDeviceToHost));
+		//double hDensity = 0;
+		//double hEnergy = 0;
+		//checkCudaErrors(cudaMemcpy(&hDensity, d_density, sizeof(double), cudaMemcpyDeviceToHost));
+		//checkCudaErrors(cudaMemcpy(&hEnergy, d_energy, sizeof(double), cudaMemcpyDeviceToHost));
 
-		//float newMu = hEnergy / hDensity;
-		//float newE = hEnergy;
+		//double newMu = hEnergy / hDensity;
+		//double newE = hEnergy;
 		//
 		//std::cout << "Total density: " << hDensity << ", Total energy: " << hEnergy << ", mu: " << newMu << std::endl;
 
-		
-
-		//if (newE > E) break;
 		//if (std::abs(mu - newMu) < 1e-4) break;
-		if (iter > 100000) break;
 
 		//mu = newMu;
 		//E = newE;
@@ -557,7 +567,12 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 	while (true)
 	{
 #if SAVE_PICTURE
-		drawPicture("TI", h_evenPsi, dxsize, dysize, dzsize, iter);
+		{
+			double Bz = Bz0 + BzVel * t;
+			Bz = min(Bz, -0.001 * Bz0Scale);
+			drawPicture("TI", h_evenPsi, dxsize, dysize, dzsize, iter, Bq, Bz, block_scale, d_p0);
+			printDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+		}
 #endif
 #if SAVE_VOLUME
 		saveVolue(h_evenPsi, dxsize, dysize, dzsize, iter);
@@ -572,13 +587,18 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 		std::cout << "Iteration " << iter << std::endl;
 		for (uint step = 0; step < steps_per_iteration; step++)
 		{
-			float Bz = Bz0 + BzVel * t;
+			double Bz = Bz0 + BzVel * t;
+			Bz = min(Bz, Bzf * Bz0Scale);
 
 			// update odd values
 			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, dt);
+			t += dt;
+
+			Bz = Bz0 + BzVel * t;
+			Bz = min(Bz, Bzf * Bz0Scale);
+
 			// update even values
 			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, dt);
-
 			t += dt;
 		}
 
@@ -606,8 +626,8 @@ uint integrateInTime(const float block_scale, const Vector3& minp, const Vector3
 int main(int argc, char** argv)
 {
 	const int number_of_iterations = 1000000;
-	const float iteration_period = 1.0;
-	const float block_scale = Lx / Nx;
+	const double iteration_period = 1.0;
+	const double block_scale = Lx / Nx;
 	
 	std::cout << "block_scale = " << block_scale << std::endl;
 	std::cout << "iteration_period = " << iteration_period << std::endl;
