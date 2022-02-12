@@ -49,7 +49,7 @@ const std::string STATE_FILENAME = "ground_state_double.dat";
 
 #define INV_SQRT_2 0.70710678118655
 
-#define COMPUTE_GROUND_STATE 1
+#define COMPUTE_GROUND_STATE 0
 #define FORCE_SPIN_POLARISATION 0
 
 #define SAVE_PICTURE 0
@@ -91,7 +91,7 @@ __global__ void density(double* density, PitchedPtr prevStep, uint3 dimensions, 
 	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 
 	char* pPsi = prevStep.ptr + prevStep.slicePitch * dataZid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
-	Complex3Vec psi = ((BlockPsis*)pPsi)->values[dualNodeId];
+	Spin1Vec psi = ((BlockPsis*)pPsi)->values[dualNodeId];
 
 	size_t idx = dataZid * dimensions.x * dimensions.y * VALUES_IN_BLOCK + yid * dimensions.x * VALUES_IN_BLOCK + xid * VALUES_IN_BLOCK + dualNodeId;
 	density[idx] = dv * ((psi.s1 * star(psi.s1)).x + (psi.s0 * star(psi.s0)).x + (psi.s_1 * star(psi.s_1)).x);
@@ -129,7 +129,7 @@ __global__ void normalize(double* density, PitchedPtr psiPtr, uint3 dimensions)
 
 	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 	BlockPsis* blockPsis = (BlockPsis*)(psiPtr.ptr + psiPtr.slicePitch * dataZid + psiPtr.pitch * yid) + xid;
-	Complex3Vec psi = blockPsis->values[dualNodeId];
+	Spin1Vec psi = blockPsis->values[dualNodeId];
 	double sqrtDens = sqrt(density[0]);
 	psi.s1 = psi.s1 / sqrtDens;
 	psi.s0 = psi.s0 / sqrtDens;
@@ -159,11 +159,11 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__
 
 	// Update psi
 	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
-	Complex3Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
+	Spin1Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
 
 	uint primaryFace = dualNodeId * FACE_COUNT;
 
-	Complex3Vec H;
+	Spin1Vec H;
 	H.s1 = make_double2(0, 0);
 	H.s0 = make_double2(0, 0);
 	H.s_1 = make_double2(0, 0);
@@ -172,7 +172,7 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__
 #pragma unroll
 	for (int i = 0; i < FACE_COUNT; ++i)
 	{
-		Complex3Vec otherBoundaryZeroCell = ((BlockPsis*)(prevPsi + lapInd[primaryFace].x))->values[lapInd[primaryFace].y];
+		Spin1Vec otherBoundaryZeroCell = ((BlockPsis*)(prevPsi + lapInd[primaryFace].x))->values[lapInd[primaryFace].y];
 		H.s1 += hodges[primaryFace] * (otherBoundaryZeroCell.s1 - prev.s1);
 		H.s0 += hodges[primaryFace] * (otherBoundaryZeroCell.s0 - prev.s0);
 		H.s_1 += hodges[primaryFace] * (otherBoundaryZeroCell.s_1 - prev.s_1);
@@ -216,7 +216,41 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__
 #endif
 };
 #else
-__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, double* __restrict__ hodges, double Bq, double Bz, uint3 dimensions, double block_scale, double3 p0, double dt)
+__global__ void updateQ(PitchedPtr nextQ, PitchedPtr prevQ, PitchedPtr psi, int3* __restrict__ d0, uint3 dimensions, double dtPerSigma, double sign)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+
+	size_t dataZid = zid / EDGES_IN_BLOCK; // One thread per every dual edge so EDGES_IN_BLOCK threads per mesh block (on z-axis)
+
+	// Exit leftover threads
+	if (xid >= dimensions.x || yid >= dimensions.y || dataZid >= dimensions.z)
+	{
+		return;
+	}
+
+	// Calculate the pointers for this block
+	char* pPsi = psi.ptr + psi.slicePitch * dataZid + psi.pitch * yid + sizeof(BlockPsis) * xid;
+
+	// Update psi
+	size_t dualEdgeId = zid % EDGES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+
+	BlockEdges* prev = (BlockEdges*)(prevQ.ptr + prevQ.slicePitch * dataZid + prevQ.pitch * yid) + xid; // I or R
+	BlockEdges* next = (BlockEdges*)(nextQ.ptr + nextQ.slicePitch * dataZid + nextQ.pitch * yid) + xid; // R or I
+
+	Spin1Vec d0_psi;
+	d0_psi.s1 = ((BlockPsis*)(pPsi + d0[dualEdgeId].y))->values[d0[dualEdgeId].z].s1 - ((BlockPsis*)(pPsi))->values[d0[dualEdgeId].x].s1;
+	d0_psi.s0 = ((BlockPsis*)(pPsi + d0[dualEdgeId].y))->values[d0[dualEdgeId].z].s0 - ((BlockPsis*)(pPsi))->values[d0[dualEdgeId].x].s0;
+	d0_psi.s_1 = ((BlockPsis*)(pPsi + d0[dualEdgeId].y))->values[d0[dualEdgeId].z].s_1 - ((BlockPsis*)(pPsi))->values[d0[dualEdgeId].x].s_1;
+
+	next->values[dualEdgeId].s1 += sign * dtPerSigma * (prev->values[dualEdgeId].s1 + d0_psi.s1);
+	next->values[dualEdgeId].s0 += sign * dtPerSigma * (prev->values[dualEdgeId].s0 + d0_psi.s0);
+	next->values[dualEdgeId].s_1 += sign * dtPerSigma * (prev->values[dualEdgeId].s_1 + d0_psi.s_1);
+};
+
+__global__ void updatePsi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, int2* __restrict__ d1, double* __restrict__ hodges,
+	double Bq, double Bz, uint3 dimensions, double block_scale, double3 p0, double dt, double sign)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -231,35 +265,36 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restric
 	}
 
 	// Calculate the pointers for this block
-	char* prevPsi = prevStep.ptr + prevStep.slicePitch * dataZid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
-	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * dataZid + nextStep.pitch * yid) + xid;
+	char* pPrevPsi = prevStep.ptr + prevStep.slicePitch * dataZid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
+	char* pQs = qs.ptr + qs.slicePitch * dataZid + qs.pitch * yid + sizeof(BlockEdges) * xid;
+	BlockPsis* pNextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * dataZid + nextStep.pitch * yid) + xid;
 
 	// Update psi
 	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
-	Complex3Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
+	Spin1Vec prev = ((BlockPsis*)pPrevPsi)->values[dualNodeId];
 
-	uint primaryFace = dualNodeId * FACE_COUNT;
+	uint startEdgeId = dualNodeId * FACE_COUNT;
 
-	Complex3Vec H;
-	H.s1 = make_double2(0, 0);
-	H.s0 = make_double2(0, 0);
-	H.s_1 = make_double2(0, 0);
+	Spin1Vec d1q;
+	d1q.s1 = 0;
+	d1q.s0 = 0;
+	d1q.s_1 = 0;
 
 	// Add the Laplacian to the Hamiltonian
 #pragma unroll
-	for (int i = 0; i < FACE_COUNT; ++i)
+	for (int edgeIdOffset = 0; edgeIdOffset < FACE_COUNT; ++edgeIdOffset)
 	{
-		Complex3Vec otherBoundaryZeroCell = ((BlockPsis*)(prevPsi + lapInd[primaryFace].x))->values[lapInd[primaryFace].y];
-		H.s1 += hodges[primaryFace] * (otherBoundaryZeroCell.s1 - prev.s1);
-		H.s0 += hodges[primaryFace] * (otherBoundaryZeroCell.s0 - prev.s0);
-		H.s_1 += hodges[primaryFace] * (otherBoundaryZeroCell.s_1 - prev.s_1);
-
-		primaryFace++;
+		int edgeId = startEdgeId + edgeIdOffset;
+		d1q.s1 += hodges[edgeId] * ((BlockEdges*)(pQs + d1[edgeId].x))->values[d1[edgeId].y].s1;
+		d1q.s0 += hodges[edgeId] * ((BlockEdges*)(pQs + d1[edgeId].x))->values[d1[edgeId].y].s0;
+		d1q.s_1 += hodges[edgeId] * ((BlockEdges*)(pQs + d1[edgeId].x))->values[d1[edgeId].y].s_1;
 	}
 
-	double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
-	double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
-	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
+	Spin1Vec H;
+	Spin1Vec next = pNextPsi->values[dualNodeId];
+	double normSq_s1 = prev.s1 * prev.s1 + next.s1 * next.s1;
+	double normSq_s0 = prev.s0 * prev.s0 + next.s0 * next.s0;
+	double normSq_s_1 = prev.s_1 * prev.s_1 + next.s_1 * next.s_1;
 	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
 
 	// Add the total potential
@@ -269,6 +304,7 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restric
 		p0.z + block_scale * (dataZid * BLOCK_WIDTH_Z + localPos.z));
 	double totalPot = trap(globalPos) + (c0 + c2) * normSq;
 
+	// TODO: Do the math with pen and paper!
 	H.s1 += totalPot * prev.s1 + c2 * (-2.0 * normSq_s_1 * prev.s1 + star(prev.s_1) * prev.s0 * prev.s0 + 0 * prev.s_1);
 	H.s0 += totalPot * prev.s0 + c2 * (star(prev.s0) * prev.s_1 * prev.s1 - normSq_s0 * prev.s0 + star(prev.s0) * prev.s1 * prev.s_1);
 	H.s_1 += totalPot * prev.s_1 + c2 * (0 * prev.s1 + star(prev.s1) * prev.s0 * prev.s0 - 2.0 * normSq_s1 * prev.s_1);
@@ -278,13 +314,14 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restric
 	double2 Bxy = INV_SQRT_2 * make_double2(B.x, B.y);
 	double2 Bxy_star = star(Bxy);
 
+	// TODO: Do the math with pen and paper!
 	H.s1 += (B.z * prev.s1 + Bxy_star * prev.s0);
 	H.s0 += (Bxy * prev.s1 + Bxy_star * prev.s_1);
 	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
 
-	nextPsi->values[dualNodeId].s1 += dt * make_double2(H.s1.y, -H.s1.x);
-	nextPsi->values[dualNodeId].s0 += dt * make_double2(H.s0.y, -H.s0.x);
-	nextPsi->values[dualNodeId].s_1 += dt * make_double2(H.s_1.y, -H.s_1.x);
+	pNextPsi->values[dualNodeId].s1 += sign * dt * H.s1;
+	pNextPsi->values[dualNodeId].s0 += sign * dt * H.s0;
+	pNextPsi->values[dualNodeId].s_1 += sign * dt * H.s_1;
 };
 #endif
 

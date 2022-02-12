@@ -11,16 +11,21 @@
 
 #include <mesh.h>
 
-struct Complex3Vec
+struct Spin1Vec
 {
-	double2 s1 = make_double2(0, 0);
-	double2 s0 = make_double2(0, 0);
-	double2 s_1 = make_double2(0, 0);
+	double s1 = 0;
+	double s0 = 0;
+	double s_1 = 0;
 };
 
 struct BlockPsis
 {
-	Complex3Vec values[VALUES_IN_BLOCK];
+	Spin1Vec values[VALUES_IN_BLOCK];
+};
+
+struct BlockEdges
+{
+	Spin1Vec values[EDGES_IN_BLOCK];
 };
 
 struct PitchedPtr
@@ -47,9 +52,9 @@ void drawPicture(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 			for (uint k = 0; k < depth; ++k)
 			{
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
-				norm_s1 += h_evenPsi[idx].values[0].s1.x * h_evenPsi[idx].values[0].s1.x + h_evenPsi[idx].values[0].s1.y * h_evenPsi[idx].values[0].s1.y;
-				norm_s0 += h_evenPsi[idx].values[0].s0.x * h_evenPsi[idx].values[0].s0.x + h_evenPsi[idx].values[0].s0.y * h_evenPsi[idx].values[0].s0.y;
-				norm_s_1 += h_evenPsi[idx].values[0].s_1.x * h_evenPsi[idx].values[0].s_1.x + h_evenPsi[idx].values[0].s_1.y * h_evenPsi[idx].values[0].s_1.y;
+				norm_s1 += h_evenPsi[idx].values[0].s1 * h_evenPsi[idx].values[0].s1;
+				norm_s0 += h_evenPsi[idx].values[0].s0 * h_evenPsi[idx].values[0].s0;
+				norm_s_1 += h_evenPsi[idx].values[0].s_1 * h_evenPsi[idx].values[0].s_1;
 			}
 
 			double r = INTENSITY * norm_s1;
@@ -72,9 +77,9 @@ void drawPicture(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 			for (uint j = 0; j < height; j++)
 			{
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
-				norm_s1 += h_evenPsi[idx].values[0].s1.x * h_evenPsi[idx].values[0].s1.x + h_evenPsi[idx].values[0].s1.y * h_evenPsi[idx].values[0].s1.y;
-				norm_s0 += h_evenPsi[idx].values[0].s0.x * h_evenPsi[idx].values[0].s0.x + h_evenPsi[idx].values[0].s0.y * h_evenPsi[idx].values[0].s0.y;
-				norm_s_1 += h_evenPsi[idx].values[0].s_1.x * h_evenPsi[idx].values[0].s_1.x + h_evenPsi[idx].values[0].s_1.y * h_evenPsi[idx].values[0].s_1.y;
+				norm_s1 += h_evenPsi[idx].values[0].s1 * h_evenPsi[idx].values[0].s1;
+				norm_s0 += h_evenPsi[idx].values[0].s0 * h_evenPsi[idx].values[0].s0;
+				norm_s_1 += h_evenPsi[idx].values[0].s_1 * h_evenPsi[idx].values[0].s_1;
 			}
 
 			double r = INTENSITY * norm_s1;
@@ -148,7 +153,7 @@ void saveVolume(const std::string& name, BlockPsis* h_evenPsi, size_t bsize, siz
 				double sum = 0.0;
 				for (uint l = 0; l < bsize; l++)
 				{
-					sum += h_evenPsi[idx].values[0].s1.x * h_evenPsi[idx].values[0].s1.x + h_evenPsi[idx].values[0].s1.y * h_evenPsi[idx].values[0].s1.y;
+					sum += h_evenPsi[idx].values[0].s1 * h_evenPsi[idx].values[0].s1;
 				}
 				sum *= unit;
 				vol[idx] = (sum > 65535.0 ? 65535 : ushort(sum));
