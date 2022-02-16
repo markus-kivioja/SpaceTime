@@ -113,7 +113,7 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 		((BlockPsis*)(pPsi))->values[d0[dualEdgeId].x];
 
 #if RELATIVISTIC
-	next->values[dualEdgeId] += sign * dtime_per_sigma * (prev->values[dualEdgeId] + d0psi);
+	next->values[dualEdgeId] += dtime_per_sigma * sign * (prev->values[dualEdgeId] + d0psi);
 #else
 	next->values[dualEdgeId] = d0psi;
 #endif

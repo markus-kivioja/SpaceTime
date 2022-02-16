@@ -192,7 +192,7 @@ inline __host__ __device__ __inline__ double2 operator/(double2 a, double b)
 {
 	return make_double2(a.x / b, a.y / b);
 }
-inline __host__ __device__ __inline__ double2 star(double2 a) // Complex conjugate
+inline __host__ __device__ __inline__ double2 conj(double2 a) // Complex conjugate
 {
 	return make_double2(a.x, -a.y);
 }

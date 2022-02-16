@@ -49,7 +49,7 @@ const std::string STATE_FILENAME = "ground_state_double.dat";
 
 #define INV_SQRT_2 0.70710678118655
 
-#define COMPUTE_GROUND_STATE 1
+#define COMPUTE_GROUND_STATE 0
 #define FORCE_SPIN_POLARISATION 0
 
 #define SAVE_PICTURE 0
