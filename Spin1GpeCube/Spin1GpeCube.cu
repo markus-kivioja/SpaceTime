@@ -52,7 +52,7 @@ const std::string STATE_FILENAME = "ground_state_double.dat";
 #define COMPUTE_GROUND_STATE 0
 #define FORCE_SPIN_POLARISATION 0
 
-#define SAVE_PICTURE 0
+#define SAVE_PICTURE 1
 #define SAVE_VOLUME 0
 #define SAVE_FREQUENCY 1000
 
@@ -387,7 +387,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	// compute time step size
 	const uint steps_per_iteration = 100; // 1.0 / 0.000199999994947575; // uint(iteration_period * (maxpot + lapfac0)) + 1; // number of time steps per iteration period
-	const double dt = 0.000199999994947575; // iteration_period / double(steps_per_iteration); // time step in time units
+	const double dt = 0.0002; // iteration_period / double(steps_per_iteration); // time step in time units
 
 	std::cout << "steps_per_iteration = " << steps_per_iteration << std::endl;
 
@@ -566,13 +566,18 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #else
 	Text errorText;
 	const uint time0 = clock();
+	uint32_t timeStepCount = 0;
 	while (true)
 	{
 #if SAVE_PICTURE
+		if (iter % 100 == 0)
 		{
+			// Copy back from device memory to host memory
+			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
+
 			double Bz = Bz0 + BzVel * t;
 			Bz = min(Bz, -0.001 * Bz0Scale);
-			drawPicture("TI", h_evenPsi, dxsize, dysize, dzsize, iter, Bq, Bz, block_scale, d_p0);
+			drawPicture("TI", h_evenPsi, dxsize, dysize, dzsize, timeStepCount, Bq, Bz, block_scale, d_p0);
 			printDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 		}
 #endif
@@ -586,7 +591,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		//if (errorAbs > 0.01) break;
 
 		// integrate one iteration
-		std::cout << "Iteration " << iter << std::endl;
 		for (uint step = 0; step < steps_per_iteration; step++)
 		{
 			double Bz = Bz0 + BzVel * t;
@@ -595,6 +599,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			// update odd values
 			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, dt);
 			t += dt;
+			timeStepCount++;
 
 			Bz = Bz0 + BzVel * t;
 			Bz = min(Bz, Bzf * Bz0Scale);
@@ -602,12 +607,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			// update even values
 			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, dt);
 			t += dt;
+			timeStepCount++;
 		}
-
-#if SAVE_PICTURE || SAVE_VOLUME
-		// Copy back from device memory to host memory
-		checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-#endif
 	}
 	errorText.save("results/errors.txt");
 
