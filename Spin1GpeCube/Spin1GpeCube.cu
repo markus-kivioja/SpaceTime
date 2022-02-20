@@ -1,6 +1,8 @@
 #include <cuda_runtime.h>
 #include <helper_cuda.h>
 
+#include "AliceRingRamps.h"
+
 #include "VortexState.hpp"
 #include <Output/Picture.hpp>
 #include <Output/Text.hpp>
@@ -16,41 +18,44 @@ constexpr double Lx = 24.0;
 constexpr double Ly = 24.0;
 constexpr double Lz = 24.0;
 
-constexpr double Nx = 200.0;
-constexpr double Ny = 200.0;
-constexpr double Nz = 200.0;
+constexpr double Nx = 255.0;
+constexpr double Ny = 255.0;
+constexpr double Nz = 255.0;
 
-constexpr double omega_r = 160 * 2 * PI;
-constexpr double omega_z = 220 * 2 * PI;
+constexpr double N = 2e5;
+
+constexpr double omega_r = 126 * 2 * PI;
+constexpr double omega_z = 166 * 2 * PI;
 constexpr double lambda_x = 1.0;
 constexpr double lambda_y = 1.0;
 constexpr double lambda_z = omega_z / omega_r;
 
-constexpr double c0 = 14161.2119140625;
-constexpr double c2 = -65.5179061889648;
+constexpr double a_bohr = 5.2917721092e-11; //[m] Bohr radius
+constexpr double a_0 = 101.8;
+constexpr double a_2 = 100.4;
 
+constexpr double atomMass = 1.44316060e-25;
 constexpr double hbar = 1.05457148e-34; // [m^2 kg / s]
-const double a_r = sqrt(hbar / ((1.44316060e-25) * omega_r)); //[m]
-constexpr double muB = 9.27400968e-24; // [m^2 kg / s^2 T^-1] bohr magneton
+const double a_r = sqrt(hbar / (atomMass * omega_r)); //[m]
+
+const double c0 = 4 * PI * N * (a_0 + 2 * a_2) * a_bohr / (3 * a_r);
+const double c2 = 4 * PI * N * (a_2 - a_0) * a_bohr / (3 * a_r);
+
+constexpr double muB = 9.27400968e-24; // [m^2 kg / s^2 T^-1] Bohr magneton
 
 const double BqScale = -(0.5 * muB / (hbar * omega_r) * a_r) / 100.; // [cm/Gauss]
-constexpr double Bz0Scale = -(0.5 * muB / (hbar * omega_r)) / 10000.; // [1/Gauss]
+constexpr double BzScale = -(0.5 * muB / (hbar * omega_r)) / 10000.; // [1/Gauss]
 
 constexpr double dimensionalBq = 3.7;
 constexpr double dimensionalBz0 = 0.01;
 
-// The external magnetic field
-const double Bq = dimensionalBq * BqScale;
-const double Bz0 = dimensionalBz0 * Bz0Scale;
-constexpr double BzVel = -1.0 * Bz0Scale / omega_r;
-constexpr double  Bzf = -0.0006;
+constexpr double dt = 2e-4; // iteration_period / double(steps_per_iteration); // time step in time units
 
-const std::string STATE_FILENAME = "ground_state_double.dat";
+const std::string STATE_FILENAME = "polar_ground_state.dat";
 
 #define INV_SQRT_2 0.70710678118655
 
 #define COMPUTE_GROUND_STATE 0
-#define FORCE_SPIN_POLARISATION 0
 
 #define SAVE_PICTURE 1
 #define SAVE_VOLUME 0
@@ -139,7 +144,38 @@ __global__ void normalize(double* density, PitchedPtr psiPtr, uint3 dimensions)
 }
 
 #if COMPUTE_GROUND_STATE
-__global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, double* __restrict__ hodges, double Bq, double Bz, uint3 dimensions, double block_scale, double3 p0, double dt)
+__global__ void polarState(PitchedPtr psi, uint3 dimensions)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+
+	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+
+	// Exit leftover threads
+	if (xid >= dimensions.x || yid >= dimensions.y || dataZid >= dimensions.z)
+	{
+		return;
+	}
+
+	BlockPsis* pPsi = (BlockPsis*)(psi.ptr + psi.slicePitch * dataZid + psi.pitch * yid) + xid;
+
+	// Update psi
+	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+
+	Complex3Vec prev = pPsi->values[dualNodeId];
+
+	double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
+	double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
+	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
+	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
+
+	pPsi->values[dualNodeId].s1 = make_double2(0, 0);
+	pPsi->values[dualNodeId].s0 = sqrt(normSq) * prev.s0 / sqrt(normSq_s0);
+	pPsi->values[dualNodeId].s_1 = make_double2(0, 0);
+};
+
+__global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, double* __restrict__ hodges, uint3 dimensions, double block_scale, double3 p0, double c0, double c2)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -184,7 +220,7 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__
 	double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
 	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
 	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
-	
+
 	// Add the total potential
 	double3 localPos = getLocalPos(dualNodeId);
 	double3 globalPos = make_double3(p0.x + block_scale * (xid * BLOCK_WIDTH_X + localPos.x),
@@ -197,26 +233,20 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__
 	H.s_1 += totalPot * prev.s_1 + c2 * (0 * prev.s1 + star(prev.s1) * prev.s0 * prev.s0 - 2.0 * normSq_s1 * prev.s_1);
 
 	// Add the Zeeman term
-	double3 B = magneticField(globalPos, Bq, Bz);
-	double2 Bxy = INV_SQRT_2 * make_double2(B.x, B.y);
-	double2 Bxy_star = star(Bxy);
-	
-	H.s1 += (B.z * prev.s1 + Bxy_star * prev.s0);
-	H.s0 += (Bxy * prev.s1 + Bxy_star * prev.s_1);
-	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
+	//double3 B = make_double3(0, 0, 0);
+	//double2 Bxy = INV_SQRT_2 * make_double2(B.x, B.y);
+	//double2 Bxy_star = star(Bxy);
+	//
+	//H.s1 += (B.z * prev.s1 + Bxy_star * prev.s0);
+	//H.s0 += (Bxy * prev.s1 + Bxy_star * prev.s_1);
+	//H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
 
-#if FORCE_SPIN_POLARISATION
-	nextPsi->values[dualNodeId].s1 = prev.s1 - dt * make_double2(H.s1.x, H.s1.y);
-	nextPsi->values[dualNodeId].s0 = make_double2(0.0, 0.0);
-	nextPsi->values[dualNodeId].s_1 = make_double2(0.0, 0.0);
-#else
 	nextPsi->values[dualNodeId].s1 = prev.s1 - dt * make_double2(H.s1.x, H.s1.y);
 	nextPsi->values[dualNodeId].s0 = prev.s0 - dt * make_double2(H.s0.x, H.s0.y);
-	nextPsi->values[dualNodeId].s_1 =prev.s_1 - dt * make_double2(H.s_1.x, H.s_1.y);
-#endif
+	nextPsi->values[dualNodeId].s_1 = prev.s_1 - dt * make_double2(H.s_1.x, H.s_1.y);
 };
 #else
-__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, double* __restrict__ hodges, double Bq, double Bz, uint3 dimensions, double block_scale, double3 p0, double dt)
+__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, double* __restrict__ hodges, double Bq, double Bz, uint3 dimensions, double block_scale, double3 p0, double c0, double c2)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -330,7 +360,7 @@ void printDensity(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr ps
 	std::cout << "Total density: " << hDensity << std::endl;
 }
 
-uint integrateInTime(const double block_scale, const Vector3& minp, const Vector3& maxp, const double iteration_period, const uint number_of_iterations)
+uint integrateInTime(const double block_scale, const Vector3& minp, const Vector3& maxp, const uint number_of_iterations)
 {
 	uint i, j, k, l;
 
@@ -340,7 +370,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const uint ysize = uint(domain.y / (block_scale * BLOCK_WIDTH.y)) + 1;
 	const uint zsize = uint(domain.z / (block_scale * BLOCK_WIDTH.z)) + 1;
 	const Vector3 p0 = 0.5 * (minp + maxp - block_scale * Vector3(BLOCK_WIDTH.x * xsize, BLOCK_WIDTH.y * ysize, BLOCK_WIDTH.z * zsize));
-	std::cout << p0.x << ", " << p0.y << ", " << p0.z << std::endl;
 	const double3 d_p0 = make_double3(p0.x, p0.y, p0.z);
 
 	std::cout << xsize << ", " << ysize << ", " << zsize << std::endl;
@@ -387,7 +416,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	// compute time step size
 	const uint steps_per_iteration = 100; // 1.0 / 0.000199999994947575; // uint(iteration_period * (maxpot + lapfac0)) + 1; // number of time steps per iteration period
-	const double dt = 0.0002; // iteration_period / double(steps_per_iteration); // time step in time units
 
 	std::cout << "steps_per_iteration = " << steps_per_iteration << std::endl;
 
@@ -514,6 +542,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		if ((iter % 1000) == 0) std::cout << "Iteration " << iter << std::endl;
 		if (iter == 50000)
 		{
+			polarState << <dimGrid, dimBlock >> > (d_evenPsi, dimensions);
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
 			std::ofstream fs(STATE_FILENAME, std::ios::binary | std::ios_base::trunc);
 			if (fs.fail() != 0) return 1;
@@ -526,23 +555,19 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
 			double Bz = Bz0 + BzVel * t;
-			drawPicture("GS", h_evenPsi, dxsize, dysize, dzsize, iter, Bq, Bz, block_scale, d_p0);
+			drawPicture("GS", h_evenPsi, dxsize, dysize, dzsize, iter, 0, 0, block_scale, d_p0);
 			printDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 		}
 #endif
-		double Bz = Bz0 + BzVel * t;
 		// Take an imaginary time step
-		itp << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, dt);
+		itp << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, dimensions, block_scale, d_p0, c0, c2);
 		// Normalize
 		normalize_h(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
-		t += dt;
 
-		Bz = Bz0 + BzVel * t;
 		// Take an imaginary time step
-		itp << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, dt);
+		itp << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, dimensions, block_scale, d_p0, c0, c2);
 		// Normalize
 		normalize_h(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
-		t += dt;
 
 		//energy_h(dimGrid, dimBlock, d_energy, d_evenPsi, d_pot, d_lapind, d_hodges, g, dimensions, volume, bodies);
 		//double hDensity = 0;
@@ -564,9 +589,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	}
 
 #else
-	Text errorText;
 	const uint time0 = clock();
 	uint32_t timeStepCount = 0;
+	Signal signal;
+	double Bq = 0;
+	double Bz = 0;
 	while (true)
 	{
 #if SAVE_PICTURE
@@ -574,10 +601,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		{
 			// Copy back from device memory to host memory
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-
-			double Bz = Bz0 + BzVel * t;
-			Bz = min(Bz, -0.001 * Bz0Scale);
-			drawPicture("TI", h_evenPsi, dxsize, dysize, dzsize, timeStepCount, Bq, Bz, block_scale, d_p0);
+			drawPicture("TI", h_evenPsi, dxsize, dysize, dzsize, timeStepCount, 0, 0, block_scale, d_p0);
 			printDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 		}
 #endif
@@ -593,24 +617,23 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		// integrate one iteration
 		for (uint step = 0; step < steps_per_iteration; step++)
 		{
-			double Bz = Bz0 + BzVel * t;
-			Bz = min(Bz, Bzf * Bz0Scale);
-
 			// update odd values
-			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, dt);
-			t += dt;
+			signal = getSignal(t);
+			Bq = BqScale * signal.Bq;
+			Bz = BzScale * signal.Bz;
+			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, c0, c2);
+			t += dt / omega_r * 1e3; // [ms]
 			timeStepCount++;
 
-			Bz = Bz0 + BzVel * t;
-			Bz = min(Bz, Bzf * Bz0Scale);
-
 			// update even values
-			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, dt);
-			t += dt;
+			signal = getSignal(t);
+			Bq = BqScale * signal.Bq;
+			Bz = BzScale * signal.Bz;
+			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, c0, c2);
+			t += dt / omega_r * 1e3; // [ms]
 			timeStepCount++;
 		}
 	}
-	errorText.save("results/errors.txt");
 
 	std::cout << "iteration time = " << (1e-3 * (clock() - time0)) / number_of_iterations << std::endl;
 	std::cout << "total time = " << 1e-3 * (clock() - time0) << std::endl;
@@ -629,17 +652,15 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 int main(int argc, char** argv)
 {
 	const int number_of_iterations = 1000000;
-	const double iteration_period = 1.0;
 	const double block_scale = Lx / Nx;
 	
 	std::cout << "block_scale = " << block_scale << std::endl;
-	std::cout << "iteration_period = " << iteration_period << std::endl;
 	std::cout << "dual edge length = " << DUAL_EDGE_LENGTH * block_scale << std::endl;
-	
+
 	// integrate in time using DEC
 	auto domainMin = Vector3(-Lx * 0.5, -Ly * 0.5, -Lz * 0.5);
 	auto domainMax = Vector3(Lx * 0.5, Ly * 0.5, Lz * 0.5);
-	integrateInTime(block_scale, domainMin, domainMax, iteration_period, number_of_iterations);
+	integrateInTime(block_scale, domainMin, domainMax, number_of_iterations);
 
 	return 0;
 }

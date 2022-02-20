@@ -1,0 +1,134 @@
+{
+    "build_opt": {
+        "update_lambdas": "0",
+        "spin_cases": [
+            "1"
+        ],
+        "dims": [
+            "256"
+        ],
+        "precision": "double",
+        "is_benchmarking": "1"
+    },
+    "spacetime": {
+        "Lx": "24.0",
+        "Ly": "24.0",
+        "Lz": "24.0",
+        "time_step": "2e-6"
+    },
+    "intial_condition": {
+        "stepnum": "20",
+        "offset": "83758100",
+        "resume": "1",
+        "is_freexp": "0",
+        "is_groundstate": "0",
+        "writing_states": "1",
+        "path": "F1_256_y2022_m02_d11__05h_47m_39s\/",
+        "default_path": "1",
+        "noisyramps": "0",
+        "noiseamp": "0",
+        "tag": "0"
+    },
+    "iterations": {
+        "n_ground": "150000",
+        "monitorfreq": "15000",
+        "writefreq": "10000",
+        "n_dyn": "91834000",
+        "freq_dyn": "199900"
+    },
+    "physical_params": {
+        "mass": "1.44316060e-25",
+        "Natoms": "2e5",
+        "a_0": "101.8",
+        "a_2": "100.4",
+        "a_4": "0",
+        "trapf_x": "126",
+        "trapf_y": "126",
+        "trapf_z": "166",
+        "Ahfs": "10.11734130545215",
+        "quadraticZsign": "-1.0",
+        "Gamma": "2.9e-30"
+    },
+    "magnetic_signals": {
+        "value_Bq": [
+            "4.3",
+            "4.3",
+            "0",
+            "0"
+        ],
+        "duration_Bq": [
+            "10",
+            "192.03",
+            "0.2",
+            "48"
+        ],
+        "ramp_Bq": [
+            "4",
+            "0",
+            "4",
+            "0"
+        ],
+        "value_Bx": [
+            "0",
+            "0",
+            "0"
+        ],
+        "duration_Bx": [
+            "0",
+            "10",
+            "0"
+        ],
+        "ramp_Bx": [
+            "0",
+            "0",
+            "0"
+        ],
+        "value_By": [
+            "0",
+            "0",
+            "0"
+        ],
+        "duration_By": [
+            "0",
+            "10",
+            "0"
+        ],
+        "ramp_By": [
+            "0",
+            "0",
+            "0"
+        ],
+        "value_Bz": [
+            "1.0",
+            "0.045",
+            "0.045",
+            "0",
+            "1.2",
+            "1.2"
+        ],
+        "duration_Bz": [
+            "10",
+            "10",
+            "2.02",
+            "180",
+            "0.5",
+            "200"
+        ],
+        "ramp_Bz": [
+            "0",
+            "4",
+            "0",
+            "4",
+            "5",
+            "0"
+        ],
+        "quadrupole_center_x": "-0.20590789",
+        "quadrupole_center_y": "-0.48902826",
+        "quadrupole_center_z": "-0.27353409"
+    },
+    "cuda_dims": {
+        "block_x": "8",
+        "block_y": "8",
+        "block_z": "8"
+    }
+}

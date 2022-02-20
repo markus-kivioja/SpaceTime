@@ -87,7 +87,7 @@ void drawPicture(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 				p0.z + block_scale * ((k / SIZE) * H_BLOCK_WIDTH_Z + localPos.z));
 			double3 B = magneticField(globalPos, Bq, Bz);
 			double normB = sqrt(B.x * B.x + B.y * B.y + B.z * B.z);
-			if (normB < 0.1)
+			if ((normB < 0.1) && (Bq != 0))
 				pic1.setColor(width + k, i, Vector4(1, 1, 1, 1.0));
 			else
 				pic1.setColor(width + k, i, Vector4(r, g, b, 1.0));
