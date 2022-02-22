@@ -30,7 +30,7 @@ struct PitchedPtr
 	size_t slicePitch;
 };
 
-void drawPicture(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, uint iter, double Bq, double Bz, double block_scale, double3 p0)
+void drawPicture(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t, double Bq, double Bz, double block_scale, double3 p0)
 {
 	const int SIZE = 2;
 	const double INTENSITY = 5.0;
@@ -96,7 +96,7 @@ void drawPicture(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 			//pic_1.setColor(k, i, intensity_s_1 * Vector4(0, 0, norm_s_1, 1.0));
 		}
 	}
-	pic1.save("results/" + name + "_" + std::to_string(iter) + "_s1.bmp", false);
+	pic1.save("results/" + name + "_" + std::to_string(t) + "ms_s1.bmp", false);
 	//pic0.save("results/" + name + "_" + std::to_string(iter) + "_s0.bmp", false);
 	//pic_1.save("results/" + name + "_" + std::to_string(iter) + "_s-1.bmp", false);
 }
@@ -165,6 +165,10 @@ inline __host__ __device__ __inline__ double2 operator+(double2 a, double2 b)
 {
 	return make_double2(a.x + b.x, a.y + b.y);
 }
+inline __host__ __device__ __inline__ double3 operator+(double3 a, double3 b)
+{
+	return make_double3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
 inline __host__ __device__ __inline__ double2 operator-(double2 a, double2 b)
 {
 	return make_double2(a.x - b.x, a.y - b.y);
@@ -174,6 +178,12 @@ inline __host__ __device__ __inline__ void operator+=(double2& a, double2 b)
 	a.x += b.x;
 	a.y += b.y;
 }
+inline __host__ __device__ __inline__ void operator+=(double3& a, double3 b)
+{
+	a.x += b.x;
+	a.y += b.y;
+	a.z += b.z;
+}
 inline __host__ __device__ __inline__ void operator-=(double2& a, double2 b)
 {
 	a.x -= b.x;
@@ -182,6 +192,10 @@ inline __host__ __device__ __inline__ void operator-=(double2& a, double2 b)
 inline __host__ __device__ __inline__ double2 operator*(double b, double2 a)
 {
 	return make_double2(b * a.x, b * a.y);
+}
+inline __host__ __device__ __inline__ double3 operator*(double b, double3 a)
+{
+	return make_double3(b * a.x, b * a.y, b * a.z);
 }
 inline __host__ __device__ __inline__ double2 operator/(double2 a, double b)
 {

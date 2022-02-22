@@ -53,7 +53,8 @@ constexpr double dt = 2e-4; // iteration_period / double(steps_per_iteration); /
 
 const std::string STATE_FILENAME = "polar_ground_state.dat";
 
-#define INV_SQRT_2 0.70710678118655
+static constexpr double SQRT_2 = 1.41421356237309;
+static constexpr double INV_SQRT_2 = 0.70710678118655;
 
 #define COMPUTE_GROUND_STATE 0
 
@@ -103,6 +104,23 @@ __global__ void density(double* density, PitchedPtr prevStep, uint3 dimensions, 
 }
 
 __global__ void integrate(double* dataVec, size_t stride, bool addLast)
+{
+	size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+	if (idx >= stride)
+	{
+		return;
+	}
+
+	dataVec[idx] += dataVec[idx + stride];
+
+	if ((idx == (stride - 1)) && addLast)
+	{
+		dataVec[idx] += dataVec[idx + stride + 1];
+	}
+}
+
+__global__ void integrateVec(double3* dataVec, size_t stride, bool addLast)
 {
 	size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -221,32 +239,35 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__
 	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
 	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
 
-	// Add the total potential
 	double3 localPos = getLocalPos(dualNodeId);
 	double3 globalPos = make_double3(p0.x + block_scale * (xid * BLOCK_WIDTH_X + localPos.x),
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (dataZid * BLOCK_WIDTH_Z + localPos.z));
-	double totalPot = trap(globalPos) + (c0 + c2) * normSq;
+	double totalPot = trap(globalPos) + c0 * normSq;
 
-	H.s1 += totalPot * prev.s1 + c2 * (-2.0 * normSq_s_1 * prev.s1 + star(prev.s_1) * prev.s0 * prev.s0 + 0 * prev.s_1);
-	H.s0 += totalPot * prev.s0 + c2 * (star(prev.s0) * prev.s_1 * prev.s1 - normSq_s0 * prev.s0 + star(prev.s0) * prev.s1 * prev.s_1);
-	H.s_1 += totalPot * prev.s_1 + c2 * (0 * prev.s1 + star(prev.s1) * prev.s0 * prev.s0 - 2.0 * normSq_s1 * prev.s_1);
+	H.s1 += totalPot * prev.s1;
+	H.s0 += totalPot * prev.s0;
+	H.s_1 += totalPot * prev.s_1;
 
-	// Add the Zeeman term
-	//double3 B = make_double3(0, 0, 0);
-	//double2 Bxy = INV_SQRT_2 * make_double2(B.x, B.y);
-	//double2 Bxy_star = star(Bxy);
-	//
-	//H.s1 += (B.z * prev.s1 + Bxy_star * prev.s0);
-	//H.s0 += (Bxy * prev.s1 + Bxy_star * prev.s_1);
-	//H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
+	double3 B = make_double3(0, 0, 0); // magneticField(globalPos, Bq, Bz);
+	double2 temp = c2 * SQRT_2 * (star(prev.s1) * prev.s0 + star(prev.s0) * prev.s_1);
+	B.x += temp.x;
+	B.y += temp.y;
+	B.z += c2 * (normSq_s1 - normSq_s_1);
+
+	double2 Bxy = INV_SQRT_2 * make_double2(B.x, B.y);
+	double2 Bxy_star = star(Bxy);
+
+	H.s1 += (B.z * prev.s1 + Bxy_star * prev.s0);
+	H.s0 += (Bxy * prev.s1 + Bxy_star * prev.s_1);
+	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
 
 	nextPsi->values[dualNodeId].s1 = prev.s1 - dt * make_double2(H.s1.x, H.s1.y);
 	nextPsi->values[dualNodeId].s0 = prev.s0 - dt * make_double2(H.s0.x, H.s0.y);
 	nextPsi->values[dualNodeId].s_1 = prev.s_1 - dt * make_double2(H.s_1.x, H.s_1.y);
 };
 #else
-__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, double* __restrict__ hodges, double Bq, double Bz, uint3 dimensions, double block_scale, double3 p0, double c0, double c2)
+__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, double* __restrict__ hodges, double Bq, double Bz, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double3* pMagnetization)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -292,19 +313,21 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restric
 	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
 	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
 
-	// Add the total potential
 	double3 localPos = getLocalPos(dualNodeId);
 	double3 globalPos = make_double3(p0.x + block_scale * (xid * BLOCK_WIDTH_X + localPos.x),
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (dataZid * BLOCK_WIDTH_Z + localPos.z));
-	double totalPot = trap(globalPos) + (c0 + c2) * normSq;
+	double totalPot = trap(globalPos) + c0 * normSq;
 
-	H.s1 += totalPot * prev.s1 + c2 * (-2.0 * normSq_s_1 * prev.s1 + star(prev.s_1) * prev.s0 * prev.s0 + 0 * prev.s_1);
-	H.s0 += totalPot * prev.s0 + c2 * (star(prev.s0) * prev.s_1 * prev.s1 - normSq_s0 * prev.s0 + star(prev.s0) * prev.s1 * prev.s_1);
-	H.s_1 += totalPot * prev.s_1 + c2 * (0 * prev.s1 + star(prev.s1) * prev.s0 * prev.s0 - 2.0 * normSq_s1 * prev.s_1);
+	H.s1 += totalPot * prev.s1;
+	H.s0 += totalPot * prev.s0;
+	H.s_1 += totalPot * prev.s_1;
 
-	// Add the Zeeman term
 	double3 B = magneticField(globalPos, Bq, Bz);
+	double2 temp = SQRT_2 * (star(prev.s1) * prev.s0 + star(prev.s0) * prev.s_1);
+	double3 magnetization = make_double3(temp.x, temp.y, normSq_s1 - normSq_s_1);
+	B += c2 * magnetization;
+
 	double2 Bxy = INV_SQRT_2 * make_double2(B.x, B.y);
 	double2 Bxy_star = star(Bxy);
 
@@ -360,6 +383,21 @@ void printDensity(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr ps
 	std::cout << "Total density: " << hDensity << std::endl;
 }
 
+void printMagnetization(double3* magnetizationPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, double volume)
+{
+	int prevStride = bodies;
+	while (prevStride > 1)
+	{
+		int newStride = prevStride / 2;
+		integrateVec << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (magnetizationPtr, newStride, ((newStride * 2) != prevStride));
+		prevStride = newStride;
+	}
+	double3 hMagnetization = make_double3(0, 0, 0);
+	checkCudaErrors(cudaMemcpy(&hMagnetization, magnetizationPtr, sizeof(double), cudaMemcpyDeviceToHost));
+
+	std::cout << "Total magnetization: " << hMagnetization.x << ", " << hMagnetization.y << ", " << hMagnetization.z << std::endl;
+}
+
 uint integrateInTime(const double block_scale, const Vector3& minp, const Vector3& maxp, const uint number_of_iterations)
 {
 	uint i, j, k, l;
@@ -398,8 +436,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	//double* d_energy;
 	double* d_density;
+	double3* d_magnetization;
 	//checkCudaErrors(cudaMalloc(&d_energy, bodies * sizeof(double)));
 	checkCudaErrors(cudaMalloc(&d_density, bodies * sizeof(double)));
+	checkCudaErrors(cudaMalloc(&d_magnetization, bodies * sizeof(double3)));
 
 	size_t offset = d_cudaEvenPsi.pitch * dysize + d_cudaEvenPsi.pitch + sizeof(BlockPsis);
 	PitchedPtr d_evenPsi = { (char*)d_cudaEvenPsi.ptr + offset, d_cudaEvenPsi.pitch, d_cudaEvenPsi.pitch * dysize };
@@ -597,11 +637,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	while (true)
 	{
 #if SAVE_PICTURE
-		if (iter % 100 == 0)
+		if (iter % 10 == 0)
 		{
 			// Copy back from device memory to host memory
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-			drawPicture("TI", h_evenPsi, dxsize, dysize, dzsize, timeStepCount, 0, 0, block_scale, d_p0);
+			drawPicture("TI", h_evenPsi, dxsize, dysize, dzsize, t, 0, 0, block_scale, d_p0);
 			printDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 		}
 #endif
@@ -621,7 +661,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			signal = getSignal(t);
 			Bq = BqScale * signal.Bq;
 			Bz = BzScale * signal.Bz;
-			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, c0, c2);
+			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, c0, c2, d_magnetization);
 			t += dt / omega_r * 1e3; // [ms]
 			timeStepCount++;
 
@@ -629,7 +669,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			signal = getSignal(t);
 			Bq = BqScale * signal.Bq;
 			Bz = BzScale * signal.Bz;
-			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, c0, c2);
+			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, c0, c2, d_magnetization);
 			t += dt / omega_r * 1e3; // [ms]
 			timeStepCount++;
 		}
