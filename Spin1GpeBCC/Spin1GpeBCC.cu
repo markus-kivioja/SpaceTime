@@ -115,7 +115,7 @@ inline __host__ __device__ double2 operator*(double b, double2 a)
 {
 	return make_double2(b * a.x, b * a.y);
 }
-inline __host__ __device__ double2 star(double2 a) // Complex conjugate
+inline __host__ __device__ double2 conj(double2 a) // Complex conjugate
 {
 	return make_double2(a.x, -a.y);
 }
@@ -170,14 +170,14 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr posP
 	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
 	double totalPot = potential(positions->values[dualNodeId]) + (C0 + C1) * normSq;
 
-	H.s1 += totalPot * prev.s1 + C1 * (-2 * normSq_s_1 * prev.s1 + star(prev.s_1) * prev.s0 * prev.s0 + 0 * prev.s_1);
-	H.s0 += totalPot * prev.s0 + C1 * (star(prev.s0) * prev.s_1 * prev.s1 - normSq_s0 * prev.s0 + star(prev.s0) * prev.s1 * prev.s_1);
-	H.s_1 += totalPot * prev.s_1 + C1 * (0 * prev.s1 + star(prev.s1) * prev.s0 * prev.s0 - 2 * normSq_s1 * prev.s_1);
+	H.s1 += totalPot * prev.s1 + C1 * (-2 * normSq_s_1 * prev.s1 + conj(prev.s_1) * prev.s0 * prev.s0 + 0 * prev.s_1);
+	H.s0 += totalPot * prev.s0 + C1 * (conj(prev.s0) * prev.s_1 * prev.s1 - normSq_s0 * prev.s0 + conj(prev.s0) * prev.s1 * prev.s_1);
+	H.s_1 += totalPot * prev.s_1 + C1 * (0 * prev.s1 + conj(prev.s1) * prev.s0 * prev.s0 - 2 * normSq_s1 * prev.s_1);
 
 	// Add the Zeeman term
 	double3 B = magneticField(positions->values[dualNodeId], totalTime);
 	double2 Bxy = INV_SQRT_2 * make_double2(B.x, B.y);
-	double2 Bxy_star = star(Bxy);
+	double2 Bxy_star = conj(Bxy);
 
 	H.s1 += gF * (B.z * prev.s1 + Bxy_star * prev.s0);
 	H.s0 += gF * (Bxy * prev.s1 + Bxy_star * prev.s_1);

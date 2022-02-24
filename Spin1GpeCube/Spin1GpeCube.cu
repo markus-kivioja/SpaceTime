@@ -100,7 +100,34 @@ __global__ void density(double* density, PitchedPtr prevStep, uint3 dimensions, 
 	Complex3Vec psi = ((BlockPsis*)pPsi)->values[dualNodeId];
 
 	size_t idx = dataZid * dimensions.x * dimensions.y * VALUES_IN_BLOCK + yid * dimensions.x * VALUES_IN_BLOCK + xid * VALUES_IN_BLOCK + dualNodeId;
-	density[idx] = dv * ((psi.s1 * star(psi.s1)).x + (psi.s0 * star(psi.s0)).x + (psi.s_1 * star(psi.s_1)).x);
+	density[idx] = dv * ((psi.s1 * conj(psi.s1)).x + (psi.s0 * conj(psi.s0)).x + (psi.s_1 * conj(psi.s_1)).x);
+}
+
+__global__ void magnetization(double3* pMagnetization, PitchedPtr prevStep, uint3 dimensions, double dv)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+
+	// Exit leftover threads
+	if (xid >= dimensions.x || yid >= dimensions.y || dataZid >= dimensions.z)
+	{
+		return;
+	}
+
+	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+
+	char* pPsi = prevStep.ptr + prevStep.slicePitch * dataZid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
+	Complex3Vec psi = ((BlockPsis*)pPsi)->values[dualNodeId];
+
+	double normSq_s1 = psi.s1.x * psi.s1.x + psi.s1.y * psi.s1.y;
+	double normSq_s_1 = psi.s_1.x * psi.s_1.x + psi.s_1.y * psi.s_1.y;
+	double2 temp = SQRT_2 * (conj(psi.s1) * psi.s0 + conj(psi.s0) * psi.s_1);
+	double3 magnetization = make_double3(temp.x, temp.y, normSq_s1 - normSq_s_1);
+
+	size_t idx = dataZid * dimensions.x * dimensions.y * VALUES_IN_BLOCK + yid * dimensions.x * VALUES_IN_BLOCK + xid * VALUES_IN_BLOCK + dualNodeId;
+	pMagnetization[idx] = dv * magnetization;
 }
 
 __global__ void integrate(double* dataVec, size_t stride, bool addLast)
@@ -250,16 +277,16 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__
 	H.s_1 += totalPot * prev.s_1;
 
 	double3 B = make_double3(0, 0, 0); // magneticField(globalPos, Bq, Bz);
-	double2 temp = c2 * SQRT_2 * (star(prev.s1) * prev.s0 + star(prev.s0) * prev.s_1);
+	double2 temp = c2 * SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
 	B.x += temp.x;
 	B.y += temp.y;
 	B.z += c2 * (normSq_s1 - normSq_s_1);
 
 	double2 Bxy = INV_SQRT_2 * make_double2(B.x, B.y);
-	double2 Bxy_star = star(Bxy);
+	double2 Bxy_conj = conj(Bxy);
 
-	H.s1 += (B.z * prev.s1 + Bxy_star * prev.s0);
-	H.s0 += (Bxy * prev.s1 + Bxy_star * prev.s_1);
+	H.s1 += (B.z * prev.s1 + Bxy_conj * prev.s0);
+	H.s0 += (Bxy * prev.s1 + Bxy_conj * prev.s_1);
 	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
 
 	nextPsi->values[dualNodeId].s1 = prev.s1 - dt * make_double2(H.s1.x, H.s1.y);
@@ -267,7 +294,7 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__
 	nextPsi->values[dualNodeId].s_1 = prev.s_1 - dt * make_double2(H.s_1.x, H.s_1.y);
 };
 #else
-__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, double* __restrict__ hodges, double Bq, double Bz, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double3* pMagnetization)
+__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, double* __restrict__ hodges, double Bq, double Bz, uint3 dimensions, double block_scale, double3 p0, double c0, double c2)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -323,16 +350,16 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restric
 	H.s0 += totalPot * prev.s0;
 	H.s_1 += totalPot * prev.s_1;
 
-	double3 B = magneticField(globalPos, Bq, Bz);
-	double2 temp = SQRT_2 * (star(prev.s1) * prev.s0 + star(prev.s0) * prev.s_1);
+	double2 temp = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
 	double3 magnetization = make_double3(temp.x, temp.y, normSq_s1 - normSq_s_1);
+	double3 B = magneticField(globalPos, Bq, Bz);
 	B += c2 * magnetization;
 
 	double2 Bxy = INV_SQRT_2 * make_double2(B.x, B.y);
-	double2 Bxy_star = star(Bxy);
+	double2 Bxy_conj = conj(Bxy);
 
-	H.s1 += (B.z * prev.s1 + Bxy_star * prev.s0);
-	H.s0 += (Bxy * prev.s1 + Bxy_star * prev.s_1);
+	H.s1 += (B.z * prev.s1 + Bxy_conj * prev.s0);
+	H.s0 += (Bxy * prev.s1 + Bxy_conj * prev.s_1);
 	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
 
 	nextPsi->values[dualNodeId].s1 += dt * make_double2(H.s1.y, -H.s1.x);
@@ -383,8 +410,9 @@ void printDensity(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr ps
 	std::cout << "Total density: " << hDensity << std::endl;
 }
 
-void printMagnetization(double3* magnetizationPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, double volume)
+void printMagnetization(dim3 dimGrid, dim3 dimBlock, double3* magnetizationPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, double volume)
 {
+	magnetization << <dimGrid, dimBlock >> > (magnetizationPtr, psi, dimensions, volume);
 	int prevStride = bodies;
 	while (prevStride > 1)
 	{
@@ -393,7 +421,7 @@ void printMagnetization(double3* magnetizationPtr, PitchedPtr psi, uint3 dimensi
 		prevStride = newStride;
 	}
 	double3 hMagnetization = make_double3(0, 0, 0);
-	checkCudaErrors(cudaMemcpy(&hMagnetization, magnetizationPtr, sizeof(double), cudaMemcpyDeviceToHost));
+	checkCudaErrors(cudaMemcpy(&hMagnetization, magnetizationPtr, sizeof(double3), cudaMemcpyDeviceToHost));
 
 	std::cout << "Total magnetization: " << hMagnetization.x << ", " << hMagnetization.y << ", " << hMagnetization.z << std::endl;
 }
@@ -643,6 +671,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
 			drawPicture("TI", h_evenPsi, dxsize, dysize, dzsize, t, 0, 0, block_scale, d_p0);
 			printDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+			printMagnetization(dimGrid, dimBlock, d_magnetization, d_evenPsi, dimensions, bodies, volume);
 		}
 #endif
 #if SAVE_VOLUME
@@ -661,7 +690,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			signal = getSignal(t);
 			Bq = BqScale * signal.Bq;
 			Bz = BzScale * signal.Bz;
-			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, c0, c2, d_magnetization);
+			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, c0, c2);
 			t += dt / omega_r * 1e3; // [ms]
 			timeStepCount++;
 
@@ -669,7 +698,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			signal = getSignal(t);
 			Bq = BqScale * signal.Bq;
 			Bz = BzScale * signal.Bz;
-			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, c0, c2, d_magnetization);
+			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, c0, c2);
 			t += dt / omega_r * 1e3; // [ms]
 			timeStepCount++;
 		}

@@ -1,0 +1,1079 @@
+block_scale = 0.0941176
+dual edge length = 0.0941176
+256, 256, 256
+bsize: 1, xsize: 256, yszie: 256, zsize: 256
+bodies = 16777216
+steps_per_iteration = 100
+ALU operations per unit time = 1476395008
+Total density: 1
+Total magnetization: -0, 0, 0
+Total density: 1.00317
+Total magnetization: 1.20179e-12, 5.42009e-11, 1.24945e-11
+Total density: 1.00049
+Total magnetization: -5.6274e-11, -1.05293e-13, -1.93313e-11
+Total density: 1.00052
+Total magnetization: 1.91554e-10, -1.75445e-10, -2.29844e-12
+Total density: 1.00045
+Total magnetization: -4.89032e-12, 9.06801e-11, 2.19575e-11
+Total density: 0.999778
+Total magnetization: -3.71356e-10, 3.78129e-11, -1.53326e-12
+Total density: 0.999101
+Total magnetization: 1.73861e-10, -1.24208e-11, 5.18689e-12
+Total density: 0.999609
+Total magnetization: 1.79063e-11, -9.61403e-12, 8.09582e-12
+Total density: 1.00166
+Total magnetization: 2.31647e-12, 2.36637e-11, 1.05325e-11
+Total density: 1.00067
+Total magnetization: 6.32911e-14, 2.39301e-11, 1.27688e-11
+Total density: 0.998132
+Total magnetization: -4.74463e-12, -6.45508e-11, 1.5732e-11
+Total density: 1.00081
+Total magnetization: -1.05403e-12, -7.75339e-12, 1.92752e-11
+Total density: 1.00038
+Total magnetization: 3.68208e-13, 1.57362e-11, 2.19181e-11
+Total density: 1.00037
+Total magnetization: -8.37432e-13, 1.10217e-12, 2.66521e-11
+Total density: 1.00119
+Total magnetization: -1.89743e-13, 4.3556e-11, 3.08516e-11
+Total density: 0.997977
+Total magnetization: 1.24669e-12, -7.07772e-11, 3.5008e-11
+Total density: 1.00071
+Total magnetization: -1.96849e-12, 1.66154e-12, 4.00592e-11
+Total density: 1.00105
+Total magnetization: 1.95522e-12, 2.21725e-11, 4.62672e-11
+Total density: 1.00023
+Total magnetization: 2.57846e-12, 2.748e-11, 5.02468e-11
+Total density: 1.00011
+Total magnetization: -2.2722e-12, -1.10197e-11, 5.61825e-11
+Total density: 0.998882
+Total magnetization: 1.75595e-11, -3.13822e-11, 6.24543e-11
+Total density: 1.00046
+Total magnetization: 3.34903e-12, 1.45225e-11, 7.39144e-11
+Total density: 1.00089
+Total magnetization: 3.50297e-12, 1.004e-11, 8.6946e-11
+Total density: 1.00033
+Total magnetization: 1.11862e-11, -3.60058e-12, 1.01444e-10
+Total density: 1.00036
+Total magnetization: -1.62884e-11, 8.46913e-12, 1.18989e-10
+Total density: 0.999062
+Total magnetization: -7.95444e-11, -3.9886e-11, 1.4472e-10
+Total density: 1.00057
+Total magnetization: 9.63339e-11, 8.90188e-11, 1.84339e-10
+Total density: 1.00029
+Total magnetization: -1.099e-10, -1.96164e-10, 2.09578e-10
+Total density: 1.00078
+Total magnetization: -2.72639e-10, 5.58675e-11, 2.66455e-10
+Total density: 0.998562
+Total magnetization: -4.69991e-10, -3.19895e-11, 2.9337e-10
+Total density: 1.0022
+Total magnetization: 3.56522e-10, 7.61199e-10, 4.75782e-10
+Total density: 0.997852
+Total magnetization: -9.45708e-11, -2.80483e-10, 6.81013e-10
+Total density: 1.00198
+Total magnetization: -8.79712e-11, -7.2223e-11, 8.80445e-10
+Total density: 1.00124
+Total magnetization: 8.09988e-12, 1.24935e-10, 1.32467e-09
+Total density: 0.997292
+Total magnetization: -7.76354e-12, -3.34955e-10, 1.91047e-09
+Total density: 0.998951
+Total magnetization: -1.90944e-11, -3.94976e-10, 3.30719e-09
+Total density: 1.0035
+Total magnetization: 6.16433e-11, 2.11461e-09, 6.06475e-09
+Total density: 1.00053
+Total magnetization: -6.06618e-11, -8.9386e-10, 1.21075e-08
+Total density: 1.00046
+Total magnetization: 9.31405e-10, 5.21047e-09, 3.53752e-08
+Total density: 0.99765
+Total magnetization: -2.41683e-09, -9.04297e-08, 1.48161e-07
+Total density: 1.00076
+Total magnetization: 5.73418e-08, -1.5259e-08, 6.9867e-07
+Total density: 0.999211
+Total magnetization: 1.10523e-07, -8.44855e-08, 6.72023e-07
+Total density: 1.00224
+Total magnetization: 1.34619e-07, -1.13171e-07, 7.26433e-07
+Total density: 0.999565
+Total magnetization: 4.03063e-08, 5.25384e-08, 7.12313e-07
+Total density: 0.999537
+Total magnetization: 2.67168e-08, 3.53376e-08, 6.88534e-07
+Total density: 1.00039
+Total magnetization: 1.9936e-08, 5.70661e-08, 7.11735e-07
+Total density: 1.00061
+Total magnetization: -9.07461e-09, 6.62376e-08, 7.29505e-07
+Total density: 0.998809
+Total magnetization: -5.84486e-09, 3.63946e-08, 7.18866e-07
+Total density: 1.00252
+Total magnetization: 1.81165e-08, 3.81206e-08, 7.3115e-07
+Total density: 0.998284
+Total magnetization: 3.8493e-08, 2.05477e-08, 7.4065e-07
+Total density: 1.00036
+Total magnetization: 3.19926e-08, 2.18047e-08, 7.00183e-07
+Total density: 0.999956
+Total magnetization: -1.60241e-08, 6.70218e-09, 7.15667e-07
+Total density: 1.00209
+Total magnetization: -9.00336e-09, 2.63226e-08, 6.82402e-07
+Total density: 0.998422
+Total magnetization: -1.65771e-08, 1.55205e-09, 7.30333e-07
+Total density: 1.00067
+Total magnetization: 6.80435e-09, 3.42109e-08, 7.82167e-07
+Total density: 1.00169
+Total magnetization: 5.14852e-08, 1.20899e-08, 7.76128e-07
+Total density: 0.997003
+Total magnetization: 3.97462e-08, -6.84066e-08, 7.31806e-07
+Total density: 1.00163
+Total magnetization: -5.0807e-08, -1.06524e-07, 7.069e-07
+Total density: 0.999353
+Total magnetization: -7.90956e-08, -1.91585e-08, 7.39122e-07
+Total density: 1.00063
+Total magnetization: 4.75051e-08, -1.86737e-08, 8.87969e-07
+Total density: 1.0002
+Total magnetization: 1.30273e-07, -1.84977e-07, 1.16006e-06
+Total density: 1.00156
+Total magnetization: 9.15763e-08, 2.5488e-08, 1.77851e-06
+Total density: 0.999336
+Total magnetization: 4.93142e-07, 1.83811e-07, 3.45719e-06
+Total density: 0.998657
+Total magnetization: 1.08752e-07, -2.38732e-07, 1.49241e-06
+Total density: 1.00204
+Total magnetization: 3.46481e-07, 1.93479e-07, 3.51638e-08
+Total density: 1.00096
+Total magnetization: 1.45666e-07, -2.13707e-07, 2.79744e-06
+Total density: 0.997818
+Total magnetization: 1.16593e-07, 1.82147e-07, 8.46209e-07
+Total density: 1.00137
+Total magnetization: -9.77058e-09, -3.88004e-08, 6.10557e-07
+Total density: 0.99975
+Total magnetization: 6.70562e-09, -1.66811e-07, 7.80813e-07
+Total density: 1.00018
+Total magnetization: 1.61482e-07, -7.01559e-08, 8.03103e-07
+Total density: 1.00081
+Total magnetization: 2.01075e-07, 1.09052e-08, 8.52643e-07
+Total density: 0.999591
+Total magnetization: -3.10923e-08, 4.36378e-08, 9.86471e-07
+Total density: 1.00036
+Total magnetization: 2.03243e-08, -1.67701e-08, 8.8913e-07
+Total density: 0.999616
+Total magnetization: -4.6663e-08, 2.80812e-08, 8.99556e-07
+Total density: 1.00042
+Total magnetization: 2.89469e-08, -7.29746e-08, 8.82834e-07
+Total density: 0.999404
+Total magnetization: 2.88805e-08, 1.7861e-08, 8.92041e-07
+Total density: 1.00076
+Total magnetization: 1.65083e-08, 3.21949e-08, 9.29024e-07
+Total density: 1.00135
+Total magnetization: -2.21335e-08, 2.05668e-09, 9.16237e-07
+Total density: 0.99838
+Total magnetization: -1.14267e-08, 9.86758e-09, 9.56334e-07
+Total density: 1.00209
+Total magnetization: -3.9906e-08, -5.41767e-08, 9.40143e-07
+Total density: 1.00005
+Total magnetization: 8.2442e-08, 2.34134e-08, 8.87871e-07
+Total density: 0.999681
+Total magnetization: -4.93876e-08, -7.1171e-08, 1.14751e-06
+Total density: 0.997149
+Total magnetization: 9.52728e-08, 1.71303e-07, 6.47105e-07
+Total density: 1.00295
+Total magnetization: -9.35534e-08, -1.65248e-07, 1.47339e-06
+Total density: 1.00111
+Total magnetization: 1.86616e-07, 2.09896e-07, -3.09797e-07
+Total density: 0.998985
+Total magnetization: -3.80342e-07, -2.16052e-07, 3.24517e-06
+Total density: 1.0003
+Total magnetization: 1.70323e-07, -8.38032e-07, 3.54975e-06
+Total density: 0.998888
+Total magnetization: 5.04579e-08, -8.53311e-07, 4.6761e-06
+Total density: 1.00024
+Total magnetization: 2.67492e-07, -3.93157e-07, -1.53616e-05
+Total density: 1.00361
+Total magnetization: -8.34308e-07, -1.22714e-06, -2.05895e-05
+Total density: 0.997974
+Total magnetization: -1.87655e-06, -3.7214e-06, -1.12972e-05
+Total density: 0.998999
+Total magnetization: 1.25114e-06, -4.60384e-06, 9.297e-06
+Total density: 0.999669
+Total magnetization: 4.52563e-07, 1.37006e-06, 5.64531e-06
+Total density: 1.00088
+Total magnetization: -7.94164e-07, -3.23493e-07, 3.80285e-08
+Total density: 1.00242
+Total magnetization: 4.92591e-07, 4.42367e-07, 7.62575e-07
+Total density: 0.999105
+Total magnetization: 8.82554e-08, -3.07373e-07, 1.39433e-06
+Total density: 1.0003
+Total magnetization: -4.27657e-08, -5.68223e-08, 7.94333e-07
+Total density: 0.998112
+Total magnetization: -7.66998e-08, -3.39168e-08, 1.16473e-06
+Total density: 1.00211
+Total magnetization: -2.48129e-08, -6.66074e-09, 1.17581e-06
+Total density: 1.00067
+Total magnetization: -1.18317e-08, 1.70019e-08, 1.18151e-06
+Total density: 0.998136
+Total magnetization: 3.70441e-08, -1.43723e-08, 1.18665e-06
+Total density: 1.001
+Total magnetization: 1.81043e-08, -9.2248e-09, 1.16871e-06
+Total density: 0.998788
+Total magnetization: 3.47374e-08, 6.66866e-09, 1.1224e-06
+Total density: 1.00147
+Total magnetization: 4.13213e-08, 2.69983e-09, 1.10586e-06
+Total density: 1.0005
+Total magnetization: -9.91496e-09, 3.94788e-08, 1.37085e-06
+Total density: 1.00045
+Total magnetization: -9.82348e-08, 1.63537e-07, 1.67423e-06
+Total density: 0.998812
+Total magnetization: 2.64249e-08, 2.76675e-07, 1.14779e-06
+Total density: 1.00223
+Total magnetization: 5.45237e-08, -1.28916e-07, 6.62807e-07
+Total density: 0.999213
+Total magnetization: -6.67984e-07, -3.95429e-07, 3.75883e-06
+Total density: 0.999518
+Total magnetization: -7.21006e-07, 4.21285e-07, 7.63959e-06
+Total density: 0.998389
+Total magnetization: 6.41486e-07, -1.32985e-08, 1.61805e-06
+Total density: 1.00198
+Total magnetization: 2.83881e-07, 3.88347e-08, -1.79407e-06
+Total density: 1.00152
+Total magnetization: -7.96572e-07, 4.21855e-07, 5.42946e-06
+Total density: 1.00007
+Total magnetization: 8.50562e-07, 4.79529e-08, 3.47669e-07
+Total density: 0.997663
+Total magnetization: -7.73006e-07, -5.89451e-07, 4.18074e-07
+Total density: 1.0026
+Total magnetization: 1.35506e-06, 1.29141e-06, 1.29048e-06
+Total density: 0.998782
+Total magnetization: 6.82629e-07, -2.44878e-06, -3.54906e-07
+Total density: 0.999817
+Total magnetization: -1.34492e-06, -1.32885e-06, 1.14143e-06
+Total density: 1.00056
+Total magnetization: -1.75511e-07, -9.82009e-07, 3.38031e-06
+Total density: 1.00051
+Total magnetization: -7.75102e-07, 1.61633e-06, 3.72323e-06
+Total density: 1.00116
+Total magnetization: -1.73468e-06, -3.66603e-07, 1.76832e-06
+Total density: 0.999198
+Total magnetization: 5.92231e-08, -7.04519e-07, 9.21134e-07
+Total density: 0.999137
+Total magnetization: 1.30496e-07, 1.53628e-09, 3.62519e-07
+Total density: 1.00113
+Total magnetization: 2.48677e-08, -2.84929e-08, 2.46078e-06
+Total density: 0.999019
+Total magnetization: -2.06684e-08, -3.00399e-08, 1.14675e-06
+Total density: 1.00195
+Total magnetization: -2.92765e-08, -7.52552e-08, 1.59182e-06
+Total density: 0.999924
+Total magnetization: 2.1538e-07, -4.42615e-08, 1.54295e-06
+Total density: 0.999777
+Total magnetization: -7.24918e-08, 1.45805e-07, 1.4938e-06
+Total density: 1.00107
+Total magnetization: 1.56797e-07, 1.37769e-07, 1.4457e-06
+Total density: 0.998845
+Total magnetization: -4.95347e-07, -1.1799e-08, 1.85276e-06
+Total density: 1.00068
+Total magnetization: -3.07487e-07, -4.94532e-07, -2.72842e-07
+Total density: 1.0001
+Total magnetization: 1.50165e-06, -1.06234e-07, 7.82176e-06
+Total density: 0.998805
+Total magnetization: -5.14389e-07, 9.34132e-07, -6.89086e-06
+Total density: 1.00052
+Total magnetization: -1.05211e-06, -1.56961e-07, 1.18201e-06
+Total density: 1.00113
+Total magnetization: -4.71373e-07, -5.75407e-07, 1.14085e-05
+Total density: 1.00037
+Total magnetization: -7.04537e-08, -1.71777e-06, 4.52239e-06
+Total density: 1.00105
+Total magnetization: 1.74538e-06, -2.26066e-07, -9.51036e-06
+Total density: 0.999644
+Total magnetization: 1.85658e-06, 2.46199e-06, -1.2637e-05
+Total density: 0.99899
+Total magnetization: -9.6295e-07, 3.3215e-06, -9.19115e-06
+Total density: 0.999743
+Total magnetization: -2.51404e-06, 9.13825e-07, -1.18767e-06
+Total density: 1.00151
+Total magnetization: 2.00386e-06, 3.97238e-07, 1.38708e-05
+Total density: 1.00054
+Total magnetization: 3.86303e-07, 5.14032e-06, 3.81016e-06
+Total density: 1.00057
+Total magnetization: -1.87587e-06, 9.24121e-08, -4.28066e-06
+Total density: 0.99722
+Total magnetization: 7.43455e-07, 2.38596e-07, 4.73569e-06
+Total density: 1.00223
+Total magnetization: 2.13408e-07, -1.04875e-08, -8.15906e-08
+Total density: 0.998051
+Total magnetization: 1.33861e-07, -3.62204e-07, 9.60794e-07
+Total density: 1.00281
+Total magnetization: -2.73182e-08, 1.11183e-07, 2.69394e-06
+Total density: 1.00103
+Total magnetization: 6.99223e-08, 1.16678e-07, 1.48269e-06
+Total density: 0.999191
+Total magnetization: 4.7015e-08, -9.33156e-08, 7.47821e-07
+Total density: 0.997311
+Total magnetization: -2.62958e-07, -1.9477e-07, 1.22623e-06
+Total density: 1.0023
+Total magnetization: -1.56493e-07, -1.66952e-08, 2.25684e-06
+Total density: 1.00097
+Total magnetization: 3.78891e-08, -4.71476e-08, 3.01585e-06
+Total density: 0.998302
+Total magnetization: -1.57656e-07, 9.99486e-09, 3.59687e-06
+Total density: 1.00046
+Total magnetization: -4.9175e-07, 2.52964e-07, 3.81036e-06
+Total density: 1.00139
+Total magnetization: -3.78392e-07, 3.36532e-07, 2.93805e-06
+Total density: 1.0011
+Total magnetization: 1.4503e-07, 2.1014e-07, 3.95269e-07
+Total density: 1.00012
+Total magnetization: 1.6524e-07, -2.91207e-07, -2.09815e-06
+Total density: 0.998096
+Total magnetization: 2.40737e-07, -6.64765e-07, -1.95373e-06
+Total density: 0.999159
+Total magnetization: 4.22938e-07, 6.02842e-07, 2.07569e-06
+Total density: 1.00088
+Total magnetization: -1.29062e-09, -4.03304e-08, 2.58628e-06
+Total density: 1.00198
+Total magnetization: 4.88885e-07, -3.51783e-07, 2.19184e-06
+Total density: 0.997794
+Total magnetization: -9.35381e-07, 1.6244e-07, 5.41889e-06
+Total density: 1.00177
+Total magnetization: 1.13486e-06, -3.54893e-07, -4.34323e-07
+Total density: 0.99995
+Total magnetization: -1.46107e-06, -6.07603e-07, 2.4408e-06
+Total density: 0.999744
+Total magnetization: 7.5328e-07, 1.47187e-06, 4.29822e-06
+Total density: 1.00129
+Total magnetization: -3.36374e-07, -1.09713e-06, 1.62351e-06
+Total density: 1.00045
+Total magnetization: 8.6399e-07, 1.47472e-06, 8.39387e-07
+Total density: 0.996825
+Total magnetization: 1.6356e-06, -1.19357e-06, -3.51116e-07
+Total density: 1.00224
+Total magnetization: 1.36143e-06, -1.10585e-06, 1.48304e-07
+Total density: 1.00178
+Total magnetization: -3.94112e-07, 8.16897e-07, 3.82567e-07
+Total density: 0.998822
+Total magnetization: 3.7829e-07, -9.03326e-07, 4.37561e-06
+Total density: 1.00088
+Total magnetization: -2.37047e-07, -8.44123e-07, -6.16636e-07
+Total density: 0.999115
+Total magnetization: 8.68547e-07, 5.45875e-07, 2.55092e-06
+Total density: 0.99973
+Total magnetization: 1.068e-07, 3.93702e-07, 5.15065e-06
+Total density: 0.999945
+Total magnetization: -8.3328e-07, -3.67682e-07, 9.19419e-07
+Total density: 1.00162
+Total magnetization: 8.94178e-07, 3.95155e-08, 2.88879e-06
+Total density: 0.999462
+Total magnetization: -6.72129e-07, 5.0598e-08, 3.43067e-06
+Total density: 0.999545
+Total magnetization: 5.46584e-07, -7.25788e-08, 3.15833e-06
+Total density: 1.00178
+Total magnetization: 4.00371e-08, 9.69705e-08, 1.40296e-06
+Total density: 0.99952
+Total magnetization: 4.51228e-08, 1.74574e-07, 3.53239e-06
+Total density: 0.999436
+Total magnetization: -9.13626e-07, -4.21256e-07, 1.71709e-06
+Total density: 0.99903
+Total magnetization: -2.80094e-07, -2.43548e-07, 8.57187e-06
+Total density: 1.00329
+Total magnetization: 8.58422e-07, -3.51915e-07, -7.13527e-07
+Total density: 0.999232
+Total magnetization: 1.1138e-06, 1.66772e-06, -5.16021e-06
+Total density: 0.999148
+Total magnetization: -1.14568e-06, 2.0323e-06, 7.82385e-06
+Total density: 0.999283
+Total magnetization: -1.24387e-06, -1.08197e-06, 9.68222e-06
+Total density: 0.999236
+Total magnetization: 1.71933e-06, -8.94618e-07, -1.46053e-06
+Total density: 1.00417
+Total magnetization: 1.91367e-06, 2.78936e-06, -1.02133e-05
+Total density: 0.999772
+Total magnetization: -2.42964e-06, 3.93361e-06, -9.92807e-06
+Total density: 0.99809
+Total magnetization: -4.70786e-06, -1.52256e-06, 4.02991e-07
+Total density: 1.00085
+Total magnetization: 2.34559e-06, -2.50729e-06, 2.07767e-05
+Total density: 0.999572
+Total magnetization: -2.94494e-06, 3.30835e-06, 8.64477e-07
+Total density: 1.00109
+Total magnetization: -4.47979e-08, -4.30533e-06, 9.63252e-06
+Total density: 0.998772
+Total magnetization: -8.9235e-07, 1.38271e-06, 1.09257e-06
+Total density: 1.0021
+Total magnetization: 5.56084e-07, -1.07274e-06, 7.45644e-06
+Total density: 0.998388
+Total magnetization: 2.0875e-07, -4.77425e-07, 9.76846e-07
+Total density: 0.999814
+Total magnetization: 3.90841e-08, -2.81028e-07, -1.45922e-06
+Total density: 1.00245
+Total magnetization: 2.6565e-07, -8.29581e-08, 1.36296e-06
+Total density: 0.999998
+Total magnetization: 4.87285e-07, 1.26258e-07, 2.70779e-06
+Total density: 0.998534
+Total magnetization: 1.17225e-06, 5.43907e-07, -6.39319e-11
+Total density: 1.00122
+Total magnetization: 1.0788e-06, -2.63914e-07, -2.3297e-06
+Total density: 0.999704
+Total magnetization: -4.64329e-07, -1.49119e-06, 5.97499e-07
+Total density: 0.999795
+Total magnetization: -1.20027e-06, -1.07679e-06, 7.38603e-06
+Total density: 1.00097
+Total magnetization: 1.36289e-07, -3.08331e-07, 9.84272e-06
+Total density: 0.999443
+Total magnetization: 1.42607e-06, -3.61821e-07, 3.42238e-06
+Total density: 0.999771
+Total magnetization: 9.43468e-08, -3.7905e-07, -1.77477e-07
+Total density: 1.0006
+Total magnetization: -1.08259e-06, 4.66621e-07, 3.28883e-06
+Total density: 1.00118
+Total magnetization: 4.66115e-07, 7.48692e-07, 2.15517e-06
+Total density: 0.998041
+Total magnetization: 3.56356e-07, 2.87857e-07, 8.70403e-06
+Total density: 1.00157
+Total magnetization: 3.43503e-07, -2.76314e-07, 5.07712e-06
+Total density: 0.999579
+Total magnetization: -1.20337e-07, -4.04945e-07, 2.86799e-06
+Total density: 1.00122
+Total magnetization: -8.85155e-08, -3.12347e-07, 9.11091e-06
+Total density: 1.00034
+Total magnetization: -4.41368e-07, -7.11869e-07, 1.1746e-06
+Total density: 1.00072
+Total magnetization: -9.69034e-07, 6.023e-07, 3.95218e-06
+Total density: 0.998863
+Total magnetization: 6.55913e-07, 1.45957e-06, 1.00444e-05
+Total density: 0.999921
+Total magnetization: 1.19073e-06, -7.38555e-07, 3.72291e-06
+Total density: 1.00014
+Total magnetization: -9.29469e-07, 1.92125e-07, 4.48273e-07
+Total density: 1.00066
+Total magnetization: 7.49592e-07, 2.07965e-06, 5.60609e-06
+Total density: 1.00024
+Total magnetization: 6.19143e-07, 5.45061e-07, 1.12117e-06
+Total density: 1.00086
+Total magnetization: 1.28609e-06, 2.05224e-06, 5.85041e-06
+Total density: 0.995514
+Total magnetization: -1.2934e-06, 2.58773e-07, 8.48195e-06
+Total density: 1.00479
+Total magnetization: -1.41073e-06, -6.88997e-07, 1.21522e-06
+Total density: 1.00019
+Total magnetization: 1.44981e-06, 1.3918e-06, 1.47984e-05
+Total density: 1.00021
+Total magnetization: -2.23502e-06, -4.4339e-07, -2.27787e-06
+Total density: 0.998838
+Total magnetization: 1.62635e-06, -1.91443e-06, 8.97678e-06
+Total density: 0.998107
+Total magnetization: 1.75677e-07, 2.18967e-06, 9.12093e-06
+Total density: 1.00333
+Total magnetization: -6.8785e-07, -4.83525e-07, -2.70678e-06
+Total density: 1.00005
+Total magnetization: -3.50608e-07, -5.29613e-07, 1.4825e-05
+Total density: 0.999068
+Total magnetization: 7.43328e-07, -5.12821e-07, 1.65641e-06
+Total density: 1.00136
+Total magnetization: 9.52023e-07, 1.92038e-06, 4.21858e-06
+Total density: 0.999426
+Total magnetization: -2.33222e-06, -6.56249e-07, 1.58929e-05
+Total density: 1.0008
+Total magnetization: 1.29643e-06, -3.62398e-06, 4.37013e-06
+Total density: 0.99844
+Total magnetization: 3.38481e-06, 2.61656e-06, -2.96071e-06
+Total density: 1.00085
+Total magnetization: -2.97012e-06, 1.16459e-06, 1.34875e-05
+Total density: 0.99896
+Total magnetization: 3.20909e-07, -3.97935e-06, 8.24111e-06
+Total density: 1.00235
+Total magnetization: 3.14042e-06, 1.72483e-06, -8.25191e-06
+Total density: 0.999405
+Total magnetization: -1.87567e-06, 1.9541e-06, -9.59484e-07
+Total density: 1.00029
+Total magnetization: -1.43233e-06, -1.76948e-06, 7.21008e-06
+Total density: 0.999854
+Total magnetization: 1.02975e-06, -7.96661e-07, 1.38635e-05
+Total density: 1.00109
+Total magnetization: -3.88531e-08, 9.0327e-07, -4.70463e-07
+Total density: 1.00025
+Total magnetization: -1.93391e-06, -7.51449e-07, 4.31086e-06
+Total density: 0.999487
+Total magnetization: 1.06834e-06, 2.46098e-07, 1.64592e-05
+Total density: 0.998626
+Total magnetization: -1.90516e-06, -2.52599e-06, 4.47142e-06
+Total density: 1.00001
+Total magnetization: 1.58876e-06, 5.60044e-07, -7.65367e-07
+Total density: 1.00188
+Total magnetization: 2.30809e-06, 7.0064e-07, 9.78221e-06
+Total density: 1.00138
+Total magnetization: -1.64239e-06, 3.69412e-07, 7.6498e-06
+Total density: 0.999316
+Total magnetization: -1.43719e-06, -1.63014e-06, 7.63874e-06
+Total density: 0.998353
+Total magnetization: 2.58447e-08, -6.11502e-07, 6.01209e-06
+Total density: 1.00206
+Total magnetization: 3.26313e-07, 6.03199e-07, 6.68503e-06
+Total density: 0.999603
+Total magnetization: 4.7298e-07, 9.23556e-07, 7.98368e-06
+Total density: 1.00129
+Total magnetization: -5.2149e-07, 3.774e-07, 8.99949e-06
+Total density: 0.99824
+Total magnetization: 1.07333e-06, -3.85478e-07, 1.28805e-05
+Total density: 0.999575
+Total magnetization: 1.47521e-06, 9.13669e-07, 1.74106e-05
+Total density: 1.00167
+Total magnetization: 3.51564e-07, -1.42707e-06, 1.43555e-05
+Total density: 1.00017
+Total magnetization: 4.16778e-07, -8.31558e-07, 7.71887e-06
+Total density: 0.999941
+Total magnetization: -8.38873e-07, 9.27513e-07, 7.75528e-06
+Total density: 0.998735
+Total magnetization: -7.0896e-07, 7.02809e-07, 6.7579e-06
+Total density: 1.00113
+Total magnetization: -7.57866e-07, -2.07342e-06, 1.20008e-05
+Total density: 1.00381
+Total magnetization: 6.88765e-07, -3.10404e-07, 1.42076e-05
+Total density: 0.997698
+Total magnetization: -1.2541e-06, 5.48231e-07, 2.3479e-06
+Total density: 0.998505
+Total magnetization: -1.01179e-06, 6.1511e-07, 1.61222e-05
+Total density: 1.00033
+Total magnetization: 7.76808e-07, 1.07199e-06, 1.80778e-05
+Total density: 1.00055
+Total magnetization: 2.05779e-07, 3.65563e-08, 1.18363e-05
+Total density: 1.00059
+Total magnetization: 2.02319e-07, -3.9435e-07, 1.71681e-05
+Total density: 1.00017
+Total magnetization: 1.99225e-07, -8.32312e-08, 6.30042e-06
+Total density: 1.00082
+Total magnetization: 5.3353e-07, -8.94797e-07, 1.53483e-05
+Total density: 0.997957
+Total magnetization: -1.08373e-06, -4.88716e-07, 9.30697e-06
+Total density: 1.00196
+Total magnetization: -1.31887e-09, -1.59293e-06, 1.60697e-05
+Total density: 0.999223
+Total magnetization: 1.52701e-06, 8.49349e-07, 1.34471e-05
+Total density: 1.00096
+Total magnetization: 1.14731e-07, 2.37658e-07, 8.99814e-06
+Total density: 1.00063
+Total magnetization: 3.44243e-07, 2.4133e-06, 1.91052e-05
+Total density: 0.99942
+Total magnetization: -2.43421e-06, -1.67319e-06, 1.78995e-05
+Total density: 1.00056
+Total magnetization: 2.11656e-06, 1.96199e-08, 8.01344e-06
+Total density: 0.999896
+Total magnetization: -7.69717e-07, 8.28595e-07, 2.52136e-05
+Total density: 1.00184
+Total magnetization: 2.05004e-06, -9.75356e-07, 8.30908e-06
+Total density: 0.996953
+Total magnetization: -1.39657e-06, 6.41844e-07, 1.81131e-05
+Total density: 1.00148
+Total magnetization: -5.43369e-07, -1.95382e-06, 2.5903e-05
+Total density: 0.999745
+Total magnetization: 1.05114e-06, 9.49025e-07, 1.02158e-05
+Total density: 0.999527
+Total magnetization: -1.13501e-06, 9.62171e-07, 2.62602e-05
+Total density: 1.00176
+Total magnetization: -1.06947e-06, -2.29468e-06, 2.3549e-05
+Total density: 1.00216
+Total magnetization: 2.21893e-06, 1.94442e-06, 2.41322e-06
+Total density: 0.99728
+Total magnetization: -2.88741e-06, 2.7936e-07, 2.03395e-05
+Total density: 0.999598
+Total magnetization: -1.50069e-07, -2.23611e-06, 1.35541e-05
+Total density: 1.00169
+Total magnetization: 1.35146e-07, 9.62487e-07, 1.40055e-05
+Total density: 0.99789
+Total magnetization: -7.48287e-07, -7.91448e-07, 3.35225e-05
+Total density: 1.00186
+Total magnetization: 3.37519e-07, 2.84289e-07, 1.65912e-05
+Total density: 1.00119
+Total magnetization: -4.85625e-07, -4.03534e-07, 1.50674e-05
+Total density: 0.999287
+Total magnetization: 1.22135e-07, 5.73422e-07, 2.6544e-05
+Total density: 1.00088
+Total magnetization: 1.11984e-07, 2.48166e-08, 2.34195e-05
+Total density: 0.99966
+Total magnetization: 2.23707e-07, -6.2196e-07, 1.52388e-05
+Total density: 0.999746
+Total magnetization: 9.61957e-08, -1.72938e-06, 4.33369e-05
+Total density: 0.99833
+Total magnetization: -9.49682e-07, -7.57976e-07, 2.04593e-05
+Total density: 1.00295
+Total magnetization: -1.82025e-06, -4.7667e-07, 3.78982e-05
+Total density: 0.999669
+Total magnetization: -1.68799e-06, -1.63959e-06, 5.7102e-05
+Total density: 1.0008
+Total magnetization: -2.28863e-06, 1.30282e-06, 1.89578e-05
+Total density: 0.99707
+Total magnetization: -1.79518e-06, 3.99713e-06, 1.89017e-05
+Total density: 1.00249
+Total magnetization: 7.14903e-07, 1.64883e-06, 2.73979e-05
+Total density: 0.999427
+Total magnetization: 2.73917e-06, 1.2321e-06, 2.27769e-05
+Total density: 1.00189
+Total magnetization: -9.15671e-07, -1.00637e-07, 3.62782e-05
+Total density: 0.99837
+Total magnetization: 5.04401e-08, -1.08098e-06, 3.68747e-05
+Total density: 0.999686
+Total magnetization: 5.66043e-08, 9.49002e-07, 3.20416e-05
+Total density: 1.00245
+Total magnetization: 8.99521e-07, 1.04174e-06, 4.31691e-05
+Total density: 0.999662
+Total magnetization: 4.01155e-07, 1.10654e-08, 3.88479e-05
+Total density: 0.998135
+Total magnetization: 1.45126e-06, -2.79275e-07, 3.75475e-05
+Total density: 1.00061
+Total magnetization: 1.46294e-07, -1.67504e-07, 3.97532e-05
+Total density: 1.00165
+Total magnetization: -8.44829e-07, 2.76732e-07, 3.54214e-05
+Total density: 1.00035
+Total magnetization: -5.18879e-07, 1.24763e-06, 4.78946e-05
+Total density: 0.9987
+Total magnetization: -2.38749e-08, -6.47602e-08, 4.17717e-05
+Total density: 1.00102
+Total magnetization: 1.02776e-06, 9.60744e-08, 6.01195e-05
+Total density: 0.99838
+Total magnetization: 8.53066e-08, 3.35628e-07, 4.74016e-05
+Total density: 1.00104
+Total magnetization: -4.30496e-07, -6.89635e-07, 5.41802e-05
+Total density: 1.00156
+Total magnetization: -4.03575e-07, -1.3053e-07, 4.87643e-05
+Total density: 0.999936
+Total magnetization: 1.76047e-07, -7.96628e-07, 6.06296e-05
+Total density: 0.997422
+Total magnetization: -8.35611e-07, 6.3012e-07, 5.1943e-05
+Total density: 1.00258
+Total magnetization: -1.03399e-06, -1.74839e-06, 5.14736e-05
+Total density: 1.00197
+Total magnetization: 9.86016e-07, 6.90502e-07, 6.42727e-05
+Total density: 0.997944
+Total magnetization: -1.86813e-06, -5.12791e-08, 5.27443e-05
+Total density: 1.001
+Total magnetization: 1.00889e-06, 1.58369e-07, 6.63892e-05
+Total density: 0.996582
+Total magnetization: -1.17627e-08, 1.27342e-06, 6.59872e-05
+Total density: 1.00117
+Total magnetization: -4.57489e-08, -1.1683e-06, 7.72824e-05
+Total density: 1.00356
+Total magnetization: -3.06054e-07, -1.29434e-07, 7.45545e-05
+Total density: 0.999504
+Total magnetization: -6.24957e-07, 1.43848e-06, 6.32816e-05
+Total density: 0.999779
+Total magnetization: -2.73689e-06, 2.84204e-06, 0.000108914
+Total density: 0.998467
+Total magnetization: 2.58405e-06, -1.20011e-06, 7.41155e-05
+Total density: 1.00076
+Total magnetization: -1.00646e-06, 6.30373e-06, 9.20279e-05
+Total density: 1.0012
+Total magnetization: -2.42514e-07, -4.00222e-06, 0.000102759
+Total density: 0.999109
+Total magnetization: 3.86938e-06, 2.22092e-06, 8.97409e-05
+Total density: 1.00043
+Total magnetization: -3.08401e-06, 2.53545e-06, 0.000126104
+Total density: 0.999283
+Total magnetization: 3.7762e-06, -2.15186e-06, 0.000101491
+Total density: 1.00216
+Total magnetization: -3.33229e-07, 3.52515e-06, 0.000106308
+Total density: 0.999905
+Total magnetization: -1.71128e-06, -2.01675e-06, 0.000137191
+Total density: 0.999349
+Total magnetization: 5.81206e-07, 1.02907e-06, 0.000121031
+Total density: 0.999639
+Total magnetization: -2.52663e-06, 7.31773e-07, 0.000150207
+Total density: 1.00277
+Total magnetization: 4.7926e-07, 1.12666e-06, 0.000145245
+Total density: 0.997507
+Total magnetization: 1.43432e-06, 1.59399e-06, 0.00014346
+Total density: 1.00067
+Total magnetization: 1.09933e-06, 2.79058e-07, 0.000141478
+Total density: 0.99986
+Total magnetization: 9.12386e-07, 2.47439e-07, 0.000168354
+Total density: 1.00071
+Total magnetization: 1.18413e-06, -1.31132e-06, 0.000164737
+Total density: 0.999277
+Total magnetization: -3.4683e-07, -1.42314e-06, 0.000191263
+Total density: 1.00173
+Total magnetization: -1.20807e-06, -5.51969e-08, 0.000221299
+Total density: 1
+Total magnetization: 5.99428e-07, -1.82658e-06, 0.000246813
+Total density: 0.999321
+Total magnetization: -1.91079e-06, 6.55792e-07, 0.000207613
+Total density: 0.999827
+Total magnetization: 1.91106e-06, -6.276e-07, 0.000250079
+Total density: 0.999887
+Total magnetization: -1.66501e-07, -2.57371e-06, 0.000255066
+Total density: 1.00232
+Total magnetization: -4.79704e-06, 2.87546e-08, 0.000279599
+Total density: 0.997685
+Total magnetization: -1.23582e-06, 4.98849e-06, 0.000284097
+Total density: 1.00143
+Total magnetization: 4.3531e-07, 4.17929e-06, 0.000349927
+Total density: 1.00053
+Total magnetization: 4.27925e-06, 2.4668e-06, 0.0003883
+Total density: 0.999472
+Total magnetization: 3.00052e-06, -3.30861e-07, 0.00042429
+Total density: 1.00127
+Total magnetization: 2.30912e-08, 1.32244e-06, 0.000440139
+Total density: 0.998501
+Total magnetization: 1.25717e-06, 2.22228e-06, 0.000489834
+Total density: 1.00202
+Total magnetization: -2.03354e-06, 1.28256e-06, 0.00052444
+Total density: 0.998585
+Total magnetization: -2.19205e-06, 1.2168e-06, 0.000603372
+Total density: 1.00033
+Total magnetization: 1.7816e-06, -1.05866e-06, 0.000649773
+Total density: 0.999895
+Total magnetization: 1.86264e-06, 8.15573e-07, 0.000738105
+Total density: 0.999945
+Total magnetization: 1.27009e-06, 2.77034e-07, 0.000833322
+Total density: 1.00212
+Total magnetization: -2.07701e-06, 1.44968e-06, 0.00093402
+Total density: 0.999039
+Total magnetization: 2.27273e-06, 5.77555e-07, 0.00106765
+Total density: 0.999774
+Total magnetization: -1.52959e-06, 1.15814e-06, 0.00122421
+Total density: 1.00063
+Total magnetization: 3.92682e-06, 2.88147e-06, 0.00148765
+Total density: 0.999397
+Total magnetization: -2.08931e-06, -1.28076e-06, 0.00171387
+Total density: 1.00196
+Total magnetization: 4.62087e-07, 1.25356e-06, 0.00199316
+Total density: 0.999015
+Total magnetization: 1.14173e-06, -4.85407e-06, 0.00235576
+Total density: 1.00116
+Total magnetization: -1.36606e-06, -1.8867e-06, 0.00286203
+Total density: 0.998719
+Total magnetization: 5.22298e-06, -9.5898e-06, 0.00330638
+Total density: 1.00034
+Total magnetization: 4.76805e-06, -1.261e-05, 0.00387362
+Total density: 0.998825
+Total magnetization: 4.369e-06, -1.29789e-05, 0.00435524
+Total density: 1.00109
+Total magnetization: 6.50246e-06, -1.74726e-05, 0.0050238
+Total density: 1.00151
+Total magnetization: 1.63408e-05, -1.64066e-05, 0.00540952
+Total density: 1.00043
+Total magnetization: 1.05657e-05, -2.27967e-05, 0.00571978
+Total density: 0.997376
+Total magnetization: 1.04654e-05, -2.31417e-05, 0.00577005
+Total density: 1.00073
+Total magnetization: 1.17244e-05, -2.94496e-05, 0.00576455
+Total density: 1.0023
+Total magnetization: 1.6837e-05, -2.21001e-05, 0.00544246
+Total density: 1.00121
+Total magnetization: 1.39549e-06, -3.00119e-05, 0.0050624
+Total density: 0.997541
+Total magnetization: -2.51511e-06, -1.46219e-05, 0.00484529
+Total density: 1.00114
+Total magnetization: -3.94608e-06, -2.33523e-05, 0.00456416
+Total density: 0.999522
+Total magnetization: -3.37245e-06, -2.109e-05, 0.0040184
+Total density: 0.999917
+Total magnetization: 5.99412e-07, -4.54688e-06, 0.00315908
+Total density: 1.00142
+Total magnetization: -1.22505e-05, 8.85225e-06, 0.00178946
+Total density: 0.999
+Total magnetization: 1.1086e-05, 1.45502e-05, 0.000565158
+Total density: 0.999405
+Total magnetization: -1.12519e-05, 1.67516e-05, 0.000292742
+Total density: 1.00301
+Total magnetization: 1.10403e-05, 3.31612e-05, -0.000396324
+Total density: 0.998736
+Total magnetization: -4.7768e-06, 2.12232e-05, -0.0020506
+Total density: 1.00063
+Total magnetization: 1.62094e-05, 6.6313e-05, -0.00389533
+Total density: 0.998642
+Total magnetization: -4.09308e-05, 9.81095e-05, -0.00524526
+Total density: 1.0004
+Total magnetization: -2.13581e-06, 0.000110907, -0.00693739
+Total density: 1.00012
+Total magnetization: 4.18186e-05, 0.000225801, -0.0104307
+Total density: 1.00169
+Total magnetization: -3.12383e-05, 0.00019347, -0.0133728
+Total density: 0.999689
+Total magnetization: 5.06516e-08, 0.000102208, -0.0159733
+Total density: 0.997912
+Total magnetization: -1.44115e-05, 0.000176847, -0.0176062
+Total density: 1.0029
+Total magnetization: -0.000151665, 1.2811e-06, -0.020309
+Total density: 0.9998
+Total magnetization: -9.54985e-05, -0.000115404, -0.019886
+Total density: 0.999567
+Total magnetization: -3.67781e-05, -2.92773e-06, -0.0233096
+Total density: 0.999337
+Total magnetization: -0.000166682, -0.000150539, -0.0221965
+Total density: 1.00053
+Total magnetization: 0.000150815, -9.36297e-05, -0.0259618
+Total density: 1.00085
+Total magnetization: -3.71901e-06, 5.89988e-05, -0.0261617
+Total density: 1.00087
+Total magnetization: -2.72331e-05, -0.000102989, -0.0283134
+Total density: 1.00096
+Total magnetization: 1.39215e-05, 4.4019e-05, -0.0339244
+Total density: 0.997544
+Total magnetization: -0.000430286, 7.20606e-06, -0.0302421
+Total density: 0.999948
+Total magnetization: 6.72354e-05, -0.000252185, -0.0406865
+Total density: 1.02032
+Total magnetization: -0.000295911, 0.000223845, -0.0383119
+Total density: 1.19526
+Total magnetization: -0.000969273, -0.000317334, -0.0555646
+Total density: 1.19509
+Total magnetization: 0.000469692, -0.00127307, -0.0553511
+Total density: 1.19463
+Total magnetization: 0.00189201, 0.000387364, -0.0559274
+Total density: 1.19667
+Total magnetization: -0.000602222, 0.00254972, -0.0551774
+Total density: 1.1947
+Total magnetization: -0.00249724, -0.000697215, -0.0548568
+Total density: 1.19446
+Total magnetization: 0.000559473, -0.00150572, -0.0554036
+Total density: 1.19664
+Total magnetization: -0.000234944, -0.000113998, -0.0543694
+Total density: 1.19544
+Total magnetization: 0.000455148, -0.00193879, -0.0538196
+Total density: 1.19404
+Total magnetization: 0.00279054, 0.000687313, -0.0570642
+Total density: 1.1952
+Total magnetization: -0.000363158, 0.00261245, -0.0541629
+Total density: 1.19603
+Total magnetization: -0.00113695, 0.00023137, -0.0546643
+Total density: 1.19581
+Total magnetization: -0.00124476, 0.000211246, -0.0570117
+Total density: 1.19512
+Total magnetization: -0.000761081, -0.00168861, -0.0561927
+Total density: 1.19469
+Total magnetization: 0.000956489, -0.000418057, -0.0564258
+Total density: 1.19486
+Total magnetization: -0.000125235, -0.000845673, -0.0537596
+Total density: 1.19446
+Total magnetization: 0.00236261, -0.000686799, -0.0541529
+Total density: 1.195
+Total magnetization: 0.000883618, 0.00264568, -0.0559994
+Total density: 1.19526
+Total magnetization: -0.00211419, 0.000573133, -0.0559457
+Total density: 1.19561
+Total magnetization: 3.81898e-05, -0.000278139, -0.0546996
+Total density: 1.19517
+Total magnetization: -0.00195846, 0.000349642, -0.0552462
+Total density: 1.19541
+Total magnetization: -0.00117094, -0.00324962, -0.0552939
+Total density: 1.19574
+Total magnetization: 0.00337763, -0.00160665, -0.0553753
+Total density: 1.19577
+Total magnetization: 0.0015244, 0.00184596, -0.0561095
+Total density: 1.19524
+Total magnetization: -8.60377e-05, 0.000826553, -0.0551972
+Total density: 1.19494
+Total magnetization: -0.000211905, 0.000837392, -0.0553972
+Total density: 1.19498
+Total magnetization: -0.000837032, 0.000159322, -0.0553817
+Total density: 1.19554
+Total magnetization: 7.41105e-05, -0.00060446, -0.0550674
+Total density: 1.19515
+Total magnetization: 0.00040461, 0.000231985, -0.0554756
+Total density: 1.19529
+Total magnetization: -0.000287112, 0.000765065, -0.0553797
+Total density: 1.19562
+Total magnetization: -0.00138961, -0.000644503, -0.0553928
+Total density: 1.19505
+Total magnetization: -0.000332009, -0.00162596, -0.0550131
+Total density: 1.19536
+Total magnetization: 0.00149523, -0.000691908, -0.0555487
+Total density: 1.1956
+Total magnetization: 0.000511097, 0.000726883, -0.0552733
+Total density: 1.19525
+Total magnetization: 0.000493764, 0.000575727, -0.0553704
+Total density: 1.19442
+Total magnetization: -0.000773809, 0.00115794, -0.0557275
+Total density: 1.19529
+Total magnetization: -0.00116354, -0.000444485, -0.0554148
+Total density: 1.19591
+Total magnetization: 6.94123e-05, 0.00019235, -0.0548006
+Total density: 1.19481
+Total magnetization: -0.00118219, 6.01411e-05, -0.0555479
+Total density: 1.19522
+Total magnetization: -0.000135428, -0.00109493, -0.0558716
+Total density: 1.19547
+Total magnetization: 0.000621501, -0.000224482, -0.0554767
+Total density: 1.19557
+Total magnetization: 0.00029085, -0.000664617, -0.0552913
+Total density: 1.19479
+Total magnetization: 0.00267651, 0.000271197, -0.0550792
+Total density: 1.19476
+Total magnetization: -0.000590219, 0.00426161, -0.0557599
+Total density: 1.19547
+Total magnetization: -0.0039526, -0.000866245, -0.0554718
+Total density: 1.19531
+Total magnetization: 0.000316414, -0.00231947, -0.0552589
+Total density: 1.19505
+Total magnetization: -0.00021309, -0.000315942, -0.0554953
+Total density: 1.19548
+Total magnetization: 0.000326735, -0.00198755, -0.0551826
+Total density: 1.19521
+Total magnetization: 0.00337128, -0.000147709, -0.0553587
+Total density: 1.19526
+Total magnetization: -1.22791e-05, 0.00310712, -0.0553632
+Total density: 1.1949
+Total magnetization: -0.0016666, 0.00026556, -0.0553276
+Total density: 1.19513
+Total magnetization: 0.000122657, 0.000132915, -0.0555149
+Total density: 1.19521
+Total magnetization: -0.00136566, 0.000826951, -0.055135
+Total density: 1.19547
+Total magnetization: -0.00152885, -0.00152909, -0.0552861
+Total density: 1.19489
+Total magnetization: 0.0016053, -0.00150852, -0.0550682
+Total density: 1.19513
+Total magnetization: 0.000211352, 0.00105975, -0.0558246
+Total density: 1.19552
+Total magnetization: 0.000205389, -0.00166254, -0.0552257
+Total density: 1.19544
+Total magnetization: 0.00270371, 0.00138203, -0.0547511
+Total density: 1.19456
+Total magnetization: -0.00179673, 0.0023496, -0.0554034
+Total density: 1.19524
+Total magnetization: -0.00161846, -0.00195317, -0.0552298
+Total density: 1.19519
+Total magnetization: 0.000801565, -0.000878173, -0.0552896
+Total density: 1.19504
+Total magnetization: 0.00032279, -0.000157031, -0.0552527
+Total density: 1.19522
+Total magnetization: 0.00074137, -0.000111634, -0.0551202
+Total density: 1.19515
+Total magnetization: -0.000750092, 0.00116263, -0.0552858
+Total density: 1.19505
+Total magnetization: -0.00142603, -0.000757308, -0.0551816
+Total density: 1.19551
+Total magnetization: -0.000190591, -0.0015769, -0.0550696
+Total density: 1.19545
+Total magnetization: 0.00144337, -0.00100438, -0.0555349
+Total density: 1.1951
+Total magnetization: 0.00216611, 0.000371225, -0.0552796
+Total density: 1.19499
+Total magnetization: 0.000959257, 0.00257176, -0.055082
+Total density: 1.19528
+Total magnetization: -0.00165459, 0.00203733, -0.055198
+Total density: 1.19509
+Total magnetization: -0.00315787, -0.000506889, -0.054824
+Total density: 1.19515
+Total magnetization: -0.00122061, -0.00386207, -0.0550943
+Total density: 1.19537
+Total magnetization: 0.00377048, -0.00245833, -0.0552712
+Total density: 1.19455
+Total magnetization: 0.00238753, 0.00216916, -0.0554095
+Total density: 1.19483
+Total magnetization: -0.00029162, 0.00153967, -0.0552057
+Total density: 1.19517
+Total magnetization: -0.00100457, 0.000635845, -0.0551264
+Total density: 1.19498
+Total magnetization: -0.000357946, -0.000821795, -0.0553217
+Total density: 1.19511
+Total magnetization: 0.000409266, 2.75002e-05, -0.0551152
+Total density: 1.19537
+Total magnetization: -0.00012402, 0.000447688, -0.0550991
+Total density: 1.19528
+Total magnetization: -0.000867653, 3.13204e-05, -0.0553079
+Total density: 1.19513
+Total magnetization: -0.00107719, -0.00131553, -0.0555393
+Total density: 1.19535
+Total magnetization: 0.00129962, -0.00212777, -0.0556535
+Total density: 1.19526
+Total magnetization: 0.00282948, 0.000422135, -0.0556837
+Total density: 1.19524
+Total magnetization: 2.85268e-06, 0.00354477, -0.0552425
+Total density: 1.19479
+Total magnetization: -0.00229968, 0.00154655, -0.0552395
+Total density: 1.19508
+Total magnetization: -0.00243735, 2.80685e-05, -0.0554112
+Total density: 1.19549
+Total magnetization: -0.00212657, -0.0020367, -0.0550997
+Total density: 1.19471
+Total magnetization: 0.00148206, -0.00233448, -0.0554771
+Total density: 1.19545
+Total magnetization: 0.00201427, 0.000800912, -0.0554475
+Total density: 1.19511
+Total magnetization: 0.000713661, 0.00267767, -0.0550597
+Total density: 1.19515
+Total magnetization: -0.00281527, 0.0026616, -0.0552093
+Total density: 1.1956
+Total magnetization: -0.00369767, -0.00188971, -0.0552489
+Total density: 1.19505
+Total magnetization: 0.00217002, -0.00321477, -0.0552739
+Total density: 1.19546
+Total magnetization: 0.00140295, 0.00270299, -0.0551092
+Total density: 1.1953
+Total magnetization: -0.00222592, -0.00147798, -0.0551997
+Total density: 1.19495
+Total magnetization: 0.00439035, 0.000628682, -0.0553258
+Total density: 1.19467
+Total magnetization: -0.00427518, -0.00540271, -0.0547985
+Total density: 1.19544
+Total magnetization: 0.000147778, -0.00164428, -0.054522
+Total density: 1.19508
+Total magnetization: 5.3793e-05, -0.00227733, -0.054431
+Total density: 1.19512
+Total magnetization: 0.000909885, 0.00348035, -0.0542543
+Total density: 1.19511
+Total magnetization: -0.00199843, -0.00104112, -0.0542976
+Total density: 1.19522
+Total magnetization: 0.00110055, -0.00142235, -0.0542622
+Total density: 1.1953
+Total magnetization: 0.00131493, 0.000965132, -0.0547965
+Total density: 1.1953
+Total magnetization: -0.00044528, -0.00155466, -0.0548877
+Total density: 1.19515
+Total magnetization: -0.000162932, -0.000905064, -0.0545068
+Total density: 1.19519
+Total magnetization: -4.8587e-05, -0.000188047, -0.0541292
+Total density: 1.19502
+Total magnetization: 0.000603983, 0.000641043, -0.053997
+Total density: 1.19502
+Total magnetization: -0.00311391, 0.000230028, -0.0539754
+Total density: 1.19514
+Total magnetization: -0.0235778, 0.00207447, -0.0539476
+Total density: 1.19518
+Total magnetization: 0.0146624, -0.0144807, -0.0538561
+Total density: 1.19515
+Total magnetization: 0.0178368, -0.010851, -0.0539649
+Total density: 1.19514
+Total magnetization: -0.0103634, 0.026822, -0.0539094
+Total density: 1.19511
+Total magnetization: 0.00679474, 0.0145183, -0.0539009
+Total density: 1.19504
+Total magnetization: -0.0129882, 0.00546454, -0.0537841
+Total density: 1.19504
+Total magnetization: -0.00709054, 0.00100167, -0.0536504
+Total density: 1.19504
+Total magnetization: 0.010162, 0.000650698, -0.0535528
+Total density: 1.19508
+Total magnetization: -0.000912568, -0.00101776, -0.0534915
+Total density: 1.19508
+Total magnetization: 0.000747676, 0.00351143, -0.0535448
+Total density: 1.19508
+Total magnetization: 7.54194e-05, -0.00164324, -0.0535763
+Total density: 1.19501
+Total magnetization: -0.000357155, 0.00174177, -0.0535428
+Total density: 1.19504
+Total magnetization: -0.000797581, 0.00116894, -0.0534739
+Total density: 1.19498
+Total magnetization: -6.84711e-05, 0.00341044, -0.0533841
+Total density: 1.19499
+Total magnetization: 0.00291176, 0.0001582, -0.0533757
+Total density: 1.195
+Total magnetization: 0.000526115, 0.00112203, -0.0533265
+Total density: 1.19503
+Total magnetization: 0.000192288, -0.00451202, -0.0533571
+Total density: 1.19503
+Total magnetization: 0.00561498, -0.00578907, -0.0533704
+Total density: 1.19503
+Total magnetization: 0.00243742, -0.00419281, -0.0533687
+Total density: 1.19504
+Total magnetization: -0.00392205, -0.00595221, -0.0533466
+Total density: 1.195
+Total magnetization: -0.00369912, -0.00013561, -0.0532684
+Total density: 1.19497
+Total magnetization: 0.00303601, -0.00316417, -0.05321
+Total density: 1.19493
+Total magnetization: -0.0008835, -0.000702088, -0.0531573
+Total density: 1.19495
+Total magnetization: 0.000891266, 0.00258363, -0.0531151
+Total density: 1.19494
+Total magnetization: -0.00273457, 0.00148618, -0.0531014
+Total density: 1.19497
+Total magnetization: 0.00341916, 0.000912218, -0.0531229
+
+C:\Users\Markus\SpaceTime\build\Spin1GpeCube\Release\Spin1GpeCube.exe (process 26848) exited with code -1.
+To automatically close the console when debugging stops, enable Tools->Options->Debugging->Automatically close the console when debugging stops.
+Press any key to close this window . . .
