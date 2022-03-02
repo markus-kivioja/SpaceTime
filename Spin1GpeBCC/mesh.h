@@ -29,57 +29,69 @@ __host__ __device__ double3 getLocalPos(int dualZeroCellIndex)
 
 	return pos[dualZeroCellIndex];
 }
-ddouble getLaplacian(Buffer<int2>& ind, Buffer<ddouble>& hodges, const int nx, const int ny, const int nz) // nx, ny, nz in bytes
+ddouble getLaplacian(Buffer<int4>& ind, Buffer<ddouble>& hodges, const int nx, const int ny, const int nz) // nx, ny, nz in bytes
 {
 	ind.resize(INDICES_PER_BLOCK);
-	ind[0] = make_int2(0, 9);
-	ind[1] = make_int2(0, 10);
-	ind[2] = make_int2(-nx + nz, 2);
-	ind[3] = make_int2(-nx, 3);
-	ind[4] = make_int2(0, 2);
-	ind[5] = make_int2(0, 3);
-	ind[6] = make_int2(nx - ny, 5);
-	ind[7] = make_int2(-ny, 8);
-	ind[8] = make_int2(0, 1);
-	ind[9] = make_int2(0, 4);
-	ind[10] = make_int2(nx - nz, 0);
-	ind[11] = make_int2(-nz, 11);
-	ind[12] = make_int2(0, 1);
-	ind[13] = make_int2(0, 4);
-	ind[14] = make_int2(nx, 0);
-	ind[15] = make_int2(0, 11);
-	ind[16] = make_int2(0, 2);
-	ind[17] = make_int2(0, 3);
-	ind[18] = make_int2(nx, 5);
-	ind[19] = make_int2(0, 8);
-	ind[20] = make_int2(0, 6);
-	ind[21] = make_int2(0, 7);
-	ind[22] = make_int2(-nx + ny, 1);
-	ind[23] = make_int2(-nx, 4);
-	ind[24] = make_int2(0, 5);
-	ind[25] = make_int2(0, 8);
-	ind[26] = make_int2(ny - nz, 9);
-	ind[27] = make_int2(-nz, 10);
-	ind[28] = make_int2(0, 5);
-	ind[29] = make_int2(0, 8);
-	ind[30] = make_int2(ny, 9);
-	ind[31] = make_int2(0, 10);
-	ind[32] = make_int2(0, 6);
-	ind[33] = make_int2(0, 7);
-	ind[34] = make_int2(ny, 1);
-	ind[35] = make_int2(0, 4);
-	ind[36] = make_int2(0, 0);
-	ind[37] = make_int2(0, 11);
-	ind[38] = make_int2(-ny + nz, 6);
-	ind[39] = make_int2(-ny, 7);
-	ind[40] = make_int2(0, 0);
-	ind[41] = make_int2(0, 11);
-	ind[42] = make_int2(nz, 6);
-	ind[43] = make_int2(0, 7);
-	ind[44] = make_int2(0, 9);
-	ind[45] = make_int2(0, 10);
-	ind[46] = make_int2(nz, 2);
-	ind[47] = make_int2(0, 3);
+	// Dual node idx:  0
+	ind[0] = make_int4(0, 0, 0, 9);
+	ind[1] = make_int4(0, 0, 0, 10);
+	ind[2] = make_int4(-1, 0, 1, 2);
+	ind[3] = make_int4(-1, 0, 0, 3);
+	// Dual node idx:  1
+	ind[4] = make_int4(0, 0, 0, 2);
+	ind[5] = make_int4(0, 0, 0, 3);
+	ind[6] = make_int4(1, -1, 0, 5);
+	ind[7] = make_int4(0, -1, 0, 8);
+	// Dual node idx:  2
+	ind[8] = make_int4(0, 0, 0, 1);
+	ind[9] = make_int4(0, 0, 0, 4);
+	ind[10] = make_int4(1, 0, -1, 0);
+	ind[11] = make_int4(0, 0, -1, 11);
+	// Dual node idx:  3
+	ind[12] = make_int4(0, 0, 0, 1);
+	ind[13] = make_int4(0, 0, 0, 4);
+	ind[14] = make_int4(1, 0, 0, 0);
+	ind[15] = make_int4(0, 0, 0, 11);
+	// Dual node idx:  4
+	ind[16] = make_int4(0, 0, 0, 2);
+	ind[17] = make_int4(0, 0, 0, 3);
+	ind[18] = make_int4(1, 0, 0, 5);
+	ind[19] = make_int4(0, 0, 0, 8);
+	// Dual node idx:  5
+	ind[20] = make_int4(0, 0, 0, 6);
+	ind[21] = make_int4(0, 0, 0, 7);
+	ind[22] = make_int4(-1, 1, 0, 1);
+	ind[23] = make_int4(-1, 0, 0, 4);
+	// Dual node idx:  6
+	ind[24] = make_int4(0, 0, 0, 5);
+	ind[25] = make_int4(0, 0, 0, 8);
+	ind[26] = make_int4(0, 1, -1, 9);
+	ind[27] = make_int4(0, 0, -1, 10);
+	// Dual node idx:  7
+	ind[28] = make_int4(0, 0, 0, 5);
+	ind[29] = make_int4(0, 0, 0, 8);
+	ind[30] = make_int4(0, 1, 0, 9);
+	ind[31] = make_int4(0, 0, 0, 10);
+	// Dual node idx:  8
+	ind[32] = make_int4(0, 0, 0, 6);
+	ind[33] = make_int4(0, 0, 0, 7);
+	ind[34] = make_int4(0, 1, 0, 1);
+	ind[35] = make_int4(0, 0, 0, 4);
+	// Dual node idx:  9
+	ind[36] = make_int4(0, 0, 0, 0);
+	ind[37] = make_int4(0, 0, 0, 11);
+	ind[38] = make_int4(0, -1, 1, 6);
+	ind[39] = make_int4(0, -1, 0, 7);
+	// Dual node idx:  10
+	ind[40] = make_int4(0, 0, 0, 0);
+	ind[41] = make_int4(0, 0, 0, 11);
+	ind[42] = make_int4(0, 0, 1, 6);
+	ind[43] = make_int4(0, 0, 0, 7);
+	// Dual node idx:  11
+	ind[44] = make_int4(0, 0, 0, 9);
+	ind[45] = make_int4(0, 0, 0, 10);
+	ind[46] = make_int4(0, 0, 1, 2);
+	ind[47] = make_int4(0, 0, 0, 3);
 
 	hodges.resize(INDICES_PER_BLOCK);
 	hodges[0] = 2.328785732306081;

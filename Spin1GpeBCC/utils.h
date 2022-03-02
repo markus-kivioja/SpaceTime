@@ -56,6 +56,7 @@ void drawPicture(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 			{
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				//uint dualNode = 6;
 				{
 					norm_s1 += h_evenPsi[idx].values[dualNode].s1.x * h_evenPsi[idx].values[dualNode].s1.x + h_evenPsi[idx].values[dualNode].s1.y * h_evenPsi[idx].values[dualNode].s1.y;
 					norm_s0 += h_evenPsi[idx].values[dualNode].s0.x * h_evenPsi[idx].values[dualNode].s0.x + h_evenPsi[idx].values[dualNode].s0.y * h_evenPsi[idx].values[dualNode].s0.y;
@@ -84,6 +85,7 @@ void drawPicture(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 			{
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				//uint dualNode = 6;
 				{
 					norm_s1 += h_evenPsi[idx].values[dualNode].s1.x * h_evenPsi[idx].values[dualNode].s1.x + h_evenPsi[idx].values[dualNode].s1.y * h_evenPsi[idx].values[dualNode].s1.y;
 					norm_s0 += h_evenPsi[idx].values[dualNode].s0.x * h_evenPsi[idx].values[dualNode].s0.x + h_evenPsi[idx].values[dualNode].s0.y * h_evenPsi[idx].values[dualNode].s0.y;
