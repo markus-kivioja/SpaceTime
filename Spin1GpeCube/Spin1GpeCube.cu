@@ -11,6 +11,7 @@
 #include <Mesh/DelaunayMesh.hpp>
 #include <iostream>
 #include <sstream>
+#include <chrono>
 
 #include <mesh.h>
 
@@ -24,8 +25,11 @@ constexpr double Nz = 255.0;
 
 constexpr double N = 2e5;
 
-constexpr double omega_r = 126 * 2 * PI;
-constexpr double omega_z = 166 * 2 * PI;
+constexpr double trapFreq_r = 126;
+constexpr double trapFreq_z = 166;
+
+constexpr double omega_r = trapFreq_r * 2 * PI;
+constexpr double omega_z = trapFreq_z * 2 * PI;
 constexpr double lambda_x = 1.0;
 constexpr double lambda_y = 1.0;
 constexpr double lambda_z = omega_z / omega_r;
@@ -41,22 +45,26 @@ const double a_r = sqrt(hbar / (atomMass * omega_r)); //[m]
 const double c0 = 4 * PI * N * (a_0 + 2 * a_2) * a_bohr / (3 * a_r);
 const double c2 = 4 * PI * N * (a_2 - a_0) * a_bohr / (3 * a_r);
 
+constexpr double gamma = 2.9e-30;
+const double alpha = N * N * gamma * 1e-12 / (a_r * a_r * a_r * a_r * a_r * a_r * 2 * PI * trapFreq_r);
+
 constexpr double muB = 9.27400968e-24; // [m^2 kg / s^2 T^-1] Bohr magneton
 
 const double BqScale = -(0.5 * muB / (hbar * omega_r) * a_r) / 100.; // [cm/Gauss]
 constexpr double BzScale = -(0.5 * muB / (hbar * omega_r)) / 10000.; // [1/Gauss]
 
-constexpr double dimensionalBq = 3.7;
-constexpr double dimensionalBz0 = 0.01;
+constexpr double A_hfs = 10.11734130545215;
+const double BqQuadScale = 100 * a_r * sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (trapFreq_r * 2 * A_hfs)); //[cm/Gauss]
+const double BzQuadScale = sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (trapFreq_r * 2 * A_hfs)); //[1/Gauss]  \sqrt{g_q}
 
-constexpr double dt = 2e-4; // iteration_period / double(steps_per_iteration); // time step in time units
+#define COMPUTE_GROUND_STATE 0
+
+constexpr double dt = 2e-4;
 
 const std::string STATE_FILENAME = "polar_ground_state.dat";
 
 static constexpr double SQRT_2 = 1.41421356237309;
 static constexpr double INV_SQRT_2 = 0.70710678118655;
-
-#define COMPUTE_GROUND_STATE 0
 
 #define SAVE_PICTURE 1
 #define SAVE_VOLUME 0
@@ -76,7 +84,7 @@ __host__ __device__ __inline__ double trap(double3 p)
 
 __host__ __device__ __inline__ double3 magneticField(double3 p, double Bq, double Bz)
 {
-	return make_double3(Bq * p.x, Bq * p.y, Bq * -2 * p.z + Bz);
+	return make_double3(Bq * p.x, Bq * p.y, -2 * Bq * p.z + Bz);
 }
 
 #include <utils.h>
@@ -86,48 +94,50 @@ __global__ void density(double* density, PitchedPtr prevStep, uint3 dimensions, 
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
-	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
 
 	// Exit leftover threads
-	if (xid >= dimensions.x || yid >= dimensions.y || dataZid >= dimensions.z)
+	if (dataXid > dimensions.x || yid > dimensions.y || zid > dimensions.z)
 	{
 		return;
 	}
 
-	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
 
-	char* pPsi = prevStep.ptr + prevStep.slicePitch * dataZid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
+	char* pPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
 	Complex3Vec psi = ((BlockPsis*)pPsi)->values[dualNodeId];
 
-	size_t idx = dataZid * dimensions.x * dimensions.y * VALUES_IN_BLOCK + yid * dimensions.x * VALUES_IN_BLOCK + xid * VALUES_IN_BLOCK + dualNodeId;
+	size_t idx = zid * dimensions.x * dimensions.y * VALUES_IN_BLOCK + yid * dimensions.x * VALUES_IN_BLOCK + dataXid * VALUES_IN_BLOCK + dualNodeId;
 	density[idx] = dv * ((psi.s1 * conj(psi.s1)).x + (psi.s0 * conj(psi.s0)).x + (psi.s_1 * conj(psi.s_1)).x);
 }
 
-__global__ void magnetization(double3* pMagnetization, PitchedPtr prevStep, uint3 dimensions, double dv)
+__global__ void magnetizationAndDensity(double3* pMagnetization, double* density, PitchedPtr prevStep, uint3 dimensions, double dv)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
-	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
 
 	// Exit leftover threads
-	if (xid >= dimensions.x || yid >= dimensions.y || dataZid >= dimensions.z)
+	if (dataXid > dimensions.x || yid > dimensions.y || zid > dimensions.z)
 	{
 		return;
 	}
 
-	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
 
-	char* pPsi = prevStep.ptr + prevStep.slicePitch * dataZid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
+	char* pPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
 	Complex3Vec psi = ((BlockPsis*)pPsi)->values[dualNodeId];
 
 	double normSq_s1 = psi.s1.x * psi.s1.x + psi.s1.y * psi.s1.y;
+	double normSq_s0 = psi.s0.x * psi.s0.x + psi.s0.y * psi.s0.y;
 	double normSq_s_1 = psi.s_1.x * psi.s_1.x + psi.s_1.y * psi.s_1.y;
 	double2 temp = SQRT_2 * (conj(psi.s1) * psi.s0 + conj(psi.s0) * psi.s_1);
 	double3 magnetization = make_double3(temp.x, temp.y, normSq_s1 - normSq_s_1);
 
-	size_t idx = dataZid * dimensions.x * dimensions.y * VALUES_IN_BLOCK + yid * dimensions.x * VALUES_IN_BLOCK + xid * VALUES_IN_BLOCK + dualNodeId;
+	size_t idx = zid * dimensions.x * dimensions.y * VALUES_IN_BLOCK + yid * dimensions.x * VALUES_IN_BLOCK + dataXid * VALUES_IN_BLOCK + dualNodeId;
 	pMagnetization[idx] = dv * magnetization;
+	density[idx] = dv * (normSq_s1 + normSq_s0 + normSq_s_1);
 }
 
 __global__ void integrate(double* dataVec, size_t stride, bool addLast)
@@ -169,16 +179,16 @@ __global__ void normalize(double* density, PitchedPtr psiPtr, uint3 dimensions)
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
-	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
 
 	// Exit leftover threads
-	if (xid >= dimensions.x || yid >= dimensions.y || dataZid >= dimensions.z)
+	if (dataXid > dimensions.x || yid > dimensions.y || zid > dimensions.z)
 	{
 		return;
 	}
 
-	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
-	BlockPsis* blockPsis = (BlockPsis*)(psiPtr.ptr + psiPtr.slicePitch * dataZid + psiPtr.pitch * yid) + xid;
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+	BlockPsis* blockPsis = (BlockPsis*)(psiPtr.ptr + psiPtr.slicePitch * zid + psiPtr.pitch * yid) + dataXid;
 	Complex3Vec psi = blockPsis->values[dualNodeId];
 	double sqrtDens = sqrt(density[0]);
 	psi.s1 = psi.s1 / sqrtDens;
@@ -188,25 +198,23 @@ __global__ void normalize(double* density, PitchedPtr psiPtr, uint3 dimensions)
 	blockPsis->values[dualNodeId] = psi;
 }
 
-#if COMPUTE_GROUND_STATE
 __global__ void polarState(PitchedPtr psi, uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
-
-	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
 
 	// Exit leftover threads
-	if (xid >= dimensions.x || yid >= dimensions.y || dataZid >= dimensions.z)
+	if (dataXid > dimensions.x || yid > dimensions.y || zid > dimensions.z)
 	{
 		return;
 	}
 
-	BlockPsis* pPsi = (BlockPsis*)(psi.ptr + psi.slicePitch * dataZid + psi.pitch * yid) + xid;
+	BlockPsis* pPsi = (BlockPsis*)(psi.ptr + psi.slicePitch * zid + psi.pitch * yid) + dataXid;
 
 	// Update psi
-	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
 
 	Complex3Vec prev = pPsi->values[dualNodeId];
 
@@ -220,27 +228,39 @@ __global__ void polarState(PitchedPtr psi, uint3 dimensions)
 	pPsi->values[dualNodeId].s_1 = make_double2(0, 0);
 };
 
-__global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, double* __restrict__ hodges, uint3 dimensions, double block_scale, double3 p0, double c0, double c2)
+__global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restrict__ laplace, double* __restrict__ hodges, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double alpha)
 {
-	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
-	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
-	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
-
-	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	const size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	const size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
 
 	// Exit leftover threads
-	if (xid >= dimensions.x || yid >= dimensions.y || dataZid >= dimensions.z)
+	if (dataXid > dimensions.x || yid > dimensions.y || zid > dimensions.z)
 	{
 		return;
 	}
 
+	const size_t localDataXid = threadIdx.x / VALUES_IN_BLOCK;
+
+	__shared__ BlockPsis ldsPrevPsis[THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X];
+	const size_t threadIdxInBlock = threadIdx.z * THREAD_BLOCK_Y * THREAD_BLOCK_X + threadIdx.y * THREAD_BLOCK_X + localDataXid;
+
 	// Calculate the pointers for this block
-	char* prevPsi = prevStep.ptr + prevStep.slicePitch * dataZid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
-	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * dataZid + nextStep.pitch * yid) + xid;
+	char* prevPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
+	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + dataXid;
 
 	// Update psi
-	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
-	Complex3Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
+	const size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+	const Complex3Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
+	ldsPrevPsis[threadIdxInBlock].values[dualNodeId] = prev;
+
+	// Kill also the leftover edge threads
+	if (dataXid == dimensions.x || yid == dimensions.y || zid == dimensions.z)
+	{
+		return;
+	}
+	__syncthreads();
 
 	uint primaryFace = dualNodeId * FACE_COUNT;
 
@@ -253,68 +273,99 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__
 #pragma unroll
 	for (int i = 0; i < FACE_COUNT; ++i)
 	{
-		Complex3Vec otherBoundaryZeroCell = ((BlockPsis*)(prevPsi + lapInd[primaryFace].x))->values[lapInd[primaryFace].y];
-		H.s1 += hodges[primaryFace] * (otherBoundaryZeroCell.s1 - prev.s1);
-		H.s0 += hodges[primaryFace] * (otherBoundaryZeroCell.s0 - prev.s0);
-		H.s_1 += hodges[primaryFace] * (otherBoundaryZeroCell.s_1 - prev.s_1);
+		const int4 laplacian = laplace[primaryFace];
+
+		const int neighbourX = localDataXid + laplacian.x;
+		const int neighbourY = threadIdx.y + laplacian.y;
+		const int neighbourZ = threadIdx.z + laplacian.z;
+
+		Complex3Vec otherBoundaryZeroCell;
+		// Read from the local shared memory
+		if ((0 <= neighbourX) && (neighbourX < THREAD_BLOCK_X) &&
+			(0 <= neighbourY) && (neighbourY < THREAD_BLOCK_Y) &&
+			(0 <= neighbourZ) && (neighbourZ < THREAD_BLOCK_Z))
+		{
+			const int neighbourIdx = neighbourZ * THREAD_BLOCK_Y * THREAD_BLOCK_X + neighbourY * THREAD_BLOCK_X + neighbourX;
+			otherBoundaryZeroCell = ldsPrevPsis[neighbourIdx].values[laplacian.w];
+		}
+		else // Read from the global memory
+		{
+			const int offset = laplacian.z * prevStep.slicePitch + laplacian.y * prevStep.pitch + laplacian.x * sizeof(BlockPsis);
+			otherBoundaryZeroCell = ((BlockPsis*)(prevPsi + offset))->values[laplacian.w];
+		}
+
+		const double hodge = hodges[primaryFace];
+		H.s1 += hodge * (otherBoundaryZeroCell.s1 - prev.s1);
+		H.s0 += hodge * (otherBoundaryZeroCell.s0 - prev.s0);
+		H.s_1 += hodge * (otherBoundaryZeroCell.s_1 - prev.s_1);
 
 		primaryFace++;
 	}
 
-	double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
-	double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
-	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
-	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
+	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
+	const double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
+	const double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
+	const double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
 
-	double3 localPos = getLocalPos(dualNodeId);
-	double3 globalPos = make_double3(p0.x + block_scale * (xid * BLOCK_WIDTH_X + localPos.x),
+	const double3 localPos = getLocalPos(dualNodeId);
+	const double3 globalPos = make_double3(p0.x + block_scale * (dataXid * BLOCK_WIDTH_X + localPos.x),
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
-		p0.z + block_scale * (dataZid * BLOCK_WIDTH_Z + localPos.z));
-	double totalPot = trap(globalPos) + c0 * normSq;
+		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z));
+	const double2 totalPot = make_double2(trap(globalPos) + c0 * normSq, -alpha * normSq * normSq);
 
 	H.s1 += totalPot * prev.s1;
 	H.s0 += totalPot * prev.s0;
 	H.s_1 += totalPot * prev.s_1;
 
-	double3 B = make_double3(0, 0, 0); // magneticField(globalPos, Bq, Bz);
-	double2 temp = c2 * SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
-	B.x += temp.x;
-	B.y += temp.y;
-	B.z += c2 * (normSq_s1 - normSq_s_1);
+	const double2 temp = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
+	const double3 magnetization = make_double3(temp.x, temp.y, normSq_s1 - normSq_s_1);
+	double3 B = c2 * magnetization;
 
+	// Linear Zeeman shift
 	double2 Bxy = INV_SQRT_2 * make_double2(B.x, B.y);
-	double2 Bxy_conj = conj(Bxy);
-
-	H.s1 += (B.z * prev.s1 + Bxy_conj * prev.s0);
-	H.s0 += (Bxy * prev.s1 + Bxy_conj * prev.s_1);
+	double2 BxyConj = conj(Bxy);
+	H.s1 += (B.z * prev.s1 + BxyConj * prev.s0);
+	H.s0 += (Bxy * prev.s1 + BxyConj * prev.s_1);
 	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
 
 	nextPsi->values[dualNodeId].s1 = prev.s1 - dt * make_double2(H.s1.x, H.s1.y);
 	nextPsi->values[dualNodeId].s0 = prev.s0 - dt * make_double2(H.s0.x, H.s0.y);
 	nextPsi->values[dualNodeId].s_1 = prev.s_1 - dt * make_double2(H.s_1.x, H.s_1.y);
 };
-#else
-__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restrict__ lapInd, double* __restrict__ hodges, double Bq, double Bz, uint3 dimensions, double block_scale, double3 p0, double c0, double c2)
-{
-	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
-	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
-	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
 
-	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+__global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restrict__ laplace, double* __restrict__ hodges, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double alpha)
+{
+	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	const size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	const size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
 
 	// Exit leftover threads
-	if (xid >= dimensions.x || yid >= dimensions.y || dataZid >= dimensions.z)
+	if (dataXid > dimensions.x || yid > dimensions.y || zid > dimensions.z)
 	{
 		return;
 	}
 
+	const size_t localDataXid = threadIdx.x / VALUES_IN_BLOCK;
+
+	__shared__ BlockPsis ldsPrevPsis[THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X];
+	const size_t threadIdxInBlock = threadIdx.z * THREAD_BLOCK_Y * THREAD_BLOCK_X + threadIdx.y * THREAD_BLOCK_X + localDataXid;
+
 	// Calculate the pointers for this block
-	char* prevPsi = prevStep.ptr + prevStep.slicePitch * dataZid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
-	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * dataZid + nextStep.pitch * yid) + xid;
+	char* prevPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
+	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + dataXid;
 
 	// Update psi
-	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
-	Complex3Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
+	const size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+	const Complex3Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
+	ldsPrevPsis[threadIdxInBlock].values[dualNodeId] = prev;
+
+	// Kill also the leftover edge threads
+	if (dataXid == dimensions.x || yid == dimensions.y || zid == dimensions.z)
+	{
+		return;
+	}
+	__syncthreads();
 
 	uint primaryFace = dualNodeId * FACE_COUNT;
 
@@ -327,48 +378,82 @@ __global__ void update(PitchedPtr nextStep, PitchedPtr prevStep, int2* __restric
 #pragma unroll
 	for (int i = 0; i < FACE_COUNT; ++i)
 	{
-		Complex3Vec otherBoundaryZeroCell = ((BlockPsis*)(prevPsi + lapInd[primaryFace].x))->values[lapInd[primaryFace].y];
-		H.s1 += hodges[primaryFace] * (otherBoundaryZeroCell.s1 - prev.s1);
-		H.s0 += hodges[primaryFace] * (otherBoundaryZeroCell.s0 - prev.s0);
-		H.s_1 += hodges[primaryFace] * (otherBoundaryZeroCell.s_1 - prev.s_1);
+		const int4 laplacian = laplace[primaryFace];
+
+		const int neighbourX = localDataXid + laplacian.x;
+		const int neighbourY = threadIdx.y + laplacian.y;
+		const int neighbourZ = threadIdx.z + laplacian.z;
+
+		Complex3Vec otherBoundaryZeroCell;
+		// Read from the local shared memory
+		if ((0 <= neighbourX) && (neighbourX < THREAD_BLOCK_X) &&
+			(0 <= neighbourY) && (neighbourY < THREAD_BLOCK_Y) &&
+			(0 <= neighbourZ) && (neighbourZ < THREAD_BLOCK_Z))
+		{
+			const int neighbourIdx = neighbourZ * THREAD_BLOCK_Y * THREAD_BLOCK_X + neighbourY * THREAD_BLOCK_X + neighbourX;
+			otherBoundaryZeroCell = ldsPrevPsis[neighbourIdx].values[laplacian.w];
+		}
+		else // Read from the global memory
+		{
+			const int offset = laplacian.z * prevStep.slicePitch + laplacian.y * prevStep.pitch + laplacian.x * sizeof(BlockPsis);
+			otherBoundaryZeroCell = ((BlockPsis*)(prevPsi + offset))->values[laplacian.w];
+		}
+
+		const double hodge = hodges[primaryFace];
+		H.s1 += hodge * (otherBoundaryZeroCell.s1 - prev.s1);
+		H.s0 += hodge * (otherBoundaryZeroCell.s0 - prev.s0);
+		H.s_1 += hodge * (otherBoundaryZeroCell.s_1 - prev.s_1);
 
 		primaryFace++;
 	}
 
-	double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
-	double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
-	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
-	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
+	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
+	const double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
+	const double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
+	const double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
 
-	double3 localPos = getLocalPos(dualNodeId);
-	double3 globalPos = make_double3(p0.x + block_scale * (xid * BLOCK_WIDTH_X + localPos.x),
+	const double3 localPos = getLocalPos(dualNodeId);
+	const double3 globalPos = make_double3(p0.x + block_scale * (dataXid * BLOCK_WIDTH_X + localPos.x),
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
-		p0.z + block_scale * (dataZid * BLOCK_WIDTH_Z + localPos.z));
-	double totalPot = trap(globalPos) + c0 * normSq;
+		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z));
+	const double2 totalPot = make_double2(trap(globalPos) + c0 * normSq, -alpha * normSq * normSq);
 
 	H.s1 += totalPot * prev.s1;
 	H.s0 += totalPot * prev.s0;
 	H.s_1 += totalPot * prev.s_1;
 
-	double2 temp = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
-	double3 magnetization = make_double3(temp.x, temp.y, normSq_s1 - normSq_s_1);
-	double3 B = magneticField(globalPos, Bq, Bz);
+	const double2 temp = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
+	const double3 magnetization = make_double3(temp.x, temp.y, normSq_s1 - normSq_s_1);
+	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
 	B += c2 * magnetization;
 
+	// Linear Zeeman shift
 	double2 Bxy = INV_SQRT_2 * make_double2(B.x, B.y);
-	double2 Bxy_conj = conj(Bxy);
-
-	H.s1 += (B.z * prev.s1 + Bxy_conj * prev.s0);
-	H.s0 += (Bxy * prev.s1 + Bxy_conj * prev.s_1);
+	double2 BxyConj = conj(Bxy);
+	H.s1 += (B.z * prev.s1 + BxyConj * prev.s0);
+	H.s0 += (Bxy * prev.s1 + BxyConj * prev.s_1);
 	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
+
+	// Quadratic Zeeman term
+	B = magneticField(globalPos, Bs.BqQuad, Bs.BzQuad);
+	Bxy = INV_SQRT_2 * make_double2(B.x, B.y);
+	BxyConj = conj(Bxy);
+	double BxyNormSq = (BxyConj * Bxy).x;
+	double2 BxySq = Bxy * Bxy;
+	double2 BxyConjSq = BxyConj * BxyConj;
+	double BzSq = B.z * B.z;
+	double2 BzBxy = B.z * Bxy;
+	double2 BzBxyConj = B.z * BxyConj;
+	H.s1 += (BzSq + BxyNormSq) * prev.s1 + BzBxyConj * prev.s0 + BxyConjSq * prev.s_1;
+	H.s0 += BzBxy * prev.s1 + 2 * BxyNormSq * prev.s0 - BzBxyConj * prev.s_1;
+	H.s_1 += BxySq * prev.s1 - BzBxy * prev.s0 + (BzSq + BxyNormSq) * prev.s_1;
 
 	nextPsi->values[dualNodeId].s1 += dt * make_double2(H.s1.y, -H.s1.x);
 	nextPsi->values[dualNodeId].s0 += dt * make_double2(H.s0.y, -H.s0.x);
 	nextPsi->values[dualNodeId].s_1 += dt * make_double2(H.s_1.y, -H.s_1.x);
 };
-#endif
 
-//void energy_h(dim3 dimGrid, dim3 dimBlock, double* energyPtr, PitchedPtr psi, PitchedPtr potentials, int2* lapInd, double* hodges, double g, uint3 dimensions, double volume, size_t bodies)
+//void energy_h(dim3 dimGrid, dim3 dimBlock, double* energyPtr, PitchedPtr psi, PitchedPtr potentials, int4* lapInd, double* hodges, double g, uint3 dimensions, double volume, size_t bodies)
 //{
 //	energy << <dimGrid, dimBlock >> > (energyPtr, psi, potentials, lapInd, hodges, g, dimensions, volume);
 //	int prevStride = bodies;
@@ -410,23 +495,27 @@ void printDensity(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr ps
 	std::cout << "Total density: " << hDensity << std::endl;
 }
 
-void printMagnetization(dim3 dimGrid, dim3 dimBlock, double3* magnetizationPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, double volume)
+double4 getMagnetizationAndDensity(dim3 dimGrid, dim3 dimBlock, double3* magnetizationPtr, double* densityPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, double volume)
 {
-	magnetization << <dimGrid, dimBlock >> > (magnetizationPtr, psi, dimensions, volume);
+	magnetizationAndDensity << <dimGrid, dimBlock >> > (magnetizationPtr, densityPtr, psi, dimensions, volume);
 	int prevStride = bodies;
 	while (prevStride > 1)
 	{
 		int newStride = prevStride / 2;
 		integrateVec << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (magnetizationPtr, newStride, ((newStride * 2) != prevStride));
+		integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (densityPtr, newStride, ((newStride * 2) != prevStride));
 		prevStride = newStride;
 	}
 	double3 hMagnetization = make_double3(0, 0, 0);
 	checkCudaErrors(cudaMemcpy(&hMagnetization, magnetizationPtr, sizeof(double3), cudaMemcpyDeviceToHost));
 
-	std::cout << "Total magnetization: " << hMagnetization.x << ", " << hMagnetization.y << ", " << hMagnetization.z << std::endl;
+	double hDensity = 0;
+	checkCudaErrors(cudaMemcpy(&hDensity, densityPtr, sizeof(double), cudaMemcpyDeviceToHost));
+
+	return make_double4(hMagnetization.x, hMagnetization.y, hMagnetization.z, hDensity);
 }
 
-uint integrateInTime(const double block_scale, const Vector3& minp, const Vector3& maxp, const uint number_of_iterations)
+uint integrateInTime(const double block_scale, const Vector3& minp, const Vector3& maxp)
 {
 	uint i, j, k, l;
 
@@ -474,25 +563,20 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	PitchedPtr d_oddPsi = { (char*)d_cudaOddPsi.ptr + offset, d_cudaOddPsi.pitch, d_cudaOddPsi.pitch * dysize };
 
 	// find terms for laplacian
-	Buffer<int2> lapind;
+	Buffer<int4> lapind;
 	Buffer<double> hodges;
-	double lapfac = -0.5 * getLaplacian(lapind, hodges, sizeof(BlockPsis), d_evenPsi.pitch, d_evenPsi.slicePitch) / (block_scale * block_scale);
+	double lapfac = -2.0 * 0.5 * getLaplacian(lapind, hodges, sizeof(BlockPsis), d_evenPsi.pitch, d_evenPsi.slicePitch) / (block_scale * block_scale);
 	const uint lapsize = lapind.size() / bsize;
 	double lapfac0 = lapsize * (-lapfac);
 
 	//std::cout << "lapsize = " << lapsize << ", lapfac = " << lapfac << ", lapfac0 = " << lapfac0 << std::endl;
 
-	// compute time step size
-	const uint steps_per_iteration = 100; // 1.0 / 0.000199999994947575; // uint(iteration_period * (maxpot + lapfac0)) + 1; // number of time steps per iteration period
+	std::cout << "ALU operations per iteration = " << xsize * ysize * zsize * bsize * FACE_COUNT << std::endl;
 
-	std::cout << "steps_per_iteration = " << steps_per_iteration << std::endl;
+	for (int i = 0; i < hodges.size(); ++i) hodges[i] = -2.0 * 0.5 * hodges[i] / (block_scale * block_scale);
 
-	std::cout << "ALU operations per unit time = " << xsize * ysize * zsize * bsize * steps_per_iteration * FACE_COUNT << std::endl;
-
-	for (int i = 0; i < hodges.size(); ++i) hodges[i] = -0.5 * hodges[i] / (block_scale * block_scale);
-
-	int2* d_lapind;
-	checkCudaErrors(cudaMalloc(&d_lapind, lapind.size() * sizeof(int2)));
+	int4* d_lapind;
+	checkCudaErrors(cudaMalloc(&d_lapind, lapind.size() * sizeof(int4)));
 
 	double* d_hodges;
 	checkCudaErrors(cudaMalloc(&d_hodges, hodges.size() * sizeof(double)));
@@ -570,7 +654,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	checkCudaErrors(cudaMemcpy3D(&evenPsiParams));
 	checkCudaErrors(cudaMemcpy3D(&oddPsiParams));
-	checkCudaErrors(cudaMemcpy(d_lapind, &lapind[0], lapind.size() * sizeof(int2), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpy(d_lapind, &lapind[0], lapind.size() * sizeof(int4), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_hodges, &hodges[0], hodges.size() * sizeof(double), cudaMemcpyHostToDevice));
 
 	// Clear host memory after data has been copied to devices
@@ -585,10 +669,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	// Integrate in time
 	uint3 dimensions = make_uint3(xsize, ysize, zsize);
 	uint iter = 0;
-	dim3 dimBlock(THREAD_BLOCK_X, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
+	dim3 dimBlock(THREAD_BLOCK_X * VALUES_IN_BLOCK, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
 	dim3 dimGrid((xsize + THREAD_BLOCK_X - 1) / THREAD_BLOCK_X,
 		(ysize + THREAD_BLOCK_Y - 1) / THREAD_BLOCK_Y,
-		((zsize + THREAD_BLOCK_Z - 1) / THREAD_BLOCK_Z) * VALUES_IN_BLOCK);
+		((zsize + THREAD_BLOCK_Z - 1) / THREAD_BLOCK_Z));
 
 	cudaMemcpy3DParms evenPsiBackParams = { 0 };
 	evenPsiBackParams.srcPtr = d_cudaEvenPsi;
@@ -597,20 +681,24 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	evenPsiBackParams.kind = cudaMemcpyDeviceToHost;
 
 	const double volume = block_scale * block_scale * block_scale * VOLUME;
-	double t = 0;
+	double t = 0; // ms
 
 #if COMPUTE_GROUND_STATE
 	normalize_h(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 
-	double mu = 0;
-	double E = 1e20;
-	auto Hpsi = d_oddPsi;
 	while (true)
 	{
-		if ((iter % 1000) == 0) std::cout << "Iteration " << iter << std::endl;
-		if (iter == 50000)
+		if ((iter % 6000) == 0) std::cout << "Iteration " << iter << std::endl;
+#if SAVE_PICTURE
+		if ((iter % SAVE_FREQUENCY) == 0)
 		{
-			polarState << <dimGrid, dimBlock >> > (d_evenPsi, dimensions);
+			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
+			drawPicture("GS", h_evenPsi, dxsize, dysize, dzsize, iter, 0, 0, block_scale, d_p0);
+			printDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+		}
+#endif
+		if (iter == 60000)
+		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
 			std::ofstream fs(STATE_FILENAME, std::ios::binary | std::ios_base::trunc);
 			if (fs.fail() != 0) return 1;
@@ -618,22 +706,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			fs.close();
 			return 0;
 		}
-#if SAVE_PICTURE
-		if ((iter % SAVE_FREQUENCY) == 0)
-		{
-			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-			double Bz = Bz0 + BzVel * t;
-			drawPicture("GS", h_evenPsi, dxsize, dysize, dzsize, iter, 0, 0, block_scale, d_p0);
-			printDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
-		}
-#endif
 		// Take an imaginary time step
-		itp << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, dimensions, block_scale, d_p0, c0, c2);
+		itp << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, dimensions, block_scale, d_p0, c0, c2, alpha);
 		// Normalize
 		normalize_h(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 
 		// Take an imaginary time step
-		itp << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, dimensions, block_scale, d_p0, c0, c2);
+		itp << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, dimensions, block_scale, d_p0, c0, c2, alpha);
 		// Normalize
 		normalize_h(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 
@@ -657,55 +736,95 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	}
 
 #else
-	const uint time0 = clock();
-	uint32_t timeStepCount = 0;
+	polarState << <dimGrid, dimBlock >> > (d_evenPsi, dimensions);
+
+	constexpr uint saveFreq = 2000;
+
 	Signal signal;
-	double Bq = 0;
-	double Bz = 0;
+	MagFields Bs{};
+	std::string times;
+	std::string bqString;
+	std::string bzString;
+	std::string magX;
+	std::string magY;
+	std::string magZ;
+	std::string densityStr;
+	times += "times = [0";
+	bqString += "Bq = [0";
+	bzString += "Bz = [0";
+	densityStr += "norm = [0";
+	magX += "mag_x = [0";
+	magY += "mag_y = [0";
+	magZ += "mag_z = [0";
 	while (true)
 	{
 #if SAVE_PICTURE
-		if (iter % 10 == 0)
+		// Copy back from device memory to host memory
+		checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
+
+		// Measure wall clock time
+		static auto prevTime = std::chrono::high_resolution_clock::now();
+		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
+		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
+
+		drawPicture("TI", h_evenPsi, dxsize, dysize, dzsize, t, 0, 0, block_scale, d_p0);
+		double4 magDens = getMagnetizationAndDensity(dimGrid, dimBlock, d_magnetization, d_density, d_evenPsi, dimensions, bodies, volume);
+		times += ", " + std::to_string(t);
+		bqString += ", " + std::to_string(Bs.Bq);
+		bzString += ", " + std::to_string(Bs.Bz);
+		magX += ", " + std::to_string(magDens.x);
+		magY += ", " + std::to_string(magDens.y);
+		magZ += ", " + std::to_string(magDens.z);
+		densityStr += ", " + std::to_string(magDens.w);
+
+		if (t > 300.0)
 		{
-			// Copy back from device memory to host memory
-			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-			drawPicture("TI", h_evenPsi, dxsize, dysize, dzsize, t, 0, 0, block_scale, d_p0);
-			printDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
-			printMagnetization(dimGrid, dimBlock, d_magnetization, d_evenPsi, dimensions, bodies, volume);
+			times += "];";
+			bqString += "];";
+			bzString += "];";
+			magX += "];";
+			magY += "];";
+			magZ += "];";
+			densityStr += "];";
+
+			Text textFile;
+			textFile << times << std::endl;
+			textFile << bqString << std::endl;
+			textFile << bzString << std::endl;
+			textFile << magX << std::endl;
+			textFile << magY << std::endl;
+			textFile << magZ << std::endl;
+			textFile << densityStr << std::endl;
+			textFile.save("outputs.m");
+			return 0;
 		}
 #endif
 #if SAVE_VOLUME
 		saveVolue(h_evenPsi, dxsize, dysize, dzsize, iter);
 #endif
-
-		// finish iteration
-		if (++iter > number_of_iterations) break;
-		//++iter;
-		//if (errorAbs > 0.01) break;
-
+		prevTime = std::chrono::high_resolution_clock::now();
 		// integrate one iteration
-		for (uint step = 0; step < steps_per_iteration; step++)
+		for (uint step = 0; step < saveFreq; step++)
 		{
 			// update odd values
 			signal = getSignal(t);
-			Bq = BqScale * signal.Bq;
-			Bz = BzScale * signal.Bz;
-			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, c0, c2);
+			Bs.Bq = BqScale * signal.Bq;
+			Bs.Bz = BzScale * signal.Bz;
+			Bs.BqQuad = BqQuadScale * signal.Bq;
+			Bs.BzQuad = BzQuadScale * signal.Bz;
+			update << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, alpha);
 			t += dt / omega_r * 1e3; // [ms]
-			timeStepCount++;
 
 			// update even values
 			signal = getSignal(t);
-			Bq = BqScale * signal.Bq;
-			Bz = BzScale * signal.Bz;
-			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bq, Bz, dimensions, block_scale, d_p0, c0, c2);
+			Bs.Bq = BqScale * signal.Bq;
+			Bs.Bz = BzScale * signal.Bz;
+			Bs.BqQuad = BqQuadScale * signal.Bq;
+			Bs.BzQuad = BzQuadScale * signal.Bz;
+			update << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, alpha);
 			t += dt / omega_r * 1e3; // [ms]
-			timeStepCount++;
 		}
 	}
-
-	std::cout << "iteration time = " << (1e-3 * (clock() - time0)) / number_of_iterations << std::endl;
-	std::cout << "total time = " << 1e-3 * (clock() - time0) << std::endl;
 #endif
 
 	cudaError_t err = cudaGetLastError();
@@ -720,16 +839,15 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 int main(int argc, char** argv)
 {
-	const int number_of_iterations = 1000000;
 	const double block_scale = Lx / Nx;
-	
+
 	std::cout << "block_scale = " << block_scale << std::endl;
 	std::cout << "dual edge length = " << DUAL_EDGE_LENGTH * block_scale << std::endl;
 
 	// integrate in time using DEC
 	auto domainMin = Vector3(-Lx * 0.5, -Ly * 0.5, -Lz * 0.5);
 	auto domainMax = Vector3(Lx * 0.5, Ly * 0.5, Lz * 0.5);
-	integrateInTime(block_scale, domainMin, domainMax, number_of_iterations);
+	integrateInTime(block_scale, domainMin, domainMax);
 
 	return 0;
 }

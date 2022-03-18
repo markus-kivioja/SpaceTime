@@ -30,6 +30,14 @@ struct PitchedPtr
 	size_t slicePitch;
 };
 
+struct MagFields
+{
+	double Bq{};
+	double Bz{};
+	double BqQuad{};
+	double BzQuad{};
+};
+
 void drawPicture(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t, double Bq, double Bz, double block_scale, double3 p0)
 {
 	const int SIZE = 2;
@@ -82,9 +90,9 @@ void drawPicture(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 			double b = INTENSITY * norm_s0;
 
 			double3 localPos = getLocalPos(0);
-			double3 globalPos = make_double3(p0.x + block_scale * ((double)(i / SIZE) * H_BLOCK_WIDTH_X + localPos.x),
+			double3 globalPos = make_double3(p0.x + block_scale * ((double)(i / SIZE) * BLOCK_WIDTH_X + localPos.x),
 				0,
-				p0.z + block_scale * ((k / SIZE) * H_BLOCK_WIDTH_Z + localPos.z));
+				p0.z + block_scale * ((k / SIZE) * BLOCK_WIDTH_Z + localPos.z));
 			double3 B = magneticField(globalPos, Bq, Bz);
 			double normB = sqrt(B.x * B.x + B.y * B.y + B.z * B.z);
 			if ((normB < 0.1) && (Bq != 0))
@@ -96,7 +104,7 @@ void drawPicture(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 			//pic_1.setColor(k, i, intensity_s_1 * Vector4(0, 0, norm_s_1, 1.0));
 		}
 	}
-	pic1.save("results/" + name + "_" + std::to_string(t) + "ms_s1.bmp", false);
+	pic1.save("results/" + name + "_" + std::to_string(t) + "ms.bmp", false);
 	//pic0.save("results/" + name + "_" + std::to_string(iter) + "_s0.bmp", false);
 	//pic_1.save("results/" + name + "_" + std::to_string(iter) + "_s-1.bmp", false);
 }
