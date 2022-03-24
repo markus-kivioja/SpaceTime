@@ -71,15 +71,15 @@ const std::string GROUND_STATE_FILENAME = "polar_ground_state.dat";
 #define THREAD_BLOCK_Y 2
 #define THREAD_BLOCK_Z 1
 
-constexpr uint saveFreq = 10000;
+constexpr uint saveFreq = 2000;
 
-//constexpr double dt = 2e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
-constexpr double dt = 2e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
+constexpr double dt = 2e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
+//constexpr double dt = 2e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-double t = 442.097064326908537168; // Start time in ms
+double t = 0; // Start time in ms
 constexpr double END_TIME = 462; // End time in ms
 
-__host__ __device__ __inline__ double trap(double3 p)
+inline __host__ __device__ __inline__ double trap(double3 p)
 {
 	double x = p.x * lambda_x;
 	double y = p.y * lambda_y;
@@ -87,7 +87,7 @@ __host__ __device__ __inline__ double trap(double3 p)
 	return 0.5 * (x * x + y * y + z * z) + 100.0;
 }
 
-__host__ __device__ __inline__ double3 magneticField(double3 p, double Bq, double Bz)
+inline __host__ __device__ __inline__ double3 magneticField(double3 p, double Bq, double Bz)
 {
 	return make_double3(Bq * p.x, Bq * p.y, -2 * Bq * p.z + Bz);
 }
@@ -119,7 +119,7 @@ __global__ void maxHamilton(double* maxHamlPtr, PitchedPtr prevStep, MagFields B
 	const double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
 	const double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
 
-	const double3 localPos = getLocalPos(dualNodeId);
+	const double3 localPos = d_localPos[dualNodeId];
 	const double3 globalPos = make_double3(p0.x + block_scale * (dataXid * BLOCK_WIDTH_X + localPos.x),
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z));
@@ -482,7 +482,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __r
 	const double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
 	const double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
 
-	const double3 localPos = getLocalPos(dualNodeId);
+	const double3 localPos = d_localPos[dualNodeId];
 	const double3 globalPos = make_double3(p0.x + block_scale * (dataXid * BLOCK_WIDTH_X + localPos.x),
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z));
@@ -524,7 +524,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __r
 	nextPsi->values[dualNodeId].s_1 = prev.s_1 + 0.5 * dt * make_double2(H.s_1.y, -H.s_1.x);
 };
 
-__global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restrict__ laplace, double* __restrict__ hodges, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double alpha)
+__global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __restrict__ laplace, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double alpha)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -603,7 +603,7 @@ __global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restr
 	const double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
 	const double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
 
-	const double3 localPos = getLocalPos(dualNodeId);
+	const double3 localPos = d_localPos[dualNodeId];
 	const double3 globalPos = make_double3(p0.x + block_scale * (dataXid * BLOCK_WIDTH_X + localPos.x),
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z));

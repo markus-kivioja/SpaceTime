@@ -255,7 +255,12 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	//std::cout << "lapsize = " << lapsize << ", lapfac = " << lapfac << ", lapfac0 = " << lapfac0 << std::endl;
 
 	// compute time step size
-	const uint steps_per_iteration = uint(iteration_period * (maxpot + lapfac0)) + 1; // number of time steps per iteration period
+	//const uint steps_per_iteration = uint(iteration_period * (maxpot + lapfac0)) + 1;
+#if RELATIVISTIC
+	const uint steps_per_iteration = 185; // 185 is the min stable for hyperbolic
+#else
+	const uint steps_per_iteration = 522; // ... and 522 for the parabolic
+#endif
 	const ddouble dt = iteration_period / ddouble(steps_per_iteration); // time step in time units
 	const ddouble dt_per_sigma = dt / sigma;
 
@@ -510,10 +515,10 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 			update_q << <edgeDimGrid, dimBlock >> > (d_qEven, d_qOdd, d_psiOdd, d_d0, dimensions, dt_per_sigma);
 #else
 			// update odd values (imaginary terms)
-			update_q << <edgeDimGrid, dimBlock >> > (d_qEven, d_qEven, d_psiEven, d_d0, dimensions, dt_per_sigma, 1.0);
+			update_q << <edgeDimGrid, dimBlock >> > (d_qEven, d_qEven, d_psiEven, d_d0, dimensions, dt_per_sigma);
 			update_psi << <psiDimGrid, dimBlock >> > (d_psiOdd, d_psiEven, d_qEven, d_pot, d_d1, d_hodges, g, dimensions);
 			// update even values (real terms)
-			update_q << <edgeDimGrid, dimBlock >> > (d_qOdd, d_qOdd, d_psiOdd, d_d0, dimensions, dt_per_sigma, -1.0);
+			update_q << <edgeDimGrid, dimBlock >> > (d_qOdd, d_qOdd, d_psiOdd, d_d0, dimensions, dt_per_sigma);
 			update_psi << <psiDimGrid, dimBlock >> > (d_psiEven, d_psiOdd, d_qOdd, d_pot, d_d1, d_hodges, g, dimensions);
 #endif
 		}
