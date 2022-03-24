@@ -76,8 +76,8 @@ constexpr uint saveFreq = 10000;
 //constexpr double dt = 2e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 constexpr double dt = 2e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-double t = 350.140874891685768944; // Start time in ms
-constexpr double END_TIME = 352; // End time in ms
+double t = 442.097064326908537168; // Start time in ms
+constexpr double END_TIME = 462; // End time in ms
 
 __host__ __device__ __inline__ double trap(double3 p)
 {
