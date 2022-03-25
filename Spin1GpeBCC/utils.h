@@ -13,9 +13,9 @@
 
 struct Complex3Vec
 {
-	double2 s1 = make_double2(0, 0);
-	double2 s0 = make_double2(0, 0);
-	double2 s_1 = make_double2(0, 0);
+	double2 s1;
+	double2 s0;
+	double2 s_1;
 };
 
 struct BlockPsis
@@ -122,7 +122,7 @@ void drawPicture(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 		pic1.setColor(2 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
 	}
 
-	pic1.save("results/" + name + "_" + toString(t) + "ms.bmp", false);
+	pic1.save("results/" + name + toString(t) + "ms.bmp", false);
 }
 
 bool saveVolumeMap(const std::string& path, const Buffer<ushort>& vol, const uint xsize, const uint ysize, const uint zsize, const Vector3& h)
@@ -187,15 +187,15 @@ void saveVolume(const std::string& name, BlockPsis* h_evenPsi, size_t bsize, siz
 // Arithmetic operators for cuda vector types
 inline __host__ __device__ __inline__ double2 operator+(double2 a, double2 b)
 {
-	return make_double2(a.x + b.x, a.y + b.y);
+	return {a.x + b.x, a.y + b.y};
 }
 inline __host__ __device__ __inline__ double3 operator+(double3 a, double3 b)
 {
-	return make_double3(a.x + b.x, a.y + b.y, a.z + b.z);
+	return { a.x + b.x, a.y + b.y, a.z + b.z };
 }
 inline __host__ __device__ __inline__ double2 operator-(double2 a, double2 b)
 {
-	return make_double2(a.x - b.x, a.y - b.y);
+	return { a.x - b.x, a.y - b.y };
 }
 inline __host__ __device__ __inline__ void operator+=(double2& a, double2 b)
 {
@@ -215,23 +215,23 @@ inline __host__ __device__ __inline__ void operator-=(double2& a, double2 b)
 }
 inline __host__ __device__ __inline__ double2 operator*(double b, double2 a)
 {
-	return make_double2(b * a.x, b * a.y);
+	return { b * a.x, b * a.y };
 }
 inline __host__ __device__ __inline__ double3 operator*(double b, double3 a)
 {
-	return make_double3(b * a.x, b * a.y, b * a.z);
+	return { b * a.x, b * a.y, b * a.z };
 }
 inline __host__ __device__ __inline__ double2 operator/(double2 a, double b)
 {
-	return make_double2(a.x / b, a.y / b);
+	return { a.x / b, a.y / b };
 }
 inline __host__ __device__ __inline__ double2 conj(double2 a) // Complex conjugate
 {
-	return make_double2(a.x, -a.y);
+	return { a.x, -a.y };
 }
 inline __host__ __device__ __inline__ double2 operator*(double2 a, double2 b) // Complex number multiplication
 {
-	return make_double2(a.x * b.x - a.y * b.y, a.y * b.x + a.x * b.y);
+	return { a.x * b.x - a.y * b.y, a.y * b.x + a.x * b.y };
 }
 
 #endif // UTILS
