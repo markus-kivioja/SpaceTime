@@ -77,8 +77,8 @@ constexpr double NOISE_AMPLITUDE = 0.1;
 //constexpr double dt = 2e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 constexpr double dt = 2e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-double t = 200.080499887228796752; // Start time in ms
-constexpr double END_TIME = 300; // End time in ms
+double t = 270.816030159103490860; // Start time in ms
+constexpr double END_TIME = 350; // End time in ms
 
 inline __device__ __inline__ double trap(double3 p)
 {
@@ -199,6 +199,63 @@ __global__ void magnetizationAndDensity(double3* pMagnetization, double* density
 	size_t idx = zid * dimensions.x * dimensions.y * VALUES_IN_BLOCK + yid * dimensions.x * VALUES_IN_BLOCK + dataXid * VALUES_IN_BLOCK + dualNodeId;
 	pMagnetization[idx] = dv * magnetization;
 	density[idx] = dv * (normSq_s1 + normSq_s0 + normSq_s_1);
+}
+
+__global__ void uv(double3* out_u, double3* out_v, PitchedPtr psiPtr, uint3 dimensions)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	char* pPsi = psiPtr.ptr + psiPtr.slicePitch * zid + psiPtr.pitch * yid + sizeof(BlockPsis) * dataXid;
+	Complex3Vec psi = ((BlockPsis*)pPsi)->values[dualNodeId];
+
+	double2 ax = (psi.s_1 - psi.s1) / sqrt(2);
+	double2 ay = double2{ 0, -1 } * (psi.s_1 + psi.s1) / sqrt(2);
+	double2 az = psi.s0;
+	double3 u = double3{ ax.x, ay.x, az.x };
+	double3 v = double3{ ax.y, ay.y, az.y };
+
+	double u_dot_v = u.x * v.x + u.y * v.y + u.z * v.z;
+	double uNormSqr = u.x * u.x + u.y * u.y + u.z * u.z;
+	double vNormSqr = v.x * v.x + v.y * v.y + v.z * v.z;
+	
+	double gamma = atan2(-2 * u_dot_v, uNormSqr - vNormSqr) / 2;
+
+	double sinGamma = sin(gamma);
+	double cosGamma = cos(gamma);
+		up = [ax.real * cg - sg * ax.imag, ay.real * cg - sg * ay.imag, az.real * cg - sg * az.imag]
+		vp = [ax.real * sg + cg * ax.imag, ay.real * sg + cg * ay.imag, az.real * sg + cg * az.imag]
+		u2[...] = sqrt(up[0] * *2 + up[1] * *2 + up[2] * *2)
+		v2[...] = sqrt(vp[0] * *2 + vp[1] * *2 + vp[2] * *2)
+
+		idx = 0
+		uvec_x = where(u2 >= v2, up[idx], vp[idx])
+		vvec_x = where(u2 < v2, up[idx], vp[idx])
+
+		idx = 1
+		uvec_y = where(u2 >= v2, up[idx], vp[idx])
+		vvec_y = where(u2 < v2, up[idx], vp[idx])
+
+		idx = 2
+		uvec_z = where(u2 >= v2, up[idx], vp[idx])
+		vvec_z = where(u2 < v2, up[idx], vp[idx])
+		gd.create_dataset('ux', data = uvec_x, chunks = chunkparam, compression = "gzip")
+		gd.create_dataset('uy', data = uvec_y, chunks = chunkparam, compression = "gzip")
+		gd.create_dataset('uz', data = uvec_z, chunks = chunkparam, compression = "gzip")
+		gd.create_dataset('vx', data = vvec_x, chunks = chunkparam, compression = "gzip")
+		gd.create_dataset('vy', data = vvec_y, chunks = chunkparam, compression = "gzip")
+		gd.create_dataset('vz', data = vvec_z, chunks = chunkparam, compression = "gzip")
+		gd.create_dataset('gamma', data = gammas, chunks = chunkparam, compression = "gzip")
 }
 
 __global__ void integrate(double* dataVec, size_t stride, bool addLast)
