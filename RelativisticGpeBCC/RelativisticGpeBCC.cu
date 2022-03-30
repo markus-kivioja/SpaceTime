@@ -16,7 +16,7 @@ ddouble RATIO = 1.0;
 ddouble KAPPA = 10;
 ddouble G = 300;
 
-#define RELATIVISTIC 1
+#define RELATIVISTIC 0
 
 #define LOAD_STATE_FROM_DISK 1
 #define SAVE_PICTURE 1

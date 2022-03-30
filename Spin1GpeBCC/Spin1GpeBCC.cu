@@ -15,6 +15,16 @@
 
 #include <mesh.h>
 
+#define USE_QUADRUPOLE_OFFSET 0
+#define USE_INITIAL_NOISE 0
+#define SAVE_STATES 0
+#define COMPUTE_GROUND_STATE 0
+#define SAVE_PICTURE 1
+
+#define THREAD_BLOCK_X 16
+#define THREAD_BLOCK_Y 2
+#define THREAD_BLOCK_Z 1
+
 constexpr double DOMAIN_SIZE_X = 24.0;
 constexpr double DOMAIN_SIZE_Y = 24.0;
 constexpr double DOMAIN_SIZE_Z = 24.0;
@@ -60,24 +70,16 @@ const double BzQuadScale = sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (tra
 constexpr double SQRT_2 = 1.41421356237309;
 constexpr double INV_SQRT_2 = 0.70710678118655;
 
-#define COMPUTE_GROUND_STATE 0
-
 const std::string GROUND_STATE_FILENAME = "polar_ground_state.dat";
 
-#define SAVE_PICTURE 1
-
-#define THREAD_BLOCK_X 16
-#define THREAD_BLOCK_Y 2
-#define THREAD_BLOCK_Z 1
-
-constexpr uint SAVE_FREQUENCY = 20000;
+constexpr uint SAVE_FREQUENCY = 10000;
 
 constexpr double NOISE_AMPLITUDE = 0.1;
 
 //constexpr double dt = 2e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 constexpr double dt = 2e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-double t = 270.816030159103490860; // Start time in ms
+double t = 200.080499887228796752; // Start time in ms
 constexpr double END_TIME = 350; // End time in ms
 
 inline __device__ __inline__ double trap(double3 p)
@@ -94,11 +96,15 @@ __constant__ double quadrupoleCenterZ = -0.27353409;
 
 inline __device__ __inline__ double3 magneticField(double3 p, double Bq, double Bz)
 {
+#if USE_QUADRUPOLE_OFFSET
 	return {
 		Bq * (p.x - quadrupoleCenterX),
 		Bq * (p.y - quadrupoleCenterY),
 		-2 * Bq * (p.z - quadrupoleCenterZ) + Bz
 	};
+#else
+	return { Bq * p.x, Bq * p.y, -2 * Bq * p.z + Bz };
+#endif
 }
 
 #include <utils.h>
@@ -168,7 +174,7 @@ __global__ void density(double* density, PitchedPtr prevStep, uint3 dimensions, 
 	char* pPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
 	Complex3Vec psi = ((BlockPsis*)pPsi)->values[dualNodeId];
 
-	size_t idx = zid * dimensions.x * dimensions.y * VALUES_IN_BLOCK + yid * dimensions.x * VALUES_IN_BLOCK + dataXid * VALUES_IN_BLOCK + dualNodeId;
+	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
 	density[idx] = dv * ((psi.s1 * conj(psi.s1)).x + (psi.s0 * conj(psi.s0)).x + (psi.s_1 * conj(psi.s_1)).x);
 }
 
@@ -196,12 +202,12 @@ __global__ void magnetizationAndDensity(double3* pMagnetization, double* density
 	double2 temp = SQRT_2 * (conj(psi.s1) * psi.s0 + conj(psi.s0) * psi.s_1);
 	double3 magnetization = { temp.x, temp.y, normSq_s1 - normSq_s_1 };
 
-	size_t idx = zid * dimensions.x * dimensions.y * VALUES_IN_BLOCK + yid * dimensions.x * VALUES_IN_BLOCK + dataXid * VALUES_IN_BLOCK + dualNodeId;
+	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
 	pMagnetization[idx] = dv * magnetization;
 	density[idx] = dv * (normSq_s1 + normSq_s0 + normSq_s_1);
 }
 
-__global__ void uv(double3* out_u, double3* out_v, PitchedPtr psiPtr, uint3 dimensions)
+__global__ void uvTheta(double3* out_u, double3* out_v, double* outTheta, PitchedPtr psiPtr, uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -219,43 +225,38 @@ __global__ void uv(double3* out_u, double3* out_v, PitchedPtr psiPtr, uint3 dime
 	char* pPsi = psiPtr.ptr + psiPtr.slicePitch * zid + psiPtr.pitch * yid + sizeof(BlockPsis) * dataXid;
 	Complex3Vec psi = ((BlockPsis*)pPsi)->values[dualNodeId];
 
-	double2 ax = (psi.s_1 - psi.s1) / sqrt(2);
-	double2 ay = double2{ 0, -1 } * (psi.s_1 + psi.s1) / sqrt(2);
+	// a = m + in
+	double2 ax = (psi.s_1 - psi.s1) / SQRT_2;
+	double2 ay = double2{ 0, -1 } * (psi.s_1 + psi.s1) / SQRT_2;
 	double2 az = psi.s0;
-	double3 u = double3{ ax.x, ay.x, az.x };
-	double3 v = double3{ ax.y, ay.y, az.y };
+	double3 m = double3{ ax.x, ay.x, az.x };
+	double3 n = double3{ ax.y, ay.y, az.y };
 
-	double u_dot_v = u.x * v.x + u.y * v.y + u.z * v.z;
-	double uNormSqr = u.x * u.x + u.y * u.y + u.z * u.z;
-	double vNormSqr = v.x * v.x + v.y * v.y + v.z * v.z;
+	double m_dot_n = m.x * n.x + m.y * n.y + m.z * n.z;
+	double mNormSqr = m.x * m.x + m.y * m.y + m.z * m.z;
+	double nNormSqr = n.x * n.x + n.y * n.y + n.z * n.z;
 	
-	double gamma = atan2(-2 * u_dot_v, uNormSqr - vNormSqr) / 2;
+	double theta = atan2(-2 * m_dot_n, mNormSqr - nNormSqr) / 2;
 
-	double sinGamma = sin(gamma);
-	double cosGamma = cos(gamma);
-		up = [ax.real * cg - sg * ax.imag, ay.real * cg - sg * ay.imag, az.real * cg - sg * az.imag]
-		vp = [ax.real * sg + cg * ax.imag, ay.real * sg + cg * ay.imag, az.real * sg + cg * az.imag]
-		u2[...] = sqrt(up[0] * *2 + up[1] * *2 + up[2] * *2)
-		v2[...] = sqrt(vp[0] * *2 + vp[1] * *2 + vp[2] * *2)
+	double sinTheta = sin(theta);
+	double cosTheta = cos(theta);
+	double3 u = double3{m.x * cosTheta - sinTheta * n.x, m.y * cosTheta - sinTheta * n.y, m.z * cosTheta - sinTheta * n.z};
+	double3 v = double3{m.x * sinTheta + cosTheta * n.x, m.y * sinTheta + cosTheta * n.y, m.z * sinTheta + cosTheta * n.z};
+	double uNorm = sqrt(u.x * u.x + u.y * u.y + u.z * u.z);
+	double vNorm = sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 
-		idx = 0
-		uvec_x = where(u2 >= v2, up[idx], vp[idx])
-		vvec_x = where(u2 < v2, up[idx], vp[idx])
-
-		idx = 1
-		uvec_y = where(u2 >= v2, up[idx], vp[idx])
-		vvec_y = where(u2 < v2, up[idx], vp[idx])
-
-		idx = 2
-		uvec_z = where(u2 >= v2, up[idx], vp[idx])
-		vvec_z = where(u2 < v2, up[idx], vp[idx])
-		gd.create_dataset('ux', data = uvec_x, chunks = chunkparam, compression = "gzip")
-		gd.create_dataset('uy', data = uvec_y, chunks = chunkparam, compression = "gzip")
-		gd.create_dataset('uz', data = uvec_z, chunks = chunkparam, compression = "gzip")
-		gd.create_dataset('vx', data = vvec_x, chunks = chunkparam, compression = "gzip")
-		gd.create_dataset('vy', data = vvec_y, chunks = chunkparam, compression = "gzip")
-		gd.create_dataset('vz', data = vvec_z, chunks = chunkparam, compression = "gzip")
-		gd.create_dataset('gamma', data = gammas, chunks = chunkparam, compression = "gzip")
+	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
+	if (uNorm >= vNorm)
+	{
+		out_u[idx] = u;
+		out_v[idx] = v;
+	}
+	else
+	{
+		out_u[idx] = v;
+		out_v[idx] = u;
+	}
+	outTheta[idx] = theta;
 }
 
 __global__ void integrate(double* dataVec, size_t stride, bool addLast)
@@ -805,11 +806,15 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	//double* d_energy;
 	double* d_density;
 	double3* d_magnetization;
-	double* d_maxHamilton;
+	double3* d_u;
+	double3* d_v;
+	double* d_theta;
 	//checkCudaErrors(cudaMalloc(&d_energy, bodies * sizeof(double)));
 	checkCudaErrors(cudaMalloc(&d_density, bodies * sizeof(double)));
 	checkCudaErrors(cudaMalloc(&d_magnetization, bodies * sizeof(double3)));
-	checkCudaErrors(cudaMalloc(&d_maxHamilton, bodies * sizeof(double)));
+	checkCudaErrors(cudaMalloc(&d_u, bodies * sizeof(double3)));
+	checkCudaErrors(cudaMalloc(&d_v, bodies * sizeof(double3)));
+	checkCudaErrors(cudaMalloc(&d_theta, bodies * sizeof(double)));
 
 	size_t offset = d_cudaEvenPsi.pitch * dysize + d_cudaEvenPsi.pitch + sizeof(BlockPsis);
 	PitchedPtr d_evenPsi = { (char*)d_cudaEvenPsi.ptr + offset, d_cudaEvenPsi.pitch, d_cudaEvenPsi.pitch * dysize };
@@ -842,6 +847,17 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	checkCudaErrors(cudaMallocHost(&h_oddPsi, hostSize * sizeof(BlockPsis)));
 	memset(h_evenPsi, 0, hostSize * sizeof(BlockPsis));
 	memset(h_oddPsi, 0, hostSize * sizeof(BlockPsis));
+
+	double* h_density;
+	double3* h_magnetization;
+	double3* h_u;
+	double3* h_v;
+	double* h_theta;
+	checkCudaErrors(cudaMallocHost(&h_density, bodies * sizeof(double)));
+	checkCudaErrors(cudaMallocHost(&h_magnetization, bodies * sizeof(double3)));
+	checkCudaErrors(cudaMallocHost(&h_u, bodies * sizeof(double3)));
+	checkCudaErrors(cudaMallocHost(&h_v, bodies * sizeof(double3)));
+	checkCudaErrors(cudaMallocHost(&h_theta, bodies * sizeof(double)));
 
 #if COMPUTE_GROUND_STATE
 	// Initialize discrete field
@@ -877,6 +893,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	fs.read((char*)&h_oddPsi[0], hostSize * sizeof(BlockPsis));
 	fs.close();
 
+#if USE_INITIAL_NOISE
 	if (loadGroundState && (NOISE_AMPLITUDE > 0))
 	{
 		std::default_random_engine generator;
@@ -904,6 +921,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			}
 		}
 	}
+#endif
 
 	bool doForward = true;
 	std::string evenFilename = "even_" + toString(t) + ".dat";
@@ -1011,7 +1029,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		if ((iter % SAVE_FREQUENCY) == 0)
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-			drawPicture("GS", h_evenPsi, dxsize, dysize, dzsize, iter);
+			drawDensity("GS", h_evenPsi, dxsize, dysize, dzsize, iter);
 			printDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 		}
 #endif
@@ -1065,6 +1083,25 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	while (true)
 	{
+#if SAVE_PICTURE
+		// Copy back from device memory to host memory
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
+
+		// Measure wall clock time
+		static auto prevTime = std::chrono::high_resolution_clock::now();
+		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
+		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
+
+		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t - 202.03);
+
+
+		uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
+		cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
+		cudaMemcpy(h_v, d_v, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
+		cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
+		drawUtheta(h_u, h_theta, xsize, ysize, zsize, t - 202.03);
+#endif
+
 		// integrate one iteration
 		for (uint step = 0; step < SAVE_FREQUENCY; step++)
 		{
@@ -1087,7 +1124,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
 		}
 
-#if SAVE_PICTURE
+#if SAVE_STATES
 		// Copy back from device memory to host memory
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
@@ -1096,7 +1133,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
 		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 
-		drawPicture("", h_oddPsi, dxsize, dysize, dzsize, t - 202);
+		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t - 200);
+
+		cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
+		cudaMemcpy(h_v, d_v, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
+		cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
+
 		double4 magDens = getMagnetizationAndDensity(dimGrid, dimBlock, d_magnetization, d_density, d_oddPsi, dimensions, bodies, volume);
 		times += ", " + toString(t);
 		bqString += ", " + toString(Bs.Bq);
