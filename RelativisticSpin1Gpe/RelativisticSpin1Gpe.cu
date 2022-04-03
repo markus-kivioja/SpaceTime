@@ -74,16 +74,16 @@ constexpr double INV_SQRT_2 = 0.70710678118655;
 
 const std::string GROUND_STATE_FILENAME = "polar_ground_state.dat";
 
-constexpr uint SAVE_FREQUENCY = 1000;
+constexpr uint SAVE_FREQUENCY = 1;
 
 #if USE_INITIAL_NOISE
 constexpr double NOISE_AMPLITUDE = 0.1;
 #endif
 
-//constexpr double dt = 2e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
-constexpr double dt = 2e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
+constexpr double dt = 2e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
+//constexpr double dt = 2e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-double t = 200.080499887228796752; // Start time in ms
+double t = 0; // Start time in ms
 constexpr double END_TIME = 350; // End time in ms
 
 inline __device__ __inline__ double trap(double3 p)
@@ -480,6 +480,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
 	const size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
 	const size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+	const size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
 
 	// Exit leftover threads
 	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
@@ -493,7 +494,6 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + dataXid;
 
 	// Update psi
-	const size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
 	const Complex3Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
 
 	Complex3Vec H;
@@ -997,7 +997,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	// Integrate in time
 	uint3 dimensions = make_uint3(xsize, ysize, zsize);
 	dim3 psiDimBlock(THREAD_BLOCK_X * VALUES_IN_BLOCK, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
-	dim3 edgeDimBlock(THREAD_BLOCK_X * VALUES_IN_BLOCK, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
+	dim3 edgeDimBlock(THREAD_BLOCK_X * EDGES_IN_BLOCK, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
 	dim3 dimGrid((xsize + THREAD_BLOCK_X - 1) / THREAD_BLOCK_X,
 		(ysize + THREAD_BLOCK_Y - 1) / THREAD_BLOCK_Y,
 		((zsize + THREAD_BLOCK_Z - 1) / THREAD_BLOCK_Z));
@@ -1015,8 +1015,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.Bz = BzScale * signal.Bz;
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BzQuad = BzQuadScale * signal.Bz;
-		update_q << <edgeDimGrid, dimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions);
-		forwardEuler << <psiDimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
+		update_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
 	}
 	else
 	{
@@ -1099,15 +1099,15 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		static auto prevTime = std::chrono::high_resolution_clock::now();
 		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
 		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
+		prevTime = std::chrono::high_resolution_clock::now();
 
-		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t - 202.03);
+		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t);
 
-
-		uvTheta << <psiDimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
-		cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
-		cudaMemcpy(h_v, d_v, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
-		cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
-		drawUtheta(h_u, h_theta, xsize, ysize, zsize, t - 202.03);
+		//uvTheta << <dimGrid, psiDimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
+		//cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
+		//cudaMemcpy(h_v, d_v, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
+		//cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
+		//drawUtheta(h_u, h_theta, xsize, ysize, zsize, t);
 #endif
 
 		// integrate one iteration
@@ -1128,8 +1128,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.Bz = BzScale * signal.Bz;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BzQuad = BzQuadScale * signal.Bz;
-			update_q << <edgeDimGrid, dimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions);
-			update_psi << <psiDimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
+			update_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions);
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
 
 			// update even values (real terms)
 			t += dt / omega_r * 1e3; // [ms]
@@ -1138,8 +1138,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.Bz = BzScale * signal.Bz;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BzQuad = BzQuadScale * signal.Bz;
-			update_q << <edgeDimGrid, dimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions);
-			update_psi << <psiDimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
+			update_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions);
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
 #endif
 		}
 
@@ -1213,7 +1213,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 				return 0;
 			}
 		}
-		prevTime = std::chrono::high_resolution_clock::now();
 #endif
 	}
 #endif

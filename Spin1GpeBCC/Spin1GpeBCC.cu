@@ -15,9 +15,9 @@
 
 #include <mesh.h>
 
-#define USE_QUADRUPOLE_OFFSET 0
-#define USE_INITIAL_NOISE 0
-#define SAVE_STATES 0
+#define USE_QUADRUPOLE_OFFSET 1
+#define USE_INITIAL_NOISE 1
+#define SAVE_STATES 1
 #define COMPUTE_GROUND_STATE 0
 #define SAVE_PICTURE 1
 
@@ -79,8 +79,8 @@ constexpr double NOISE_AMPLITUDE = 0.1;
 //constexpr double dt = 2e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 constexpr double dt = 2e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-double t = 200.080499887228796752; // Start time in ms
-constexpr double END_TIME = 350; // End time in ms
+double t = 300.120749869229427986; // Start time in ms
+constexpr double END_TIME = 302; // End time in ms
 
 inline __device__ __inline__ double trap(double3 p)
 {
@@ -205,6 +205,55 @@ __global__ void magnetizationAndDensity(double3* pMagnetization, double* density
 	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
 	pMagnetization[idx] = dv * magnetization;
 	density[idx] = dv * (normSq_s1 + normSq_s0 + normSq_s_1);
+}
+
+__global__ void ferromagneticDomain(double* pFerroDomain, PitchedPtr prevStep, uint3 dimensions)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	char* pPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
+	Complex3Vec psi = ((BlockPsis*)pPsi)->values[dualNodeId];
+
+	double normSq_s1 = psi.s1.x * psi.s1.x + psi.s1.y * psi.s1.y;
+	double normSq_s0 = psi.s0.x * psi.s0.x + psi.s0.y * psi.s0.y;
+	double normSq_s_1 = psi.s_1.x * psi.s_1.x + psi.s_1.y * psi.s_1.y;
+	double norm = sqrt(normSq_s1 + normSq_s0 + normSq_s_1);
+	
+	Complex3Vec spinor;
+	spinor.s1 = psi.s1 / norm;
+	spinor.s0 = psi.s0 / norm;
+	spinor.s_1 = psi.s_1 / norm;
+
+	double spinorNormSqr_s1 = spinor.s1.x * spinor.s1.x + spinor.s1.y * spinor.s1.y;
+	double spinorNormSqr_s_1 = spinor.s_1.x * spinor.s_1.x + spinor.s_1.y * spinor.s_1.y;
+
+	double2 temp = SQRT_2 * (conj(spinor.s1) * spinor.s0 + conj(spinor.s0) * spinor.s_1);
+	double3 magnetization = { temp.x, temp.y, spinorNormSqr_s1 - spinorNormSqr_s_1 };
+	double magNorm = sqrt(magnetization.x * magnetization.x + magnetization.y * magnetization.y + magnetization.z * magnetization.z);
+
+	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
+
+	constexpr double NORM_THRESHOLD = 0.0;
+	constexpr double FERROMAGNETIC_THRESHOLD = 0.95;
+	if ((magNorm > FERROMAGNETIC_THRESHOLD) && (norm > NORM_THRESHOLD))
+	{
+		pFerroDomain[idx] = magNorm;
+	}
+	else
+	{
+		pFerroDomain[idx] = 0;
+	}
 }
 
 __global__ void uvTheta(double3* out_u, double3* out_v, double* outTheta, PitchedPtr psiPtr, uint3 dimensions)
@@ -809,12 +858,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	double3* d_u;
 	double3* d_v;
 	double* d_theta;
+	double* d_ferroDom;
 	//checkCudaErrors(cudaMalloc(&d_energy, bodies * sizeof(double)));
 	checkCudaErrors(cudaMalloc(&d_density, bodies * sizeof(double)));
 	checkCudaErrors(cudaMalloc(&d_magnetization, bodies * sizeof(double3)));
 	checkCudaErrors(cudaMalloc(&d_u, bodies * sizeof(double3)));
 	checkCudaErrors(cudaMalloc(&d_v, bodies * sizeof(double3)));
 	checkCudaErrors(cudaMalloc(&d_theta, bodies * sizeof(double)));
+	checkCudaErrors(cudaMalloc(&d_ferroDom, bodies * sizeof(double)));
 
 	size_t offset = d_cudaEvenPsi.pitch * dysize + d_cudaEvenPsi.pitch + sizeof(BlockPsis);
 	PitchedPtr d_evenPsi = { (char*)d_cudaEvenPsi.ptr + offset, d_cudaEvenPsi.pitch, d_cudaEvenPsi.pitch * dysize };
@@ -853,11 +904,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	double3* h_u;
 	double3* h_v;
 	double* h_theta;
+	double* h_ferroDom;
 	checkCudaErrors(cudaMallocHost(&h_density, bodies * sizeof(double)));
 	checkCudaErrors(cudaMallocHost(&h_magnetization, bodies * sizeof(double3)));
 	checkCudaErrors(cudaMallocHost(&h_u, bodies * sizeof(double3)));
 	checkCudaErrors(cudaMallocHost(&h_v, bodies * sizeof(double3)));
 	checkCudaErrors(cudaMallocHost(&h_theta, bodies * sizeof(double)));
+	checkCudaErrors(cudaMallocHost(&h_ferroDom, bodies * sizeof(double)));
 
 #if COMPUTE_GROUND_STATE
 	// Initialize discrete field
@@ -1091,15 +1144,19 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		static auto prevTime = std::chrono::high_resolution_clock::now();
 		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
 		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
+		prevTime = std::chrono::high_resolution_clock::now();
 
 		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t - 202.03);
-
 
 		uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
 		cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
 		cudaMemcpy(h_v, d_v, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
 		cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
 		drawUtheta(h_u, h_theta, xsize, ysize, zsize, t - 202.03);
+
+		ferromagneticDomain << <dimGrid, dimBlock >> > (d_ferroDom, d_oddPsi, dimensions);
+		cudaMemcpy(h_ferroDom, d_ferroDom, bodies * sizeof(double), cudaMemcpyDeviceToHost);
+		drawFerroDom(h_ferroDom, xsize, ysize, zsize, t - 202.03);
 #endif
 
 		// integrate one iteration
@@ -1128,17 +1185,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		// Copy back from device memory to host memory
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
-		// Measure wall clock time
-		static auto prevTime = std::chrono::high_resolution_clock::now();
-		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
-		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
-
-		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t - 200);
-
-		cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
-		cudaMemcpy(h_v, d_v, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
-		cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
-
 		double4 magDens = getMagnetizationAndDensity(dimGrid, dimBlock, d_magnetization, d_density, d_oddPsi, dimensions, bodies, volume);
 		times += ", " + toString(t);
 		bqString += ", " + toString(Bs.Bq);
@@ -1148,7 +1194,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		magZ += ", " + toString(magDens.z);
 		densityStr += ", " + toString(magDens.w);
 
-		if ((int(t) % 5) == 0)
+		if (t > END_TIME) //if ((int(t) % 5) == 0)
 		{
 			times += "];";
 			bqString += "];";
@@ -1194,7 +1240,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 				return 0;
 			}
 		}
-		prevTime = std::chrono::high_resolution_clock::now();
 #endif
 	}
 #endif

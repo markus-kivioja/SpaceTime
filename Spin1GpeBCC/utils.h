@@ -290,6 +290,98 @@ void drawUtheta(const double3* uPtr, const double* thetaPtr, const size_t xSize,
 	pic1.save("results/u_v_theta_" + toString(t) + "ms.bmp", false);
 }
 
+void drawFerroDom(const double* ferroDomPtr, const size_t xSize, const size_t ySize, const size_t zSize, const double t)
+{
+	const uint SIZE = 2;
+	const double INTENSITY = 1.0;
+
+	const int width = xSize * SIZE, height = ySize * SIZE, depth = zSize * SIZE;
+	Picture pic1(width, height * 2);
+
+	// XZ-plane
+	for (uint z = 0; z < depth; z += SIZE)
+	{
+		for (uint x = 0; x < width; x += SIZE)
+		{
+			double ferroDoms[4] = { 0, 0, 0, 0 };
+			uint counts[4] = { 0, 0, 0, 0 };
+
+			for (uint cellIdx = 0; cellIdx < VALUES_IN_BLOCK; ++cellIdx)
+			{
+				double3 localPos = getLocalPos(cellIdx);
+				int localX = (int)localPos.x;
+				int localZ = (int)localPos.z;
+				int localIdx = localZ * SIZE + localX;
+
+				double maxFerro = 0;
+				for (uint y = height / 2 - 10; y < height / 2 + 10; ++y)
+				{
+					const uint structIdx = VALUES_IN_BLOCK * ((z / SIZE) * xSize * ySize + (y / SIZE) * xSize + (x / SIZE));
+					const uint idx = structIdx + cellIdx;
+
+					maxFerro = max(maxFerro, ferroDomPtr[idx]);
+				}
+
+				ferroDoms[localIdx] += maxFerro;
+
+				counts[localIdx]++;
+			}
+
+			for (uint i = 0; i < 4; ++i)
+			{
+				double ferroDom = INTENSITY * ferroDoms[i] / counts[i];
+
+				pic1.setColor(x + (i % SIZE), z + (i / SIZE), Vector4(ferroDom, 0.0, 0.0, 1.0));
+			}
+		}
+	}
+
+	// XY-plane
+	for (uint y = 0; y < height; y += SIZE)
+	{
+		for (uint x = 0; x < width; x += SIZE)
+		{
+			double ferroDoms[4] = { 0, 0, 0, 0 };
+			uint counts[4] = { 0, 0, 0, 0 };
+
+			for (uint cellIdx = 0; cellIdx < VALUES_IN_BLOCK; ++cellIdx)
+			{
+				double3 localPos = getLocalPos(cellIdx);
+				int localX = (int)localPos.x;
+				int localY = (int)localPos.y;
+				int localIdx = localY * SIZE + localX;
+
+				double maxFerro = 0;
+				for (uint z = depth / 2 - 10; z < depth / 2 + 10; ++z)
+				{
+					const uint structIdx = VALUES_IN_BLOCK * ((z / SIZE) * xSize * ySize + (y / SIZE) * xSize + (x / SIZE));
+					const uint idx = structIdx + cellIdx;
+
+					maxFerro = max(maxFerro, ferroDomPtr[idx]);
+				}
+
+				ferroDoms[localIdx] += maxFerro;
+
+				counts[localIdx]++;
+			}
+
+			for (uint i = 0; i < 4; ++i)
+			{
+				double ferroDom = INTENSITY * ferroDoms[i] / counts[i];
+
+				pic1.setColor(x + (i % SIZE), height + y + (i / SIZE), Vector4(ferroDom, 0.0, 0.0, 1.0));
+			}
+		}
+	}
+
+	for (int x = 0; x < width; ++x)
+	{
+		pic1.setColor(x, height, Vector4(0.5, 0.5, 0.5, 1.0));
+	}
+
+	pic1.save("results/ferro_domain_" + toString(t) + "ms.bmp", false);
+}
+
 bool saveVolumeMap(const std::string& path, const Buffer<ushort>& vol, const uint xsize, const uint ysize, const uint zsize, const Vector3& h)
 {
 	Text rawpath;
