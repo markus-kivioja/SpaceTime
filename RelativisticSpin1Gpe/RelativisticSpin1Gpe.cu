@@ -74,14 +74,19 @@ constexpr double INV_SQRT_2 = 0.70710678118655;
 
 const std::string GROUND_STATE_FILENAME = "polar_ground_state.dat";
 
-constexpr uint SAVE_FREQUENCY = 1;
+constexpr uint SAVE_FREQUENCY = 10;
 
 #if USE_INITIAL_NOISE
 constexpr double NOISE_AMPLITUDE = 0.1;
 #endif
 
-constexpr double dt = 2e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
+constexpr double dt = 3e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 //constexpr double dt = 2e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
+
+#if RELATIVISTIC
+constexpr double sigma = 0.01;
+constexpr double dt_per_sigma = dt / sigma;
+#endif
 
 double t = 0; // Start time in ms
 constexpr double END_TIME = 350; // End time in ms
@@ -598,9 +603,9 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 	
 	Complex3Vec q;
-	q.s1 = dtime_per_sigma * (prev->values[dualEdgeId].s1 + d0psi.s1);
-	q.s0 = dtime_per_sigma * (prev->values[dualEdgeId].s0 + d0psi.s0);
-	q.s_1 = dtime_per_sigma * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
+	q.s1 = dt_per_sigma * (prev->values[dualEdgeId].s1 + d0psi.s1);
+	q.s0 = dt_per_sigma * (prev->values[dualEdgeId].s0 + d0psi.s0);
+	q.s_1 = dt_per_sigma * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
 
 	next->values[dualEdgeId].s1 += make_double2(-q.s1.y, q.s1.x);
 	next->values[dualEdgeId].s0 += make_double2(-q.s0.y, q.s0.x);
@@ -1101,7 +1106,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 		prevTime = std::chrono::high_resolution_clock::now();
 
-		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t);
+#if RELATIVISTIC
+		drawDensity("hyperbolic_", h_oddPsi, dxsize, dysize, dzsize, t);
+#else
+		drawDensity("parabolic_", h_oddPsi, dxsize, dysize, dzsize, t);
+#endif
 
 		//uvTheta << <dimGrid, psiDimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
 		//cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
@@ -1115,11 +1124,24 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		{
 #if RELATIVISTIC
 			// update odd values (imaginary terms)
-			update_psi << <psiDimGrid, dimBlock >> > (d_psiOdd, d_psiEven, d_qEven, d_pot, d_d1, d_hodges, g, dimensions);
-			update_q << <edgeDimGrid, dimBlock >> > (d_qOdd, d_qEven, d_psiEven, d_d0, dimensions, dt_per_sigma);
+			t += dt / omega_r * 1e3; // [ms]
+			signal = getSignal(t);
+			Bs.Bq = BqScale * signal.Bq;
+			Bs.Bz = BzScale * signal.Bz;
+			Bs.BqQuad = BqQuadScale * signal.Bq;
+			Bs.BzQuad = BzQuadScale * signal.Bz;
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
+			update_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_evenQ, d_evenPsi, d_d0, dimensions);
+
 			// update even values (real terms)
-			update_psi << <psiDimGrid, dimBlock >> > (d_psiEven, d_psiOdd, d_qOdd, d_pot, d_d1, d_hodges, g, dimensions);
-			update_q << <edgeDimGrid, dimBlock >> > (d_qEven, d_qOdd, d_psiOdd, d_d0, dimensions, dt_per_sigma);
+			t += dt / omega_r * 1e3; // [ms]
+			signal = getSignal(t);
+			Bs.Bq = BqScale * signal.Bq;
+			Bs.Bz = BzScale * signal.Bz;
+			Bs.BqQuad = BqQuadScale * signal.Bq;
+			Bs.BzQuad = BzQuadScale * signal.Bz;
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
+			update_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions);
 #else
 			// update odd values (imaginary terms)
 			t += dt / omega_r * 1e3; // [ms]
