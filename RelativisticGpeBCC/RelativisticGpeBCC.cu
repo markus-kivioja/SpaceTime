@@ -16,7 +16,7 @@ ddouble RATIO = 1.0;
 ddouble KAPPA = 10;
 ddouble G = 300;
 
-#define RELATIVISTIC 0
+#define RELATIVISTIC 1
 
 #define LOAD_STATE_FROM_DISK 1
 #define SAVE_PICTURE 1
@@ -116,7 +116,9 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 	double2 q = dtime_per_sigma * (prev->values[dualEdgeId] + d0psi);
 	next->values[dualEdgeId] += make_double2(-q.y, q.x);
 #else
-	next->values[dualEdgeId] = d0psi;
+	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * dataZid + prev_q.pitch * yid) + xid;
+	double2 q = d0psi - prev->values[dualEdgeId];
+	next->values[dualEdgeId] += make_double2(q.x, q.y);
 #endif
 }
 
@@ -257,7 +259,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	// compute time step size
 	//const uint steps_per_iteration = uint(iteration_period * (maxpot + lapfac0)) + 1;
 #if RELATIVISTIC
-	const uint steps_per_iteration = 185; // 185 is the min stable for hyperbolic
+	const uint steps_per_iteration = 499; // 185 is the min stable for hyperbolic
 #else
 	const uint steps_per_iteration = 522; // ... and 522 for the parabolic
 #endif
@@ -409,7 +411,8 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	const uint time0 = clock();
 	const ddouble volume = (IS_3D ? block_scale : 1.0) * block_scale * block_scale * VOLUME;
 #if RELATIVISTIC
-	update_q << <edgeDimGrid, dimBlock >> > (d_qEven, d_qEven, d_psiEven, d_d0, dimensions, dt_per_sigma / (dt - dt_per_sigma));
+	update_q << <edgeDimGrid, dimBlock >> > (d_qOdd, d_qEven, d_psiEven, d_d0, dimensions, dt_per_sigma / (dt - dt_per_sigma));
+	update_q << <edgeDimGrid, dimBlock >> > (d_qEven, d_qOdd, d_psiOdd, d_d0, dimensions, dt_per_sigma / (dt - dt_per_sigma));
 #endif
 	while (true)
 	{
@@ -577,7 +580,7 @@ int main(int argc, char** argv)
 	//std::cout << "maxf=" << state.searchFunctionMax() << std::endl;
 #endif
 
-	const int number_of_iterations = 100;
+	const int number_of_iterations = 10;
 	const ddouble iteration_period = 1.0;
 	const ddouble block_scale = PIx2 / (20.0 * sqrt(state.integrateCurvature()));
 
@@ -592,7 +595,7 @@ int main(int argc, char** argv)
 	std::cout << "dual edge length = " << DUAL_EDGE_LENGTH * block_scale << std::endl;
 
 	// Integrate in time using DEC
-	const ddouble sigma = 0.01;
+	const ddouble sigma = 0.002; //0.008;
 	integrateInTime(state, block_scale, Vector3(-maxr, -maxr, -maxz), Vector3(maxr, maxr, maxz), iteration_period, number_of_iterations, sigma);
 
 	return 0;

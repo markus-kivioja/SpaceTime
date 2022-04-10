@@ -16,13 +16,21 @@ enum class RampType
 	FAST_EXTRACTION
 };
 
+#define ENABLE_DECAY_BIAS 0
+
 std::array<double, 4> Bqs = { 4.3, 4.3, 0.0, 0.0 };
 std::array<double, 4> BqDurations = { 10.0, 192.03, 0.2, 2000.0 };
 std::array<RampType, 4> BqTypes = { RampType::LINEAR, RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT };
 
+#if ENABLE_DECAY_BIAS
 std::array<double, 6> Bzs = { 1.0, 0.045, 0.045, 0, 1.2, 1.2 };
 std::array<double, 6> BzDurations = { 10, 10, 2.02, 180, 0.5, 2000.0 };
 std::array<RampType, 6> BzTypes = { RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT, RampType::LINEAR, RampType::FAST_EXTRACTION, RampType::CONSTANT };
+#else
+std::array<double, 6> Bzs = { 1.0, 0.045, 0.045, 0, 0 };
+std::array<double, 6> BzDurations = { 10, 10, 2.02, 180, 2000.0 };
+std::array<RampType, 6> BzTypes = { RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT };
+#endif
 
 Signal getSignal(double t)
 {

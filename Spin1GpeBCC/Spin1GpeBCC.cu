@@ -18,7 +18,7 @@
 #define USE_QUADRUPOLE_OFFSET 1
 #define USE_INITIAL_NOISE 1
 #define SAVE_STATES 1
-#define COMPUTE_GROUND_STATE 0
+#define COMPUTE_GROUND_STATE 1
 #define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
@@ -71,6 +71,7 @@ constexpr double SQRT_2 = 1.41421356237309;
 constexpr double INV_SQRT_2 = 0.70710678118655;
 
 const std::string GROUND_STATE_FILENAME = "polar_ground_state.dat";
+const std::string SAVE_FILE_PREFIX = "no_bias_";
 
 constexpr uint SAVE_FREQUENCY = 10000;
 
@@ -79,7 +80,7 @@ constexpr double NOISE_AMPLITUDE = 0.1;
 //constexpr double dt = 2e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 constexpr double dt = 2e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-double t = 300.120749869229427986; // Start time in ms
+double t = 200.080499887228796752; // Start time in ms
 constexpr double END_TIME = 302; // End time in ms
 
 inline __device__ __inline__ double trap(double3 p)
@@ -414,12 +415,13 @@ __global__ void polarState(PitchedPtr psi, uint3 dimensions)
 };
 
 #if COMPUTE_GROUND_STATE
-__global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restrict__ laplace, double* __restrict__ hodges, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double alpha)
+__global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __restrict__ laplace, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
 	const size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
 	const size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+	const size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
 
 	// Exit leftover threads
 	if (dataXid > dimensions.x || yid > dimensions.y || zid > dimensions.z)
@@ -437,7 +439,6 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restrict__
 	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + dataXid;
 
 	// Update psi
-	const size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
 	const Complex3Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
 	ldsPrevPsis[threadIdxInBlock].values[dualNodeId] = prev;
 
@@ -489,35 +490,36 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restrict__
 	}
 
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
-	const double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
 	const double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
-	const double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
+	const double normSq = normSq_s1 + (prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y) + normSq_s_1;
 
-	const double3 localPos = getLocalPos(dualNodeId);
+	const double3 localPos = d_localPos[dualNodeId];
 	const double3 globalPos = { p0.x + block_scale * (dataXid * BLOCK_WIDTH_X + localPos.x),
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
-		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z));
+		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 	const double totalPot = trap(globalPos) + c0 * normSq;
 
 	H.s1 += totalPot * prev.s1;
 	H.s0 += totalPot * prev.s0;
 	H.s_1 += totalPot * prev.s_1;
 
-	const double2 temp = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
-	const double3 magnetization = { temp.x, temp.y, normSq_s1 - normSq_s_1);
-	double3 B = c2 * magnetization;
+	const double2 magXY = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
+	double3 B = c2 * double3{ magXY.x, magXY.y, normSq_s1 - normSq_s_1 };
 
 	// Linear Zeeman shift
-	double2 Bxy = INV_SQRT_2 * { B.x, B.y);
-	double2 BxyConj = conj(Bxy);
+	const double2 Bxy = INV_SQRT_2 * double2{ B.x, B.y };
+	const double2 BxyConj = conj(Bxy);
 	H.s1 += (B.z * prev.s1 + BxyConj * prev.s0);
 	H.s0 += (Bxy * prev.s1 + BxyConj * prev.s_1);
 	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
 
-	nextPsi->values[dualNodeId].s1 = prev.s1 - dt * double2{ H.s1.x, H.s1.y};
-	nextPsi->values[dualNodeId].s0 = prev.s0 - dt * double2{ H.s0.x, H.s0.y};
-	nextPsi->values[dualNodeId].s_1 = prev.s_1 - dt* double2{ H.s_1.x, H.s_1.y };
+	nextPsi->values[dualNodeId].s1 = prev.s1 - dt * double2{ H.s1.x, H.s1.y };
+	nextPsi->values[dualNodeId].s0 = prev.s0 - dt * double2{ H.s0.x, H.s0.y };
+	nextPsi->values[dualNodeId].s_1 = prev.s_1 - dt * double2{ H.s_1.x, H.s_1.y };
 };
+
+__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restrict__ laplace, double* __restrict__ hodges, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2)
+{};
 #else
 __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restrict__ laplace, double* __restrict__ hodges, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2)
 {
@@ -900,21 +902,18 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	memset(h_oddPsi, 0, hostSize * sizeof(BlockPsis));
 
 	double* h_density;
-	double3* h_magnetization;
 	double3* h_u;
-	double3* h_v;
 	double* h_theta;
 	double* h_ferroDom;
 	checkCudaErrors(cudaMallocHost(&h_density, bodies * sizeof(double)));
-	checkCudaErrors(cudaMallocHost(&h_magnetization, bodies * sizeof(double3)));
 	checkCudaErrors(cudaMallocHost(&h_u, bodies * sizeof(double3)));
-	checkCudaErrors(cudaMallocHost(&h_v, bodies * sizeof(double3)));
 	checkCudaErrors(cudaMallocHost(&h_theta, bodies * sizeof(double)));
 	checkCudaErrors(cudaMallocHost(&h_ferroDom, bodies * sizeof(double)));
 
 #if COMPUTE_GROUND_STATE
 	// Initialize discrete field
-	Random rnd(54363);
+	std::default_random_engine generator;
+	std::normal_distribution<double> distribution(0.0, 1.0);
 	for (uint k = 0; k < zsize; k++)
 	{
 		for (uint j = 0; j < ysize; j++)
@@ -924,16 +923,21 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 				for (uint l = 0; l < bsize; l++)
 				{
 					const uint dstI = (k + 1) * dxsize * dysize + (j + 1) * dxsize + (i + 1);
-					const Vector2 s1 = rnd.getUniformCircle();
-					const Vector2 s0 = rnd.getUniformCircle();
-					const Vector2 s_1 = rnd.getUniformCircle();
-					h_evenPsi[dstI].values[l].s1 = {s1.x, s1.y};
-					h_evenPsi[dstI].values[l].s0 = {s0.x, s0.y};
-					h_evenPsi[dstI].values[l].s_1 = { s_1.x, s_1.y };
+					const double2 s1{ distribution(generator), distribution(generator) };
+					const double2 s0{ distribution(generator), distribution(generator) };
+					const double2 s_1{ distribution(generator), distribution(generator) };
+					h_evenPsi[dstI].values[l].s1 = s1;
+					h_evenPsi[dstI].values[l].s0 = s0;
+					h_evenPsi[dstI].values[l].s_1 = s_1;
+
+					h_oddPsi[dstI].values[l].s1 = s1;
+					h_oddPsi[dstI].values[l].s0 = s0;
+					h_oddPsi[dstI].values[l].s_1 = s_1;
 				}
 			}
 		}
 	}
+	bool doForward = false;
 #else
 	bool loadGroundState = (t == 0);
 	std::string filename = loadGroundState ? GROUND_STATE_FILENAME : toString(t) + ".dat";
@@ -1074,12 +1078,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	uint iter = 0;
 
 	normalize_h(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+	normalize_h(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 
 	while (true)
 	{
-		if ((iter % 6000) == 0) std::cout << "Iteration " << iter << std::endl;
+		if ((iter % 100) == 0) std::cout << "Iteration " << iter << std::endl;
 #if SAVE_PICTURE
-		if ((iter % SAVE_FREQUENCY) == 0)
+		if ((iter % 100) == 0)
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
 			drawDensity("GS", h_evenPsi, dxsize, dysize, dzsize, iter);
@@ -1097,12 +1102,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			return 0;
 		}
 		// Take an imaginary time step
-		itp << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, dimensions, block_scale, d_p0, c0, c2, alpha);
+		itp << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
 		// Normalize
 		normalize_h(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 
 		// Take an imaginary time step
-		itp << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, dimensions, block_scale, d_p0, c0, c2, alpha);
+		itp << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
 		// Normalize
 		normalize_h(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 
@@ -1150,7 +1155,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 		uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
 		cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
-		cudaMemcpy(h_v, d_v, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
 		cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
 		drawUtheta(h_u, h_theta, xsize, ysize, zsize, t - 202.03);
 
@@ -1194,7 +1198,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		magZ += ", " + toString(magDens.z);
 		densityStr += ", " + toString(magDens.w);
 
-		if (t > END_TIME) //if ((int(t) % 5) == 0)
+		if ((int(t) % 5) == 0)
 		{
 			times += "];";
 			bqString += "];";
@@ -1212,15 +1216,15 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			textFile << magY << std::endl;
 			textFile << magZ << std::endl;
 			textFile << densityStr << std::endl;
-			textFile.save(toString(t) + ".m");
+			textFile.save(SAVE_FILE_PREFIX + toString(t) + ".m");
 
-			std::ofstream oddFs(toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
+			std::ofstream oddFs(SAVE_FILE_PREFIX + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
 			if (oddFs.fail() != 0) return 1;
 			oddFs.write((char*)&h_oddPsi[0], hostSize * sizeof(BlockPsis));
 			oddFs.close();
 
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-			std::ofstream evenFs("even_" + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
+			std::ofstream evenFs(SAVE_FILE_PREFIX + "even_" + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
 			if (evenFs.fail() != 0) return 1;
 			evenFs.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
 			evenFs.close();
