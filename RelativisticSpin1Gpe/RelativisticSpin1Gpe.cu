@@ -407,9 +407,9 @@ __global__ void itp_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3
 	q.s0 = dt_per_sigma * (prev->values[dualEdgeId].s0 + d0psi.s0);
 	q.s_1 = dt_per_sigma * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
 
-	next->values[dualEdgeId].s1 -= make_double2(q.s1.x, q.s1.y);
-	next->values[dualEdgeId].s0 -= make_double2(q.s0.x, q.s0.y);
-	next->values[dualEdgeId].s_1 -= make_double2(q.s_1.x, q.s_1.y);
+	next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1 - make_double2(q.s1.x, q.s1.y);
+	next->values[dualEdgeId].s0 = prev->values[dualEdgeId].s0 - make_double2(q.s0.x, q.s0.y);
+	next->values[dualEdgeId].s_1 = prev->values[dualEdgeId].s_1 - make_double2(q.s_1.x, q.s_1.y);
 #else
 	next->values[dualEdgeId] = d0psi;
 #endif
@@ -991,6 +991,20 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	oddPsiParams.extent = psiExtent;
 	oddPsiParams.kind = cudaMemcpyHostToDevice;
 
+	// TODO: Implement a possibility to save and load q states.
+	//cudaMemcpy3DParms evenQParams = { 0 };
+	//cudaMemcpy3DParms oddQParams = { 0 };
+	//
+	//evenQParams.srcPtr = h_cudaEvenQ;
+	//evenQParams.dstPtr = d_cudaEvenQ;
+	//evenQParams.extent = psiExtent;
+	//evenQParams.kind = cudaMemcpyHostToDevice;
+	//
+	//oddQParams.srcPtr = h_cudaOddPsi;
+	//oddQParams.dstPtr = d_cudaOddPsi;
+	//oddQParams.extent = psiExtent;
+	//oddQParams.kind = cudaMemcpyHostToDevice;
+
 	checkCudaErrors(cudaMemcpy3D(&evenPsiParams));
 	checkCudaErrors(cudaMemcpy3D(&oddPsiParams));
 	checkCudaErrors(cudaMemcpy(d_d0, &d0[0], d0.size() * sizeof(int3), cudaMemcpyHostToDevice));
@@ -1056,12 +1070,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 	normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
+	itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions);
+	itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions);
 
 	while (true)
 	{
-		if ((iter % 100) == 0) std::cout << "Iteration " << iter << std::endl;
+		if ((iter % 1000) == 0) std::cout << "Iteration " << iter << std::endl;
 #if SAVE_PICTURE
-		if ((iter % 100) == 0)
+		if ((iter % 1000) == 0)
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
 			drawDensity("GS", h_evenPsi, dxsize, dysize, dzsize, iter);
@@ -1070,7 +1086,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 		if (iter == 100000)
 		{
-			polarState << <dimGrid, psiDimBlock >> > (d_evenPsi, dimensions);
+			//polarState << <dimGrid, psiDimBlock >> > (d_evenPsi, dimensions);
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
 			std::ofstream fs(GROUND_STATE_FILENAME, std::ios::binary | std::ios_base::trunc);
 			if (fs.fail() != 0) return 1;
@@ -1078,6 +1094,19 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			fs.close();
 			return 0;
 		}
+#if RELATIVISTIC
+		// Take an imaginary time step
+		itp_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
+		// Normalize
+		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_evenQ, d_evenPsi, d_d0, dimensions);
+
+		// Take an imaginary time step
+		itp_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
+		// Normalize
+		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions);
+#else
 		// Take an imaginary time step
 		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions);
 		itp_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
@@ -1089,6 +1118,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		itp_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+#endif
 
 		//energy_h(dimGrid, dimBlock, d_energy, d_evenPsi, d_pot, d_lapind, d_hodges, g, dimensions, volume, bodies);
 		//double hDensity = 0;

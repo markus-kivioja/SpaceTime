@@ -77,8 +77,8 @@ constexpr uint SAVE_FREQUENCY = 10000;
 
 constexpr double NOISE_AMPLITUDE = 0.1;
 
-//constexpr double dt = 2e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
-constexpr double dt = 2e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
+constexpr double dt = 2e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
+//constexpr double dt = 2e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
 double t = 200.080499887228796752; // Start time in ms
 constexpr double END_TIME = 302; // End time in ms
@@ -1082,9 +1082,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	while (true)
 	{
-		if ((iter % 100) == 0) std::cout << "Iteration " << iter << std::endl;
+		if ((iter % 1000) == 0) std::cout << "Iteration " << iter << std::endl;
 #if SAVE_PICTURE
-		if ((iter % 100) == 0)
+		if ((iter % 1000) == 0)
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
 			drawDensity("GS", h_evenPsi, dxsize, dysize, dzsize, iter);
