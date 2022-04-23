@@ -2,65 +2,65 @@
 #define UTILS
 
 #include <cuda_runtime.h>
-#include <helper_cuda.h>
+#include "helper_cuda.h"
 
 #include "VortexState.hpp"
-#include <Output/Picture.hpp>
-#include <Output/Text.hpp>
-#include <Types/Complex.hpp>
+#include "Output/Picture.hpp"
+#include "Output/Text.hpp"
+#include "Types/Complex.hpp"
 
-#include <mesh.h>
+#include "mesh.h"
 
 // Arithmetic operators for cuda vector types
-inline __host__ __device__ __inline__ double2 operator+(double2 a, double2 b)
+__host__ __device__ __inline__ double2 operator+(double2 a, double2 b)
 {
 	return { a.x + b.x, a.y + b.y };
 }
-inline __host__ __device__ __inline__ double3 operator+(double3 a, double3 b)
+__host__ __device__ __inline__ double3 operator+(double3 a, double3 b)
 {
 	return { a.x + b.x, a.y + b.y, a.z + b.z };
 }
-inline __host__ __device__ __inline__ double2 operator-(double2 a, double2 b)
+__host__ __device__ __inline__ double2 operator-(double2 a, double2 b)
 {
 	return { a.x - b.x, a.y - b.y };
 }
-inline __host__ __device__ __inline__ void operator+=(double2& a, double2 b)
+__host__ __device__ __inline__ void operator+=(double2& a, double2 b)
 {
 	a.x += b.x;
 	a.y += b.y;
 }
-inline __host__ __device__ __inline__ void operator+=(double3& a, double3 b)
+__host__ __device__ __inline__ void operator+=(double3& a, double3 b)
 {
 	a.x += b.x;
 	a.y += b.y;
 	a.z += b.z;
 }
-inline __host__ __device__ __inline__ void operator-=(double2& a, double2 b)
+__host__ __device__ __inline__ void operator-=(double2& a, double2 b)
 {
 	a.x -= b.x;
 	a.y -= b.y;
 }
-inline __host__ __device__ __inline__ double2 operator*(double b, double2 a)
+__host__ __device__ __inline__ double2 operator*(double b, double2 a)
 {
 	return { b * a.x, b * a.y };
 }
-inline __host__ __device__ __inline__ double3 operator*(double b, double3 a)
+__host__ __device__ __inline__ double3 operator*(double b, double3 a)
 {
 	return { b * a.x, b * a.y, b * a.z };
 }
-inline __host__ __device__ __inline__ double3 operator/(double3 a, double b)
+__host__ __device__ __inline__ double3 operator/(double3 a, double b)
 {
 	return { a.x / b, a.y / b, a.z / b };
 }
-inline __host__ __device__ __inline__ double2 operator/(double2 a, double b)
+__host__ __device__ __inline__ double2 operator/(double2 a, double b)
 {
 	return { a.x / b, a.y / b };
 }
-inline __host__ __device__ __inline__ double2 conj(double2 a) // Complex conjugate
+__host__ __device__ __inline__ double2 conj(double2 a) // Complex conjugate
 {
 	return { a.x, -a.y };
 }
-inline __host__ __device__ __inline__ double2 operator*(double2 a, double2 b) // Complex number multiplication
+__host__ __device__ __inline__ double2 operator*(double2 a, double2 b) // Complex number multiplication
 {
 	return { a.x * b.x - a.y * b.y, a.y * b.x + a.x * b.y };
 }
@@ -382,63 +382,133 @@ void drawFerroDom(const double* ferroDomPtr, const size_t xSize, const size_t yS
 	pic1.save("results/ferro_domain_" + toString(t) + "ms.bmp", false);
 }
 
-bool saveVolumeMap(const std::string& path, const Buffer<ushort>& vol, const uint xsize, const uint ysize, const uint zsize, const Vector3& h)
+template <typename T>
+void swapEnd(T& var)
 {
-	Text rawpath;
-	rawpath << path << ".raw";
-
-	// save raw
-	std::ofstream fs(rawpath.str().c_str(), std::ios_base::binary | std::ios::trunc);
-	if (fs.fail()) return false;
-	fs.write((char*)&vol[0], 2 * xsize * ysize * zsize);
-	fs.close();
-
-	// save header
-	Text text;
-
-	text << "ObjectType              = Image" << std::endl;
-	text << "NDims                   = 3" << std::endl;
-	text << "BinaryData              = True" << std::endl;
-	text << "CompressedData          = False" << std::endl;
-	text << "BinaryDataByteOrderMSB  = False" << std::endl;
-	text << "TransformMatrix         = 1 0 0 0 1 0 0 0 1" << std::endl;
-	text << "Offset                  = " << -0.5 * xsize * h.x << " " << -0.5 * ysize * h.y << " " << -0.5 * zsize * h.z << std::endl;
-	text << "CenterOfRotation        = 0 0 0" << std::endl;
-	text << "DimSize                 = " << xsize << " " << ysize << " " << zsize << std::endl;
-	text << "ElementSpacing          = " << h.x << " " << h.y << " " << h.z << std::endl;
-	text << "ElementNumberOfChannels = 1" << std::endl;
-	text << "ElementType             = MET_USHORT" << std::endl;
-	text << "ElementDataFile         = " << rawpath.str() << std::endl;
-	text.save(path);
-	return true;
+	char* varArray = reinterpret_cast<char*>(&var);
+	for (long i = 0; i < static_cast<long>(sizeof(var) / 2); i++)
+		std::swap(varArray[sizeof(var) - 1 - i], varArray[i]);
 }
 
-void saveVolume(const std::string& name, BlockPsis* h_evenPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, uint iter, double block_scale)
+void saveVolume(const std::string& name, BlockPsis* h_evenPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, uint iter, double block_scale, double3 p0)
 {
-	// save volume map
-	const double fmax = 1.0f; // state.searchFunctionMax();
-	const double unit = 60000.0 / (bsize * fmax * fmax);
-	Buffer<ushort> vol(dxsize * dysize * dzsize);
-	for (uint k = 0; k < dzsize; k++)
+	std::ofstream file;
+	file.open(name, std::ios::out | std::ios::binary);
+
+	file << "# vtk DataFile Version 3.0" << std::endl
+	<< "Comment if needed" << std::endl;
+
+	file << "BINARY" << std::endl;
+
+	uint64_t pointCount = dxsize * dysize * dzsize * bsize;
+
+	file << "DATASET POLYDATA" << std::endl << "POINTS " << pointCount << " float" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
 	{
-		for (uint j = 0; j < dysize; j++)
+		for (uint x = 0; x < dxsize; ++x)
 		{
-			for (uint i = 0; i < dxsize; i++)
+			for (uint y = 0; y < dysize; ++y)
 			{
-				const uint idx = k * dxsize * dysize + j * dxsize + i;
-				double sum = 0.0;
-				for (uint l = 0; l < bsize; l++)
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					sum += h_evenPsi[idx].values[0].s1.x * h_evenPsi[idx].values[0].s1.x + h_evenPsi[idx].values[0].s1.y * h_evenPsi[idx].values[0].s1.y;
+					double3 localPos = getLocalPos(dualNode);
+					double3 doubleGlobalPos = { p0.x + block_scale * (x * BLOCK_WIDTH_X + localPos.x),
+						p0.y + block_scale * (y * BLOCK_WIDTH_Y + localPos.y),
+						p0.z + block_scale * (z * BLOCK_WIDTH_Z + localPos.z) };
+					float3 globalPos = float3{ (float)doubleGlobalPos.x, (float)doubleGlobalPos.y, (float)doubleGlobalPos.z };
+
+					swapEnd(globalPos.x);
+					swapEnd(globalPos.y);
+					swapEnd(globalPos.z);
+					
+					file.write((char*)&globalPos.x, sizeof(float));
+					file.write((char*)&globalPos.y, sizeof(float));
+					file.write((char*)&globalPos.z, sizeof(float));
 				}
-				sum *= unit;
-				vol[idx] = (sum > 65535.0 ? 65535 : ushort(sum));
 			}
 		}
 	}
-	Text volpath;
-	volpath << "volume" << iter << ".mhd";
-	saveVolumeMap(volpath.str(), vol, dxsize, dysize, dzsize, block_scale * BLOCK_WIDTH);
+
+	file << "POINT_DATA " << pointCount << std::endl;
+	file << "SCALARS s1 float 1" << std::endl;
+	file << "LOOKUP_TABLE default" << std::endl;
+	
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					double norm_s1 = h_evenPsi[idx].values[dualNode].s1.x * h_evenPsi[idx].values[dualNode].s1.x + h_evenPsi[idx].values[dualNode].s1.y * h_evenPsi[idx].values[dualNode].s1.y;
+
+					float density = (float)(norm_s1);
+					swapEnd(density);
+					file.write((char*)&density, sizeof(float));
+				}
+			}
+		}
+	}
+
+	file << "POINT_DATA " << pointCount << std::endl;
+	file << "SCALARS s0 float 1" << std::endl;
+	file << "LOOKUP_TABLE default" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					double norm_s0 = h_evenPsi[idx].values[dualNode].s0.x * h_evenPsi[idx].values[dualNode].s0.x + h_evenPsi[idx].values[dualNode].s0.y * h_evenPsi[idx].values[dualNode].s0.y;
+
+					float density = (float)(norm_s0);
+					swapEnd(density);
+					file.write((char*)&density, sizeof(float));
+				}
+			}
+		}
+	}
+
+	file << "POINT_DATA " << pointCount << std::endl;
+	file << "SCALARS s-1 float 1" << std::endl;
+	file << "LOOKUP_TABLE default" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					double norm_s_1 = h_evenPsi[idx].values[dualNode].s_1.x * h_evenPsi[idx].values[dualNode].s_1.x + h_evenPsi[idx].values[dualNode].s_1.y * h_evenPsi[idx].values[dualNode].s_1.y;
+
+					float density = (float)(norm_s_1);
+					swapEnd(density);
+					file.write((char*)&density, sizeof(float));
+				}
+			}
+		}
+	}
+
+	//file << "VERTICES " << pointCount << " " << pointCount << std::endl;
+	//for (int i = 0; i < pointCount; ++i)
+	//{
+	//	int swapped = i;
+	//	swapEnd(swapped);
+	//	file.write((char*)&swapped, sizeof(int));
+	//}
+
+	file << std::endl;
+	file.close();
 }
 
 #endif // UTILS
