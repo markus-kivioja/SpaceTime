@@ -22,7 +22,7 @@ enum GridType
 	COUNT
 };
 
-constexpr double scales[] = { 1.00, 2.51, 2.27, 3.91, 5.39, 3.70 };
+const double scales[] = { 1.00, 2.51, sqrt(8), 3.91, 5.39, 3.70 };
 // integration times = 1.9923, 1.9928, 1.9826, 1.9852, 1.9265, 1.9898
 
 ddouble potentialRZ(const ddouble r, const ddouble z)
@@ -48,7 +48,7 @@ void generateCode() // generates code section for different grid structures
 	const Vector3 dim(SQ3,3,1); // maximum block coordinates
 */
 	//for (GridType gridType = CUBIC; gridType < GridType::COUNT; gridType = (GridType)(gridType + 1))
-	GridType gridType = C15;
+	GridType gridType = BCC;
 	{
 		uint i, j, k;
 		DelaunayMesh mesh(3);
@@ -76,7 +76,7 @@ void generateCode() // generates code section for different grid structures
 			mesh.createBccGrid(scale * Vector3(-1.125, -1.125, -1.125), scale * Vector3(1.875, 1.875, 1.875), scale);
 			dim = Vector3(scale, scale, scale); // maximum block coordinates
 			//filename = "../../GrossPitaevskiiGpuBcc/mesh.h";
-			filename = "../../RelativisticGpeBCC/mesh.h";
+			filename = "../../RelativisticGpeBCC/mesh2.h";
 			gridName = "BCC";
 			break;
 		case A15:

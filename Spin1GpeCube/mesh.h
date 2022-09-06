@@ -11,7 +11,10 @@ constexpr double BLOCK_WIDTH_Y = 1; // dimensions of unit block
 constexpr double BLOCK_WIDTH_Z = 1; // dimensions of unit block
 const double VOLUME = 1; // volume of body elements
 const bool IS_3D = true; // 3-dimensional
-__host__ __device__ double3 getLocalPos(int dualZeroCellIndex)
+
+__constant__ double3 d_localPos[VALUES_IN_BLOCK] = { { 0.5, 0.5, 0.5 } };
+
+double3 getLocalPos(int dualZeroCellIndex)
 {
 	double3 pos[VALUES_IN_BLOCK];
 	pos[0] = make_double3(0.5, 0.5, 0.5);

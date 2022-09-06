@@ -32,7 +32,7 @@ public:
 	Vector4 *getPixels() { return &m_pixels[0]; }
 
 	bool addPicture(const Picture &pic);
-	void setColor(const uint x, const uint y, const Vector4 &color) { m_pixels[m_width * y + x] = color; }
+	void setColor(const uint x, const uint y, const Vector4 &color) { if (x < m_width) m_pixels[m_width * y + x] = color; }
 	void addColor(const uint x, const uint y, const Vector4 &color) { m_pixels[m_width * y + x] += color; }
 	void multiplyColor(const uint x, const uint y, const Vector4 &color);
 
