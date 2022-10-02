@@ -99,11 +99,11 @@ std::string toString(const double value)
 	return out.str();
 };
 
-void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t, MagFields Bs, const double3 p0, double block_scale)
+void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t)
 {
 	const int SIZE = 2;
-	const double INTENSITY = 0.4;
-	const double MAG_ZERO = 0.195;
+	const double INTENSITY = 1.0;
+
 	const int width = dxsize * SIZE, height = dysize * SIZE, depth = dzsize * SIZE;
 	Picture pic1(width * 3, height * 2);
 
@@ -115,7 +115,6 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 			double norm_s1 = 0;
 			double norm_s0 = 0;
 			double norm_s_1 = 0;
-			double minB = 99999999999999.9;
 			for (uint j = 0; j < height; j++)
 			{
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
@@ -124,38 +123,19 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 					norm_s1 += h_evenPsi[idx].values[dualNode].s1.x * h_evenPsi[idx].values[dualNode].s1.x + h_evenPsi[idx].values[dualNode].s1.y * h_evenPsi[idx].values[dualNode].s1.y;
 					norm_s0 += h_evenPsi[idx].values[dualNode].s0.x * h_evenPsi[idx].values[dualNode].s0.x + h_evenPsi[idx].values[dualNode].s0.y * h_evenPsi[idx].values[dualNode].s0.y;
 					norm_s_1 += h_evenPsi[idx].values[dualNode].s_1.x * h_evenPsi[idx].values[dualNode].s_1.x + h_evenPsi[idx].values[dualNode].s_1.y * h_evenPsi[idx].values[dualNode].s_1.y;
+				}
+			}
 
-					//if ((j / SIZE) == dysize / 2)
-					{
-						double3 localPos = getLocalPos(dualNode);
-						const double3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
-													p0.y + block_scale * (((j - 1) / SIZE) * BLOCK_WIDTH_Y + localPos.y),
-													p0.z + block_scale * (((k - 1) / SIZE) * BLOCK_WIDTH_Z + localPos.z) };
+			const double s1 = INTENSITY * norm_s1;
+			const double s0 = INTENSITY * norm_s0;
+			const double s_1 = INTENSITY * norm_s_1;
 
-						double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
-						minB = min(minB, sqrt(B.x * B.x + B.y * B.y + B.z * B.z));
-					}
-				}	
-			}
-			//std::cout << minB << std::endl;
-			if (minB < MAG_ZERO)
-			{
-				pic1.setColor(i, k, Vector4(1, 0, 0, 1.0));
-				pic1.setColor(width + i, k, Vector4(1, 0, 0, 1.0));
-				pic1.setColor(2 * width + i, k, Vector4(1, 0, 0, 1.0));
-			}
-			else
-			{
-				const double s1 = INTENSITY * norm_s1;
-				const double s0 = INTENSITY * norm_s0;
-				const double s_1 = INTENSITY * norm_s_1;
-				pic1.setColor(i, k, Vector4(s1, s1, s1, 1.0));
-				pic1.setColor(width + i, k, Vector4(s0, s0, s0, 1.0));
-				pic1.setColor(2 * width + i, k, Vector4(s_1, s_1, s_1, 1.0));
-			}
+			pic1.setColor(i, k, Vector4(s1, s1, s1, 1.0));
+			pic1.setColor(width + i, k, Vector4(s0, s0, s0, 1.0));
+			pic1.setColor(2 * width + i, k, Vector4(s_1, s_1, s_1, 1.0));
 		}
 	}
-	
+
 	// XY-plane
 	for (uint j = 0; j < height; j++)
 	{
@@ -164,7 +144,6 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 			double norm_s1 = 0;
 			double norm_s0 = 0;
 			double norm_s_1 = 0;
-			double minB = 99999999999999.9;
 			for (uint k = 0; k < depth; ++k)
 			{
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
@@ -173,35 +152,16 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 					norm_s1 += h_evenPsi[idx].values[dualNode].s1.x * h_evenPsi[idx].values[dualNode].s1.x + h_evenPsi[idx].values[dualNode].s1.y * h_evenPsi[idx].values[dualNode].s1.y;
 					norm_s0 += h_evenPsi[idx].values[dualNode].s0.x * h_evenPsi[idx].values[dualNode].s0.x + h_evenPsi[idx].values[dualNode].s0.y * h_evenPsi[idx].values[dualNode].s0.y;
 					norm_s_1 += h_evenPsi[idx].values[dualNode].s_1.x * h_evenPsi[idx].values[dualNode].s_1.x + h_evenPsi[idx].values[dualNode].s_1.y * h_evenPsi[idx].values[dualNode].s_1.y;
-
-					//if ((k / SIZE) == dzsize / 2)
-					{
-						double3 localPos = getLocalPos(dualNode);
-						const double3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
-													p0.y + block_scale * (((j - 1) / SIZE) * BLOCK_WIDTH_Y + localPos.y),
-													p0.z + block_scale * (((k - 1) / SIZE) * BLOCK_WIDTH_Z + localPos.z) };
-
-						double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
-						minB = min(minB, sqrt(B.x * B.x + B.y * B.y + B.z * B.z));
-					}
 				}
 			}
-			if (minB < MAG_ZERO)
-			{
-				pic1.setColor(i, height + j, Vector4(1, 0, 0, 1.0));
-				pic1.setColor(width + i, height + j, Vector4(1, 0, 0, 1.0));
-				pic1.setColor(2 * width + i, height + j, Vector4(1, 0, 0, 1.0));
-			}
-			else
-			{
-				const double s1 = INTENSITY * norm_s1;
-				const double s0 = INTENSITY * norm_s0;
-				const double s_1 = INTENSITY * norm_s_1;
 
-				pic1.setColor(i, height + j, Vector4(s1, s1, s1, 1.0));
-				pic1.setColor(width + i, height + j, Vector4(s0, s0, s0, 1.0));
-				pic1.setColor(2 * width + i, height + j, Vector4(s_1, s_1, s_1, 1.0));
-			}
+			const double s1 = INTENSITY * norm_s1;
+			const double s0 = INTENSITY * norm_s0;
+			const double s_1 = INTENSITY * norm_s_1;
+
+			pic1.setColor(i, height + j, Vector4(s1, s1, s1, 1.0));
+			pic1.setColor(width + i, height + j, Vector4(s0, s0, s0, 1.0));
+			pic1.setColor(2 * width + i, height + j, Vector4(s_1, s_1, s_1, 1.0));
 		}
 	}
 
@@ -215,26 +175,7 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 		pic1.setColor(2 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
 	}
 
-	uint axisOffsetX = 5;
-	uint axisOffsetY = 5;
-	Picture xzAxis;
-	Picture xyAxis;
-	xzAxis.load("xz_axis.bmp");
-	xyAxis.load("xy_axis.bmp");
-	for (uint x = 0; x < 60; ++x)
-	{
-		for (uint y = 0; y < 61; ++y)
-		{
-			Vector4 color = xzAxis.getColor(x, y);
-			pic1.setColor(axisOffsetX + x, axisOffsetY + y, color);
-
-			color = xyAxis.getColor(x, y);
-			pic1.setColor(axisOffsetX + x, height + axisOffsetY + y, color);
-		}
-	}
-
-	//pic1.save("results/" + name + toString(t) + "ms.bmp", false);
-	pic1.save("mag_pos.bmp", false);
+	pic1.save("results/" + name + toString(t) + "ms.bmp", false);
 }
 
 void drawDensityRgb(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t)
@@ -268,7 +209,7 @@ void drawDensityRgb(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize
 			const double s0 = INTENSITY * norm_s0;
 			const double s_1 = INTENSITY * norm_s_1;
 
-			pic1.setColor(i + width * 0.5 * 0.2, k, Vector4(s1, s_1, s0, 1.0));
+			pic1.setColor(i, k, Vector4(s1, s_1, s0, 1.0));
 		}
 	}
 
@@ -295,7 +236,7 @@ void drawDensityRgb(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize
 			const double s0 = INTENSITY * norm_s0;
 			const double s_1 = INTENSITY * norm_s_1;
 
-			pic1.setColor(width + i + width * 0.5 * 0.2, j, Vector4(s1, s_1, s0, 1.0));
+			pic1.setColor(width + i, j, Vector4(s1, s_1, s0, 1.0));
 		}
 	}
 
@@ -385,7 +326,7 @@ void drawUtheta(const double3* uPtr, const double* thetaPtr, const size_t xSize,
 	{
 		for (uint x = 0; x < width; x += SIZE)
 		{
-			double3 us[4] = { 
+			double3 us[4] = {
 				double3{ 0, 0, 0 },
 				double3{ 0, 0, 0 },
 				double3{ 0, 0, 0 },
@@ -417,7 +358,7 @@ void drawUtheta(const double3* uPtr, const double* thetaPtr, const size_t xSize,
 
 				u = U_INTENSITY * u;
 				double theta = THETA_INTENSITY * sqrt(norm) * thetas[i] / counts[i] / PI;
-			
+
 				pic1.setColor(x + (i % SIZE), height + y + (i / SIZE), Vector4(u.x, u.y, u.z, 1.0));
 				pic1.setColor(width + x + (i % SIZE), height + y + (i / SIZE), Vector4(-theta, theta, 0.0, 1.0));
 			}
@@ -444,7 +385,7 @@ void swapEnd(T& var)
 		std::swap(varArray[sizeof(var) - 1 - i], varArray[i]);
 }
 
-constexpr double DENSITY_THRESHOLD = 0.0007;
+constexpr double DENSITY_THRESHOLD = 0.0001;
 constexpr double DISTANCE_THRESHOLD = 4;
 
 void saveVolume(const std::string& namePrefix, BlockPsis* pPsi, double3* pLocalAvgSpin, double3* pu, double* pTheta, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, uint iter, double block_scale, double3 p0, double t)
@@ -453,7 +394,7 @@ void saveVolume(const std::string& namePrefix, BlockPsis* pPsi, double3* pLocalA
 	file.open("vtks/" + namePrefix + std::to_string(t) + ".vtk", std::ios::out | std::ios::binary);
 
 	file << "# vtk DataFile Version 3.0" << std::endl
-	<< "Comment if needed" << std::endl;
+		<< "Comment if needed" << std::endl;
 
 	file << "BINARY" << std::endl;
 
@@ -478,7 +419,7 @@ void saveVolume(const std::string& namePrefix, BlockPsis* pPsi, double3* pLocalA
 					swapEnd(globalPos.x);
 					swapEnd(globalPos.y);
 					swapEnd(globalPos.z);
-					
+
 					file.write((char*)&globalPos.x, sizeof(float));
 					file.write((char*)&globalPos.y, sizeof(float));
 					file.write((char*)&globalPos.z, sizeof(float));
@@ -490,7 +431,7 @@ void saveVolume(const std::string& namePrefix, BlockPsis* pPsi, double3* pLocalA
 	file << std::endl << "POINT_DATA " << pointCount << std::endl;
 	file << "SCALARS density float 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
-	
+
 	for (uint z = 0; z < dzsize; ++z)
 	{
 		for (uint x = 0; x < dxsize; ++x)
@@ -561,7 +502,6 @@ void saveVolume(const std::string& namePrefix, BlockPsis* pPsi, double3* pLocalA
 
 	size_t xStride = dxsize - 2;
 	size_t yStride = dysize - 2;
-	size_t zStride = dzsize - 2;
 
 	for (uint z = 0; z < dzsize; ++z)
 	{
@@ -578,7 +518,7 @@ void saveVolume(const std::string& namePrefix, BlockPsis* pPsi, double3* pLocalA
 					double normSq_s_1 = pPsi[psiIdx].values[dualNode].s_1.x * pPsi[psiIdx].values[dualNode].s_1.x + pPsi[psiIdx].values[dualNode].s_1.y * pPsi[psiIdx].values[dualNode].s_1.y;
 					double density = normSq_s1 + normSq_s0 + normSq_s_1;
 
-					if ((z > 0) && (y > 0) && (x > 0) && 
+					if ((z > 0) && (y > 0) && (x > 0) &&
 						(z < dzsize - 1) && (y < dysize - 1) && (x < dxsize - 1))
 					{
 						const size_t idx = VALUES_IN_BLOCK * ((z - 1) * xStride * yStride + (y - 1) * xStride + (x - 1)) + dualNode;
@@ -767,7 +707,7 @@ double3 centerOfMass(BlockPsis* h_evenPsi, size_t bsize, size_t dxsize, size_t d
 		}
 	}
 
-	return com 	/ totDens;
+	return com / totDens;
 }
 
 #endif // UTILS
