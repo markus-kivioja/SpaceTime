@@ -97,9 +97,9 @@ Signal getSignal(double t)
 	//	exit(1);
 	//	break;
 	//}
-	Signal signal;
-	signal.Bq = 4.3;
-	signal.Bz = 0.0025;
+	Signal signal{0};
+	//signal.Bq = 4.3;
+	//signal.Bz = 0.0025;
 
 	return signal;
 }
