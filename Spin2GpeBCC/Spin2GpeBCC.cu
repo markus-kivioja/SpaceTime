@@ -1,6 +1,12 @@
 #include <cuda_runtime.h>
 #include "helper_cuda.h"
 
+#define Z_QUANTIZED 0
+#define Y_QUANTIZED 1
+#define X_QUANTIZED 2
+
+#define BASIS Z_QUANTIZED
+
 //#include "AliceRingRamps.h"
 #include "KnotRamps.h"
 
@@ -21,7 +27,7 @@
 #define CREATE_KNOT 0
 #define CREATE_SKYRMION 1
 
-#define USE_QUADRATIC_ZEEMAN 1
+#define USE_QUADRATIC_ZEEMAN 0
 #define USE_QUADRUPOLE_OFFSET 0
 #define USE_INITIAL_NOISE 0
 
@@ -81,7 +87,7 @@ constexpr double SQRT_2 = 1.41421356237309;
 //constexpr double INV_SQRT_2 = 0.70710678118655;
 
 const std::string GROUND_STATE_FILENAME = "ground_state.dat";
-const std::string SAVE_FILE_PREFIX = "long_";
+const std::string SAVE_FILE_PREFIX = "";
 
 constexpr double NOISE_AMPLITUDE = 0; //0.1;
 
@@ -94,7 +100,7 @@ const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-constexpr double END_TIME = 0.6; // End time in ms
+constexpr double END_TIME = 0.65; // End time in ms
 
 __device__ __inline__ double trap(double3 p)
 {
@@ -976,9 +982,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	std::cout << "Dual 0-cells in total: " << bodies << std::endl;
 
 	// Initialize device memory
-	size_t dxsize = xsize + 2; // One element buffer to both ends
-	size_t dysize = ysize + 2; // One element buffer to both ends
-	size_t dzsize = zsize + 2; // One element buffer to both ends
+	const size_t dxsize = xsize + 2; // One element buffer to both ends
+	const size_t dysize = ysize + 2; // One element buffer to both ends
+	const size_t dzsize = zsize + 2; // One element buffer to both ends
 	cudaExtent psiExtent = make_cudaExtent(dxsize * sizeof(BlockPsis), dysize, dzsize);
 
 	cudaPitchedPtr d_cudaEvenPsi;
@@ -1320,8 +1326,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		// Copy back from device memory to host memory
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
-
-
 		// Measure wall clock time
 		static auto prevTime = std::chrono::high_resolution_clock::now();
 		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
@@ -1332,15 +1336,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.Bq = BqScale * signal.Bq;
 		Bs.Bb = BzScale * signal.Bb;
 		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t - 0.1, Bs, d_p0, block_scale);
-
-		//uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
-		//cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
-		//cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
-		//drawUtheta(h_u, h_theta, xsize, ysize, zsize, t - 202.03);
-		//
-		//ferromagneticDomain << <dimGrid, dimBlock >> > (d_ferroDom, d_oddPsi, dimensions);
-		//cudaMemcpy(h_ferroDom, d_ferroDom, bodies * sizeof(double), cudaMemcpyDeviceToHost);
-		//drawFerroDom(h_ferroDom, xsize, ysize, zsize, t - 202.03);
 #endif
 
 		// integrate one iteration
@@ -1369,70 +1364,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		// Copy back from device memory to host memory
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
-		localAvgSpinAndDensity << <dimGrid, dimBlock >> > (d_spinNorm, d_localAvgSpin, d_density, d_oddPsi, dimensions);
-		cudaMemcpy(h_localAvgSpin, d_localAvgSpin, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
-		uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
-		cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
-		cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
-		if (t > 19.9)
-			saveVolume(SAVE_FILE_PREFIX, h_oddPsi, h_localAvgSpin, h_u, h_theta, bsize, dxsize, dysize, dzsize, 0, block_scale, d_p0, t);
+		if (t - 0.1 > 0.2)
+			//saveVolume(SAVE_FILE_PREFIX, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - 0.1);
+			saveSpinor(SAVE_FILE_PREFIX, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - 0.1);
 
-		SpinMagDens spinMagDens = integrateSpinAndDensity(dimGrid, dimBlock, d_spinNorm, d_localAvgSpin, d_density, bodies, volume);
-		times += ", " + toString(t);
-		bqString += ", " + toString(Bs.Bq);
-		bbString += ", " + toString(Bs.Bb.x + Bs.Bb.y + Bs.Bb.z);
-		spinString += ", " + toString(spinMagDens.spin);
-		magX += ", " + toString(spinMagDens.magnetization.x);
-		magY += ", " + toString(spinMagDens.magnetization.y);
-		magZ += ", " + toString(spinMagDens.magnetization.z);
-		densityStr += ", " + toString(spinMagDens.density);
-
-		if (((int(t) % STATE_SAVE_INTERVAL) == 0) && (int(t) != lastSaveTime))
-		{
-			times += "];";
-			bqString += "];";
-			bbString += "];";
-			spinString += "];";
-			magX += "];";
-			magY += "];";
-			magZ += "];";
-			densityStr += "];";
-
-			Text textFile;
-			textFile << times << std::endl;
-			textFile << bqString << std::endl;
-			textFile << bbString << std::endl;
-			textFile << spinString << std::endl;
-			textFile << magX << std::endl;
-			textFile << magY << std::endl;
-			textFile << magZ << std::endl;
-			textFile << densityStr << std::endl;
-			textFile.save(SAVE_FILE_PREFIX + toString(t) + ".m");
-
-			std::ofstream oddFs(SAVE_FILE_PREFIX + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
-			if (oddFs.fail() != 0) return 1;
-			oddFs.write((char*)&h_oddPsi[0], hostSize * sizeof(BlockPsis));
-			oddFs.close();
-
-			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-			std::ofstream evenFs(SAVE_FILE_PREFIX + "even_" + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
-			if (evenFs.fail() != 0) return 1;
-			evenFs.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
-			evenFs.close();
-
-			std::cout << "Saved the state!" << std::endl;
-
-			times = std::string("times = [times");
-			bqString = std::string("Bq = [Bq");
-			bbString = std::string("Bb = [Bb");
-			spinString = std::string("Spin = [Spin");
-			magX = std::string("mag_x = [mag_x");
-			magY = std::string("mag_y = [mag_y");
-			magZ = std::string("mag_z = [mag_z");
-			densityStr = std::string("norm = [norm");
-
-			lastSaveTime = int(t);
-		}
 		if (t > END_TIME)
 		{
 			return 0;
@@ -1472,6 +1407,7 @@ int main(int argc, char** argv)
 #elif CREATE_SKYRMION
 	std::cout << "Create skyrmion" << std::endl;
 #endif
+	printBasis();
 
 	// integrate in time using DEC
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
