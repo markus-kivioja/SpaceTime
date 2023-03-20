@@ -3,8 +3,8 @@ from mayavi.mlab import *
 from tvtk.api import tvtk
 from scipy.special import sph_harm
 
-#filename = '0.502515.vtk'
-filename = '0.241425.vtk'
+filename = '0.502515.vtk'
+#filename = '0.241425.vtk'
 
 use_spherical_harmonics = True
 #use_spherical_harmonics = False
@@ -210,10 +210,11 @@ def draw_sph_harm(psi, location):
     mag_sqr = (np.conj(Y) * Y).real
     phase = np.angle(Y)
 
-    #for i in range(len(phase)):
-    #    for j in range(len(phase[i])):
-    #        if abs(abs(phase[i][j]) - np.pi) < 0.000001:
-    #            phase[i][j] = np.pi
+    for i in range(len(phase)):
+        for j in range(len(phase[i])):
+            #if abs(abs(phase[i][j]) - np.pi) < 0.01:
+            if 1 < phase[i][j]:
+                phase[i][j] = -np.pi
 
     points = np.array([sphere_x, sphere_y, sphere_z]) * mag_sqr
     mesh(
@@ -332,20 +333,19 @@ def draw_on_axis():
                 draw_majorana(psi, location, z_idx == 0)
 
 def draw_preimage(vec):
-    for x_idx in range(BLOCK_COUNT_X):
-        #if x_idx % 2 == 0:
-        for y_idx in range(BLOCK_COUNT_Y):
-                #if y_idx % 2 == 0:
-            for z_idx in range(BLOCK_COUNT_Z):
-                        #if z_idx % 2 == 0:
+    ignore_width = 18
+    z_ignore_width = 44
+    for x_idx in range(ignore_width, BLOCK_COUNT_X - ignore_width):
+        for y_idx in range(ignore_width, BLOCK_COUNT_Y - ignore_width):
+            for z_idx in range(z_ignore_width, BLOCK_COUNT_Z - z_ignore_width):
                 idx = z_idx * z_stride + y_idx * y_stride + x_idx * x_stride
 
                 psi = [
-                    m2_r[idx] + m2_i[idx]*1j,
-                    m1_r[idx] + m1_i[idx]*1j,
-                    m0_r[idx] + m0_i[idx]*1j,
-                    m_1_r[idx] + m_1_i[idx]*1j,
-                    m_2_r[idx] + m_2_i[idx]*1j
+                    m2_r[idx]  + m2_i[idx]  * 1j,
+                    m1_r[idx]  + m1_i[idx]  * 1j,
+                    m0_r[idx]  + m0_i[idx]  * 1j,
+                    m_1_r[idx] + m_1_i[idx] * 1j,
+                    m_2_r[idx] + m_2_i[idx] * 1j
                 ]
                 location = [
                     (x_idx - BLOCK_COUNT_X / 2) * GAP_SCALE,
@@ -353,13 +353,19 @@ def draw_preimage(vec):
                     (z_idx - BLOCK_COUNT_Z / 2) * GAP_SCALE
                 ]
 
-                normal = get_normal(psi)
-                epsilon = 0.1
-                if np.linalg.norm(normal - vec) < epsilon or np.linalg.norm(-normal - vec) < epsilon:
-                    draw_majorana(psi, location, False)
+                max_m0 = np.sqrt(6) / np.sqrt(8)
+                epsilon = 0.01
+                epsilon2 = 0.08
+                box_width = (BLOCK_COUNT_X / 5)
+                in_center_box = (abs(x_idx - BLOCK_COUNT_X / 2) < box_width) and (abs(y_idx - BLOCK_COUNT_Y / 2) < box_width) and (abs(z_idx - BLOCK_COUNT_Y / 2) < box_width)
+                if ((max_m0 - epsilon) < abs(psi[2])) or (in_center_box and ((max_m0 - epsilon2) < abs(psi[2]))):
+                    if use_spherical_harmonics:
+                        draw_sph_harm(psi, location)
+                    else:
+                        draw_majorana(psi, location, False)
 
-draw_on_axis()
-#draw_preimage(np.array([0, 0, 1]))
+#draw_on_axis()
+draw_preimage(np.array([0, 0, 1]))
 
 if not use_spherical_harmonics:
     mesh = triangular_mesh(
