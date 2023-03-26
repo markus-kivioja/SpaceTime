@@ -7,6 +7,42 @@
 
 #define BASIS Z_QUANTIZED
 
+enum class Phase {
+	UN = 0,
+	BN_VERT,
+	BN_HORI,
+	CYCLIC
+};
+constexpr Phase initPhase = Phase::BN_HORI;
+
+std::string phaseToString(Phase phase)
+{
+	switch (phase)
+	{
+	case Phase::UN:
+		return "un";
+	case Phase::BN_VERT:
+		return "bn_vert";
+	case Phase::BN_HORI:
+		return "bn_hori";
+	case Phase::CYCLIC:
+		return "cyclic";
+	default:
+		return "";
+	}
+}
+
+std::string getProjectionString()
+{
+#if BASIS == X_QUANTIZED
+	return "proj_x";
+#elif BASIS == Y_QUANTIZED
+	return "proj_y";
+#elif BASIS == Z_QUANTIZED
+	return "proj_z";
+#endif
+}
+
 //#include "AliceRingRamps.h"
 #include "KnotRamps.h"
 
@@ -23,9 +59,6 @@
 #include "mesh.h"
 
 #define COMPUTE_GROUND_STATE 0
-
-#define CREATE_KNOT 0
-#define CREATE_SKYRMION 1
 
 #define USE_QUADRATIC_ZEEMAN 0
 #define USE_QUADRUPOLE_OFFSET 0
@@ -87,8 +120,6 @@ constexpr double SQRT_2 = 1.41421356237309;
 //constexpr double INV_SQRT_2 = 0.70710678118655;
 
 const std::string GROUND_STATE_FILENAME = "ground_state.dat";
-const std::string SAVE_FILE_PREFIX = "";
-
 constexpr double NOISE_AMPLITUDE = 0; //0.1;
 
 //constexpr double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
@@ -100,7 +131,7 @@ const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-constexpr double END_TIME = 0.65; // End time in ms
+constexpr double END_TIME = 0.8; // End time in ms
 
 __device__ __inline__ double trap(double3 p)
 {
@@ -449,6 +480,43 @@ __global__ void verticalBnState(PitchedPtr psi, uint3 dimensions, double phase =
 	pPsi->values[dualNodeId].s1 = { amplitude, 0 };
 	pPsi->values[dualNodeId].s0 = { 0, 0 };
 	pPsi->values[dualNodeId].s_1 = { cos(phase) * amplitude, sin(phase) * amplitude };
+	pPsi->values[dualNodeId].s_2 = { 0, 0 };
+};
+
+__global__ void cyclicState(PitchedPtr psi, uint3 dimensions, double phase = 0) // Cyclic phase
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	BlockPsis* pPsi = (BlockPsis*)(psi.ptr + psi.slicePitch * zid + psi.pitch * yid) + dataXid;
+
+	// Update psi
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	Complex5Vec prev = pPsi->values[dualNodeId];
+
+	double normSq_s2 = prev.s2.x * prev.s2.x + prev.s2.y * prev.s2.y;
+	double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
+	double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
+	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
+	double normSq_s_2 = prev.s_2.x * prev.s_2.x + prev.s_2.y * prev.s_2.y;
+	double normSq = normSq_s2 + normSq_s1 + normSq_s0 + normSq_s_1 + normSq_s_2;
+
+	double amplitude_m2 = sqrt(normSq * 1 / 3);
+	double amplitude_m_1 = sqrt(normSq * 2 / 3);
+
+	pPsi->values[dualNodeId].s2 = { amplitude_m2, 0 };
+	pPsi->values[dualNodeId].s1 = { 0, 0 };
+	pPsi->values[dualNodeId].s0 = { 0, 0 };
+	pPsi->values[dualNodeId].s_1 = { cos(phase) * amplitude_m_1, sin(phase) * amplitude_m_1 };
 	pPsi->values[dualNodeId].s_2 = { 0, 0 };
 };
 
@@ -1095,7 +1163,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	bool doForward = false;
 #else
 	bool loadGroundState = (t == 0);
-	std::string filename = loadGroundState ? GROUND_STATE_FILENAME : SAVE_FILE_PREFIX + toString(t) + ".dat";
+	std::string filename = loadGroundState ? GROUND_STATE_FILENAME : toString(t) + ".dat";
 	std::ifstream fs(filename, std::ios::binary | std::ios::in);
 	if (fs.fail() != 0)
 	{
@@ -1139,7 +1207,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 
 	bool doForward = true;
-	std::string evenFilename = SAVE_FILE_PREFIX + "even_" + toString(t) + ".dat";
+	std::string evenFilename = "even_" + toString(t) + ".dat";
 	std::ifstream evenFs(evenFilename, std::ios::binary | std::ios::in);
 	if (evenFs.fail() == 0)
 	{
@@ -1217,16 +1285,30 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	if (loadGroundState)
 	{
-#if CREATE_KNOT
-		std::cout << "Transform ground state to uniaxial nematic phase." << std::endl;
-		unState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions);
-#elif CREATE_SKYRMION
 		const double PHASE = 0;// PI / 2;
-		std::cout << "Transform ground state to vertically oriented biaxial nematic phase with a phase of " << PHASE << "." << std::endl;
-		verticalBnState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, PHASE);
-#endif
-		//std::cout << "Transform ground state to horizontally oriented biaxial nematic phase with a phase of " << PHASE << "." << std::endl;
-		//horizontalBnState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, PHASE);
+
+		switch (initPhase)
+		{
+		case Phase::UN:
+			std::cout << "Transform ground state to uniaxial nematic phase." << std::endl;
+			unState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions);
+			break;
+		case Phase::BN_VERT:
+			std::cout << "Transform ground state to vertically oriented biaxial nematic phase with a phase of " << PHASE << "." << std::endl;
+			verticalBnState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, PHASE);
+			break;
+		case Phase::BN_HORI:
+			std::cout << "Transform ground state to horizontally oriented biaxial nematic phase with a phase of " << PHASE << "." << std::endl;
+			horizontalBnState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, PHASE);
+			break;
+		case Phase::CYCLIC:
+			std::cout << "Transform ground state to cyclic phase with a phase of " << PHASE << "." << std::endl;
+			cyclicState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, PHASE);
+			break;
+		default:
+			std::cout << "Initial phase " << (int)initPhase << " is not supported!";
+			break;
+		}
 
 		printDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 	}
@@ -1320,6 +1402,22 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	int lastSaveTime = 0;
 
+	std::string dirPrefix = phaseToString(initPhase) + "\\" + getProjectionString() + "\\";
+
+	std::string densDir = dirPrefix + "dens";
+	std::string vtksDir = dirPrefix + "dens_vtks";
+	std::string spinorVtksDir = dirPrefix + "spinor_vtks";
+	std::string datsDir = dirPrefix + "dats";
+
+	std::string createResultsDirCommand = "mkdir " + densDir;
+	std::string createVtksDirCommand = "mkdir " + vtksDir;
+	std::string createSpinorVtksDirCommand = "mkdir " + spinorVtksDir;
+	std::string createDatsDirCommand = "mkdir " + datsDir;
+	system(createResultsDirCommand.c_str());
+	system(createVtksDirCommand.c_str());
+	system(createSpinorVtksDirCommand.c_str());
+	system(createDatsDirCommand.c_str());
+
 	while (true)
 	{
 #if SAVE_PICTURE
@@ -1335,7 +1433,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		signal = getSignal(0);
 		Bs.Bq = BqScale * signal.Bq;
 		Bs.Bb = BzScale * signal.Bb;
-		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t - 0.1, Bs, d_p0, block_scale);
+		drawDensity(densDir, h_oddPsi, dxsize, dysize, dzsize, t - 0.1, Bs, d_p0, block_scale);
 #endif
 
 		// integrate one iteration
@@ -1365,8 +1463,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
 		if (t - 0.1 > 0.2)
-			//saveVolume(SAVE_FILE_PREFIX, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - 0.1);
-			saveSpinor(SAVE_FILE_PREFIX, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - 0.1);
+			saveVolume(vtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - 0.1);
+			//saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - 0.1);
 
 		if (t > END_TIME)
 		{

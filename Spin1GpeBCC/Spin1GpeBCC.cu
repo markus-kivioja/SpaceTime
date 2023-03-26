@@ -1,7 +1,8 @@
 #include <cuda_runtime.h>
 #include "helper_cuda.h"
 
-#include "AliceRingRamps.h"
+//#include "AliceRingRamps.h"
+#include "KnotRamps.h"
 
 #include "Output/Picture.hpp"
 #include "Output/Text.hpp"
@@ -12,6 +13,7 @@
 #include <sstream>
 #include <chrono>
 #include <random>
+#include <cstdlib>
 
 #include "mesh.h"
 
@@ -68,7 +70,7 @@ constexpr double muB = 9.27400968e-24; // [m^2 kg / s^2 T^-1] Bohr magneton
 const double BqScale = -(0.5 * muB / (hbar * omega_r) * a_r) / 100.; // [cm/Gauss]
 constexpr double BzScale = -(0.5 * muB / (hbar * omega_r)) / 10000.; // [1/Gauss]
 
-constexpr double A_hfs = 10.11734130545215;
+constexpr double A_hfs = 3.41734130545215;
 const double BqQuadScale = 100 * a_r * sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (trapFreq_r * 2 * A_hfs)); //[cm/Gauss]
 const double BzQuadScale = sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (trapFreq_r * 2 * A_hfs)); //[1/Gauss]  \sqrt{g_q}
 
@@ -83,16 +85,24 @@ constexpr double NOISE_AMPLITUDE = 0.1;
 double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 //double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-const float IMAGE_SAVE_INTERVAL = 1.0; // ms
+const double IMAGE_SAVE_INTERVAL = 0.1; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 220; // End time in ms
+double END_TIME = 5; // End time in ms
 
-__device__ __inline__ double trap(double3 p)
+double POLAR_FERRO_MIX = 0.0;
+
+constexpr double EXPANSION_START = 0.5;
+
+__device__ __inline__ double trap(double3 p, double t)
 {
+	if (t >= EXPANSION_START) {
+		return 0;
+	}
+
 	double x = p.x * lambda_x;
 	double y = p.y * lambda_y;
 	double z = p.z * lambda_z;
@@ -103,25 +113,25 @@ __constant__ double quadrupoleCenterX = -0.20590789;
 __constant__ double quadrupoleCenterY = -0.48902826;
 __constant__ double quadrupoleCenterZ = -0.27353409;
 
-__device__ __inline__ double3 magneticField(double3 p, double Bq, double Bz, bool USE_QUADRUPOLE_OFFSET)
+__device__ __inline__ double3 magneticField(double3 p, double Bq, double3 Bb, bool USE_QUADRUPOLE_OFFSET)
 {
 	if (USE_QUADRUPOLE_OFFSET)
 	{
 		return {
-			Bq * (p.x - quadrupoleCenterX),
-			Bq * (p.y - quadrupoleCenterY),
-			-2 * Bq * (p.z - quadrupoleCenterZ) + Bz
+			Bq * (p.x - quadrupoleCenterX) + Bb.x,
+			Bq * (p.y - quadrupoleCenterY) + Bb.y,
+			-2 * Bq * (p.z - quadrupoleCenterZ) + Bb.z
 		};
 	}
 	else
 	{
-		return { Bq * p.x, Bq * p.y, -2 * Bq * p.z + Bz };
+		return { Bq * p.x + Bb.x, Bq * p.y + Bb.y, -2 * Bq * p.z + Bb.z };
 	}
 }
 
 #include "utils.h"
 
-__global__ void maxHamilton(double* maxHamlPtr, PitchedPtr prevStep, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double alpha)
+__global__ void maxHamilton(double* maxHamlPtr, PitchedPtr prevStep, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double alpha, double t)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -150,13 +160,13 @@ __global__ void maxHamilton(double* maxHamlPtr, PitchedPtr prevStep, MagFields B
 	const double3 globalPos = { p0.x + block_scale * (dataXid * BLOCK_WIDTH_X + localPos.x),
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
-	const double totalPot = trap(globalPos) + c0 * normSq;
+	const double totalPot = trap(globalPos, t) + c0 * normSq;
 
 	double3 hamilton = { totalPot, totalPot, totalPot };
 
 	const double2 temp = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
 	const double3 magnetization = { temp.x, temp.y, normSq_s1 - normSq_s_1 };
-	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz, false);
+	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bb, false);
 	B += c2 * magnetization;
 
 	// Linear Zeeman shift
@@ -391,7 +401,7 @@ __global__ void normalize(double* density, PitchedPtr psiPtr, uint3 dimensions)
 	blockPsis->values[dualNodeId] = psi;
 }
 
-__global__ void polarState(PitchedPtr psi, uint3 dimensions)
+__global__ void polarState(PitchedPtr psi, const uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -421,8 +431,68 @@ __global__ void polarState(PitchedPtr psi, uint3 dimensions)
 	pPsi->values[dualNodeId].s_1 = { 0, 0 };
 };
 
+__global__ void ferromagneticState(PitchedPtr psi, const uint3 dimensions)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	BlockPsis* pPsi = (BlockPsis*)(psi.ptr + psi.slicePitch * zid + psi.pitch * yid) + dataXid;
+
+	// Update psi
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	Complex3Vec prev = pPsi->values[dualNodeId];
+
+	double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
+	double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
+	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
+	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
+
+	pPsi->values[dualNodeId].s1 = sqrt(normSq) * prev.s1 / sqrt(normSq_s1);
+	pPsi->values[dualNodeId].s0 = { 0, 0 };
+	pPsi->values[dualNodeId].s_1 = { 0, 0 };
+};
+
+__global__ void mixedState(PitchedPtr psi, const uint3 dimensions, const double polarFerroMix)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	BlockPsis* pPsi = (BlockPsis*)(psi.ptr + psi.slicePitch * zid + psi.pitch * yid) + dataXid;
+
+	// Update psi
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	Complex3Vec prev = pPsi->values[dualNodeId];
+
+	double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
+	double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
+	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
+	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
+
+	pPsi->values[dualNodeId].s1 = polarFerroMix * sqrt(normSq) * prev.s1 / sqrt(normSq_s1);
+	pPsi->values[dualNodeId].s0 = (1.0 - polarFerroMix) * sqrt(normSq) * prev.s0 / sqrt(normSq_s0);
+	pPsi->values[dualNodeId].s_1 = { 0, 0 };
+};
+
 #if COMPUTE_GROUND_STATE
-__global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __restrict__ laplace, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double dt)
+__global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __restrict__ laplace, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double dt, const double t)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -504,7 +574,7 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __rest
 	const double3 globalPos = { p0.x + block_scale * (dataXid * BLOCK_WIDTH_X + localPos.x),
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
-	const double totalPot = trap(globalPos) + c0 * normSq;
+	const double totalPot = trap(globalPos, t) + c0 * normSq;
 
 	H.s1 += totalPot * prev.s1;
 	H.s0 += totalPot * prev.s0;
@@ -528,7 +598,7 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __rest
 __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restrict__ laplace, double* __restrict__ hodges, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double alpha)
 {};
 #else
-__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restrict__ laplace, double* __restrict__ hodges, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double alpha, bool USE_THREE_BODY_LOSS, bool USE_QUADRATIC_ZEEMAN, bool USE_QUADRUPOLE_OFFSET, double dt)
+__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restrict__ laplace, double* __restrict__ hodges, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double alpha, bool USE_THREE_BODY_LOSS, bool USE_QUADRATIC_ZEEMAN, bool USE_QUADRUPOLE_OFFSET, double dt, const double t)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -611,7 +681,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __r
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 
-	double2 totalPot = { trap(globalPos) + c0 * normSq, 0 };
+	double2 totalPot = { trap(globalPos, t) + c0 * normSq, 0 };
 	if (USE_THREE_BODY_LOSS)
 	{
 		totalPot.y = -alpha * normSq * normSq;
@@ -622,7 +692,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __r
 	H.s_1 += totalPot * prev.s_1;
 
 	const double2 magXY = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
-	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz, USE_QUADRUPOLE_OFFSET);
+	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bb, USE_QUADRUPOLE_OFFSET);
 	B += c2 * double3{ magXY.x, magXY.y, normSq_s1 - normSq_s_1 };
 
 	// Linear Zeeman shift
@@ -635,7 +705,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __r
 	if (USE_QUADRATIC_ZEEMAN)
 	{
 		// Quadratic Zeeman shift
-		B = magneticField(globalPos, Bs.BqQuad, Bs.BzQuad, USE_QUADRUPOLE_OFFSET);
+		B = magneticField(globalPos, Bs.BqQuad, Bs.BbQuad, USE_QUADRUPOLE_OFFSET);
 		Bxy = INV_SQRT_2 * double2{ B.x, B.y };
 		BxyConj = conj(Bxy);
 		double BxyNormSq = (BxyConj * Bxy).x;
@@ -654,7 +724,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __r
 	nextPsi->values[dualNodeId].s_1 = prev.s_1 + dt * double2{ H.s_1.y, -H.s_1.x };
 };
 
-__global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __restrict__ laplace, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double alpha, bool USE_THREE_BODY_LOSS, bool USE_QUADRATIC_ZEEMAN, bool USE_QUADRUPOLE_OFFSET, double dt)
+__global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __restrict__ laplace, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double alpha, bool USE_THREE_BODY_LOSS, bool USE_QUADRATIC_ZEEMAN, bool USE_QUADRUPOLE_OFFSET, double dt, const double t)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -720,7 +790,7 @@ __global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, const int4* _
 			otherBoundaryZeroCell = ((BlockPsis*)(prevPsi + offset))->values[laplacian.w];
 		}
 
-		const double hodge = hodges[primaryFace];
+		const double hodge = hodges[primaryFace] / (block_scale * block_scale);
 		H.s1 += hodge * (otherBoundaryZeroCell.s1 - prev.s1);
 		H.s0 += hodge * (otherBoundaryZeroCell.s0 - prev.s0);
 		H.s_1 += hodge * (otherBoundaryZeroCell.s_1 - prev.s_1);
@@ -737,7 +807,7 @@ __global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, const int4* _
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 
-	double2 totalPot = { trap(globalPos) + c0 * normSq, 0 };
+	double2 totalPot = { trap(globalPos, t) + c0 * normSq, 0 };
 	if (USE_THREE_BODY_LOSS)
 	{
 		totalPot.y = -alpha * normSq * normSq;
@@ -748,7 +818,7 @@ __global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, const int4* _
 	H.s_1 += totalPot * prev.s_1;
 
 	const double2 magXY = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
-	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz, USE_QUADRUPOLE_OFFSET);
+	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bb, USE_QUADRUPOLE_OFFSET);
 	B += c2 * double3{ magXY.x, magXY.y, normSq_s1 - normSq_s_1 };
 
 	// Linear Zeeman shift
@@ -761,7 +831,7 @@ __global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, const int4* _
 	if (USE_QUADRATIC_ZEEMAN)
 	{
 		// Quadratic Zeeman shift
-		B = magneticField(globalPos, Bs.BqQuad, Bs.BzQuad, USE_QUADRUPOLE_OFFSET);
+		B = magneticField(globalPos, Bs.BqQuad, Bs.BbQuad, USE_QUADRUPOLE_OFFSET);
 		Bxy = INV_SQRT_2 * double2{ B.x, B.y };
 		BxyConj = conj(Bxy);
 		double BxyNormSq = (BxyConj * Bxy).x;
@@ -859,9 +929,9 @@ SpinMagDens integrateSpinAndDensity(dim3 dimGrid, dim3 dimBlock, double* spinNor
 	return { hSpinNorm, hMagnetization, hDensity };
 }
 
-float getMaxHamilton(dim3 dimGrid, dim3 dimBlock, double* maxHamlPtr, PitchedPtr psi, MagFields Bs, uint3 dimensions, size_t bodies, double block_scale, double3 p0)
+double getMaxHamilton(dim3 dimGrid, dim3 dimBlock, double* maxHamlPtr, PitchedPtr psi, MagFields Bs, uint3 dimensions, size_t bodies, double block_scale, double3 p0)
 {
-	maxHamilton << <dimGrid, dimBlock >> > (maxHamlPtr, psi, Bs, dimensions, block_scale, p0, c0, c2, alpha);
+	maxHamilton << <dimGrid, dimBlock >> > (maxHamlPtr, psi, Bs, dimensions, block_scale, p0, c0, c2, alpha, t);
 	int prevStride = bodies;
 	while (prevStride > 1)
 	{
@@ -889,10 +959,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	// compute discrete dimensions
 	const uint bsize = VALUES_IN_BLOCK; // bpos.size(); // number of values inside a block
 
-	std::cout << "Dual 0-cells in a replicable structure: " << bsize << std::endl;
-	std::cout << "Replicable structure instances in x: " << xsize << ", y: " << ysize << ", z: " << zsize << std::endl;
+	//std::cout << "Dual 0-cells in a replicable structure: " << bsize << std::endl;
+	//std::cout << "Replicable structure instances in x: " << xsize << ", y: " << ysize << ", z: " << zsize << std::endl;
 	uint64_t bodies = xsize * ysize * zsize * bsize;
-	std::cout << "Dual 0-cells in total: " << bodies << std::endl;
+	//std::cout << "Dual 0-cells in total: " << bodies << std::endl;
 
 	// Initialize device memory
 	size_t dxsize = xsize + 2; // One element buffer to both ends
@@ -940,7 +1010,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		std::cout << "Not using quadrupole field offset." << std::endl;
 	}
 
-	for (int i = 0; i < hodges.size(); ++i) hodges[i] = -0.5 * hodges[i] / (block_scale * block_scale);
+	for (int i = 0; i < hodges.size(); ++i) hodges[i] = -0.5 * hodges[i]; // / (block_scale * block_scale);
 
 	int4* d_lapind;
 	checkCudaErrors(cudaMalloc(&d_lapind, lapind.size() * sizeof(int4)));
@@ -1161,7 +1231,22 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			std::cout << "Density after normilizing the noised ground state:" << std::endl;
 			printDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 		}
-		polarState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions);
+		if (POLAR_FERRO_MIX == 0.0)
+		{
+			std::cout << "Transform ground state to polar phase" << std::endl;
+			polarState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions);
+		}
+		else if (POLAR_FERRO_MIX == 1.0)
+		{
+			std::cout << "Transform ground state to ferromagnetic phase" << std::endl;
+			ferromagneticState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions);
+		}
+		else
+		{
+			std::cout << "Transform ground state to mixed phase with a mix of " << POLAR_FERRO_MIX << std::endl;
+			mixedState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, POLAR_FERRO_MIX);
+		}
+
 		printDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 	}
 
@@ -1172,10 +1257,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 		signal = getSignal(t);
 		Bs.Bq = BqScale * signal.Bq;
-		Bs.Bz = BzScale * signal.Bz;
+		Bs.Bb = BzScale * signal.Bb;
 		Bs.BqQuad = BqQuadScale * signal.Bq;
-		Bs.BzQuad = BzQuadScale * signal.Bz;
-		forwardEuler << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt);
+		Bs.BbQuad = BzQuadScale * signal.Bb;
+		forwardEuler << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt, t);
 	}
 	else
 	{
@@ -1253,6 +1338,19 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	int lastSaveTime = 0;
 
+	std::string resultsDir = "results_" + std::to_string(POLAR_FERRO_MIX);
+	std::string vtksDir = "vtks_" + std::to_string(POLAR_FERRO_MIX);
+	std::string datsDir = "dats_" + std::to_string(POLAR_FERRO_MIX);
+
+	std::string createResultsDirCommand = "mkdir " + resultsDir;
+	std::string createVtksDirCommand = "mkdir " + vtksDir;
+	std::string createDatsDirCommand = "mkdir " + datsDir;
+	system(createResultsDirCommand.c_str());
+	system(createVtksDirCommand.c_str());
+	system(createDatsDirCommand.c_str());
+
+	double expansionBlockScale = block_scale;
+
 	while (true)
 	{
 #if SAVE_PICTURE
@@ -1265,7 +1363,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 		prevTime = std::chrono::high_resolution_clock::now();
 
-		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t - 202.03);
+		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t, resultsDir);
 
 		//uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
 		//cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
@@ -1282,21 +1380,29 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		{
 			// update odd values
 			t += dt / omega_r * 1e3; // [ms]
+			if (t >= EXPANSION_START) {
+				double k = 0.7569772335291065;
+				expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
+			}
 			signal = getSignal(t);
 			Bs.Bq = BqScale * signal.Bq;
-			Bs.Bz = BzScale * signal.Bz;
+			Bs.Bb = BzScale * signal.Bb;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
-			Bs.BzQuad = BzQuadScale * signal.Bz;
-			leapfrog << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt);
+			Bs.BbQuad = BzQuadScale * signal.Bb;
+			leapfrog << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt, t);
 
 			// update even values
 			t += dt / omega_r * 1e3; // [ms]
+			if (t >= EXPANSION_START) {
+				double k = 0.7569772335291065;
+				expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
+			}
 			signal = getSignal(t);
 			Bs.Bq = BqScale * signal.Bq;
-			Bs.Bz = BzScale * signal.Bz;
+			Bs.Bb = BzScale * signal.Bb;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
-			Bs.BzQuad = BzQuadScale * signal.Bz;
-			leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt);
+			Bs.BbQuad = BzQuadScale * signal.Bb;
+			leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt, t);
 		}
 
 #if SAVE_STATES
@@ -1308,12 +1414,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
 		cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
 		cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
-		saveVolume(SAVE_FILE_PREFIX, h_oddPsi, h_localAvgSpin, h_u, h_theta, bsize, dxsize, dysize, dzsize, 0, block_scale, d_p0, t - 202.03);
+		if (t > 19.9)
+			saveVolume(SAVE_FILE_PREFIX, h_oddPsi, h_localAvgSpin, h_u, h_theta, bsize, dxsize, dysize, dzsize, 0, block_scale, d_p0, t, vtksDir);
 
 		SpinMagDens spinMagDens = integrateSpinAndDensity(dimGrid, dimBlock, d_spinNorm, d_localAvgSpin, d_density, bodies, volume);
 		times += ", " + toString(t);
 		bqString += ", " + toString(Bs.Bq);
-		bzString += ", " + toString(Bs.Bz);
+		bzString += ", " + toString(Bs.Bb.x + Bs.Bb.y + Bs.Bb.z);
 		spinString += ", " + toString(spinMagDens.spin);
 		magX += ", " + toString(spinMagDens.magnetization.x);
 		magY += ", " + toString(spinMagDens.magnetization.y);
@@ -1340,15 +1447,15 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			textFile << magY << std::endl;
 			textFile << magZ << std::endl;
 			textFile << densityStr << std::endl;
-			textFile.save(SAVE_FILE_PREFIX + toString(t) + ".m");
+			textFile.save(datsDir + "/" + SAVE_FILE_PREFIX + toString(t) + ".m");
 
-			std::ofstream oddFs(SAVE_FILE_PREFIX + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
+			std::ofstream oddFs(datsDir + "/" + SAVE_FILE_PREFIX + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
 			if (oddFs.fail() != 0) return 1;
 			oddFs.write((char*)&h_oddPsi[0], hostSize * sizeof(BlockPsis));
 			oddFs.close();
 
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-			std::ofstream evenFs(SAVE_FILE_PREFIX + "even_" + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
+			std::ofstream evenFs(datsDir + "/" + SAVE_FILE_PREFIX + "even_" + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
 			if (evenFs.fail() != 0) return 1;
 			evenFs.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
 			evenFs.close();
@@ -1388,10 +1495,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 double sigma = 0.01;
 double dt_per_sigma = dt / sigma;
 
-void readConfFile()
+void readConfFile(const std::string& confFileName)
 {
 	std::ifstream file;
-	file.open("conf.conf", std::ios::in);
+	file.open(confFileName, std::ios::in);
 	if (file.is_open())
 	{
 		std::string line;
@@ -1432,20 +1539,36 @@ void readConfFile()
 			{
 				USE_THREE_BODY_LOSS = true;
 			}
+			else if (size_t pos = line.find("pol_fer") != std::string::npos)
+			{
+				POLAR_FERRO_MIX = std::stod(line.substr(pos + 7));
+			}
+			//else if (size_t pos = line.find("expand") != std::string::npos)
+			//{
+			//	EXPANSION_START = std::stod(line.substr(pos + 6));
+			//}
 		}
 	}
 }
 
 int main(int argc, char** argv)
 {
-	readConfFile();
+	if (argc > 1)
+	{
+		std::cout << "Read config " << argv[1] << std::endl;
+		readConfFile(std::string(argv[1]));
+	}
 
-	const double blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
+	const double targetBlockWidth = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X;
+	const double blockScale = targetBlockWidth / BLOCK_WIDTH_X;
 
 	std::cout << "Start simulating from t = " << t << " ms, with a time step size of " << dt << "." << std::endl;
 	std::cout << "The simulation will end at " << END_TIME << " ms." << std::endl;
-	std::cout << "Block scale = " << blockScale << std::endl;
-	std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
+	//std::cout << "Block scale = " << blockScale << std::endl;
+	//std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
+	std::cout << "Image save interval is " << IMAGE_SAVE_INTERVAL << std::endl;
+	std::cout << "Mix betweem polar and ferromagnetic phases = " << POLAR_FERRO_MIX << std::endl;
+	printBasis();
 
 	// integrate in time using DEC
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);

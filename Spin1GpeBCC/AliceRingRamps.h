@@ -3,10 +3,18 @@
 #include <array>
 #include <iostream>
 
+#define Z_QUANTIZED 0
+#define Y_QUANTIZED 1
+#define X_QUANTIZED 2
+
+#define BASIS Z_QUANTIZED
+
+#include "utils.h"
+
 struct Signal
 {
 	double Bq = 0;
-	double Bz = 0;
+	double3 Bb = { 0, 0, 0 };
 };
 
 enum class RampType
@@ -18,22 +26,50 @@ enum class RampType
 
 #define ENABLE_DECAY_BIAS 1
 
+//// Quadrupole ////
 std::array<double, 4> Bqs = { 4.3, 4.3, 0.0, 0.0 };
 std::array<double, 4> BqDurations = { 10.0, 192.03, 0.2, 2000.0 };
-//std::array<double, 4> BqDurations = { 10.0, 184.03, 0.2, 2000.0 };
 std::array<RampType, 4> BqTypes = { RampType::LINEAR, RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT };
 
+//// Bias ////
 #if ENABLE_DECAY_BIAS
-std::array<double, 6> Bzs = { 1.0, 0.045, 0.045, 0, 1.2, 1.2 };
-//std::array<double, 6> Bzs = { 1.0, 0.045, 0.045, 0.002, 1.2, 1.2 };
-std::array<double, 6> BzDurations = { 10, 10, 2.02, 180, 0.5, 2000.0 };
-//std::array<double, 6> BzDurations = { 10, 10, 2.02, 172, 0.5, 2000.0 };
-std::array<RampType, 6> BzTypes = { RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT, RampType::LINEAR, RampType::FAST_EXTRACTION, RampType::CONSTANT };
+// Implement also the other basises, this is now only for z-quantized
+std::array<double3, 6> Bbs = { make_double3(0, 0, 1.0), make_double3(0, 0, 0.045), make_double3(0, 0, 0.045), make_double3(0, 0, 0), make_double3(0, 0, 1.2), make_double3(0, 0, 1.2) };
+std::array<double, 6> BbDurations = { 10, 10, 2.02, 180, 0.5, 2000.0 };
+std::array<RampType, 6> BbTypes = { RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT, RampType::LINEAR, RampType::FAST_EXTRACTION, RampType::CONSTANT };
 #else
-std::array<double, 6> Bzs = { 1.0, 0.045, 0.045, 0, 0 };
-std::array<double, 6> BzDurations = { 10, 10, 2.02, 180, 2000.0 };
-std::array<RampType, 6> BzTypes = { RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT };
+std::array<double, 6> Bbs = { 1.0, 0.045, 0.045, 0, 0 };
+std::array<double, 6> BbDurations = { 10, 10, 2.02, 180, 2000.0 };
+std::array<RampType, 6> BbTypes = { RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT };
 #endif
+
+////////// Ideal projection ramp ////////////
+// std::array<double, 3> Bqs = { 4.3, 4.3, 0.0 };
+// std::array<double, 3> BqDurations = { 10.0, 192.03, 2000.0 };
+// std::array<RampType, 3> BqTypes = { RampType::LINEAR, RampType::CONSTANT, RampType::CONSTANT };
+
+// #if BASIS == Z_QUANTIZED
+// std::array<double3, 5> Bbs = { make_double3(0, 0, 1.0), make_double3(0, 0, 0.045), make_double3(0, 0, 0.045), make_double3(0, 0, 0), make_double3(0, 0, 1.2) };
+// #elif BASIS == Y_QUANTIZED
+// std::array<double3, 5> Bbs = { make_double3(0, 0, 1.0), make_double3(0, 0, 0.045), make_double3(0, 0, 0.045), make_double3(0, 0, 0), make_double3(0, 1.2, 0) };
+// #elif BASIS == X_QUANTIZED
+// std::array<double3, 5> Bbs = { make_double3(0, 0, 1.0), make_double3(0, 0, 0.045), make_double3(0, 0, 0.045), make_double3(0, 0, 0), make_double3(1.2, 0, 0) };
+// #endif
+// std::array<double, 5> BbDurations = { 10, 10, 2.02, 180, 2000.0 };
+// std::array<RampType, 5> BbTypes = { RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT };
+///////////////////////////////////////////////
+
+void printBasis()
+{
+	std::cout << "Using Alice ring creation process" << std::endl;
+#if BASIS == Z_QUANTIZED
+	std::cout << "Using z-quantized basis!" << std::endl;
+#elif BASIS == Y_QUANTIZED
+	std::cout << "Using y-quantized basis!" << std::endl;
+#elif BASIS == X_QUANTIZED
+	std::cout << "Using x-quantized basis!" << std::endl;
+#endif
+}
 
 Signal getSignal(double t)
 {
@@ -73,30 +109,30 @@ Signal getSignal(double t)
 	t = tOrig;
 
 	// Bz
-	uint32_t BzRampIdx = 0;
-	for (; BzRampIdx < Bzs.size(); ++BzRampIdx)
+	uint32_t BbRampIdx = 0;
+	for (; BbRampIdx < Bbs.size(); ++BbRampIdx)
 	{
-		double tInRamp = t - BzDurations[BzRampIdx];
+		double tInRamp = t - BbDurations[BbRampIdx];
 		if (tInRamp < 0)
 		{
 			break;
 		}
 		t = tInRamp;
 	}
-	double prevBz = (BzRampIdx > 0) ? Bzs[BzRampIdx - 1] : 0.0;
-	switch (BzTypes[BzRampIdx])
+	double3 prevBb = (BbRampIdx > 0) ? Bbs[BbRampIdx - 1] : make_double3(0, 0, 0);
+	switch (BbTypes[BbRampIdx])
 	{
 	case RampType::CONSTANT:
-		signal.Bz = Bzs[BzRampIdx];
+		signal.Bb = Bbs[BbRampIdx];
 		break;
 	case RampType::LINEAR:
-		signal.Bz = prevBz + t * (Bzs[BzRampIdx] - prevBz) / BzDurations[BzRampIdx];
+		signal.Bb = prevBb + t * (Bbs[BbRampIdx] - prevBb) / BbDurations[BbRampIdx];
 		break;
 	case RampType::FAST_EXTRACTION:
-		signal.Bz = prevBz + (Bzs[BzRampIdx] - prevBz) * sqrt(t / BzDurations[BzRampIdx]);
+		signal.Bb = prevBb + (Bbs[BbRampIdx] - prevBb) * sqrt(t / BbDurations[BbRampIdx]);
 		break;
 	default:
-		std::cout << "Invalid magnetic ramp type: " << static_cast<int>(BzTypes[BzRampIdx]) << std::endl;
+		std::cout << "Invalid magnetic ramp type: " << static_cast<int>(BbTypes[BbRampIdx]) << std::endl;
 		exit(1);
 		break;
 	}

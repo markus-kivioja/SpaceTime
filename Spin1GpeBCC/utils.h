@@ -23,6 +23,10 @@ __host__ __device__ __inline__ double2 operator-(double2 a, double2 b)
 {
 	return { a.x - b.x, a.y - b.y };
 }
+__host__ __device__ __inline__ double3 operator-(double3 a, double3 b)
+{
+	return { a.x - b.x, a.y - b.y, a.z - b.z };
+}
 __host__ __device__ __inline__ void operator+=(double2& a, double2 b)
 {
 	a.x += b.x;
@@ -44,6 +48,10 @@ __host__ __device__ __inline__ double2 operator*(double b, double2 a)
 	return { b * a.x, b * a.y };
 }
 __host__ __device__ __inline__ double3 operator*(double b, double3 a)
+{
+	return { b * a.x, b * a.y, b * a.z };
+}
+__host__ __device__ __inline__ double3 operator*(double3 a, double b)
 {
 	return { b * a.x, b * a.y, b * a.z };
 }
@@ -86,9 +94,9 @@ struct PitchedPtr
 struct MagFields
 {
 	double Bq{};
-	double Bz{};
+	double3 Bb{};
 	double BqQuad{};
-	double BzQuad{};
+	double3 BbQuad{};
 };
 
 std::string toString(const double value)
@@ -99,7 +107,7 @@ std::string toString(const double value)
 	return out.str();
 };
 
-void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t)
+void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t, const std::string& folder)
 {
 	const int SIZE = 2;
 	const double INTENSITY = 1.0;
@@ -120,9 +128,23 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					norm_s1 += h_evenPsi[idx].values[dualNode].s1.x * h_evenPsi[idx].values[dualNode].s1.x + h_evenPsi[idx].values[dualNode].s1.y * h_evenPsi[idx].values[dualNode].s1.y;
-					norm_s0 += h_evenPsi[idx].values[dualNode].s0.x * h_evenPsi[idx].values[dualNode].s0.x + h_evenPsi[idx].values[dualNode].s0.y * h_evenPsi[idx].values[dualNode].s0.y;
-					norm_s_1 += h_evenPsi[idx].values[dualNode].s_1.x * h_evenPsi[idx].values[dualNode].s_1.x + h_evenPsi[idx].values[dualNode].s_1.y * h_evenPsi[idx].values[dualNode].s_1.y;
+					double2 s1 = h_evenPsi[idx].values[dualNode].s1;
+					double2 s0 = h_evenPsi[idx].values[dualNode].s0;
+					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
+
+#if BASIS == X_QUANTIZED
+					double2 x_s1 = 0.5 * (s1 + s_1) + s0 / sqrt(2);
+					double2 x_s0 = (s_1 - s1) / sqrt(2);
+					double2 x_s_1 = 0.5 * (s_1 + s1) - s0 / sqrt(2);
+
+					s1 = x_s1;
+					s0 = x_s0;
+					s_1 = x_s_1;
+#endif
+
+					norm_s1 += s1.x * s1.x + s1.y * s1.y;
+					norm_s0 += s0.x * s0.x + s0.y * s0.y;
+					norm_s_1 += s_1.x * s_1.x + s_1.y * s_1.y;
 				}
 			}
 
@@ -149,9 +171,23 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					norm_s1 += h_evenPsi[idx].values[dualNode].s1.x * h_evenPsi[idx].values[dualNode].s1.x + h_evenPsi[idx].values[dualNode].s1.y * h_evenPsi[idx].values[dualNode].s1.y;
-					norm_s0 += h_evenPsi[idx].values[dualNode].s0.x * h_evenPsi[idx].values[dualNode].s0.x + h_evenPsi[idx].values[dualNode].s0.y * h_evenPsi[idx].values[dualNode].s0.y;
-					norm_s_1 += h_evenPsi[idx].values[dualNode].s_1.x * h_evenPsi[idx].values[dualNode].s_1.x + h_evenPsi[idx].values[dualNode].s_1.y * h_evenPsi[idx].values[dualNode].s_1.y;
+					double2 s1 = h_evenPsi[idx].values[dualNode].s1;
+					double2 s0 = h_evenPsi[idx].values[dualNode].s0;
+					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
+
+#if BASIS == X_QUANTIZED
+					double2 x_s1 = 0.5 * (s1 + s_1) + s0 / sqrt(2);
+					double2 x_s0 = (s_1 - s1) / sqrt(2);
+					double2 x_s_1 = 0.5 * (s_1 + s1) - s0 / sqrt(2);
+
+					s1 = x_s1;
+					s0 = x_s0;
+					s_1 = x_s_1;
+#endif
+
+					norm_s1 += s1.x * s1.x + s1.y * s1.y;
+					norm_s0 += s0.x * s0.x + s0.y * s0.y;
+					norm_s_1 += s_1.x * s_1.x + s_1.y * s_1.y;
 				}
 			}
 
@@ -175,10 +211,10 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 		pic1.setColor(2 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
 	}
 
-	pic1.save("results/" + name + toString(t) + "ms.bmp", false);
+	pic1.save(folder + "/" + name + toString(t) + "ms.bmp", false);
 }
 
-void drawDensityRgb(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t)
+void drawDensityRgb(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t, const std::string& folder)
 {
 	const int SIZE = 4;
 	const double INTENSITY = 1.0;
@@ -263,7 +299,7 @@ void drawDensityRgb(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize
 		}
 	}
 
-	pic1.save("results/" + name + toString(t) + "ms.bmp", false);
+	pic1.save(folder + "/" + name + toString(t) + "ms.bmp", false);
 }
 
 void drawUtheta(const double3* uPtr, const double* thetaPtr, const size_t xSize, const size_t ySize, const size_t zSize, const double t)
@@ -388,10 +424,10 @@ void swapEnd(T& var)
 constexpr double DENSITY_THRESHOLD = 0.0001;
 constexpr double DISTANCE_THRESHOLD = 4;
 
-void saveVolume(const std::string& namePrefix, BlockPsis* pPsi, double3* pLocalAvgSpin, double3* pu, double* pTheta, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, uint iter, double block_scale, double3 p0, double t)
+void saveVolume(const std::string& namePrefix, BlockPsis* pPsi, double3* pLocalAvgSpin, double3* pu, double* pTheta, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, uint iter, double block_scale, double3 p0, double t, const std::string& folder)
 {
 	std::ofstream file;
-	file.open("vtks/" + namePrefix + std::to_string(t) + ".vtk", std::ios::out | std::ios::binary);
+	file.open(folder + "/" + namePrefix + std::to_string(t) + ".vtk", std::ios::out | std::ios::binary);
 
 	file << "# vtk DataFile Version 3.0" << std::endl
 		<< "Comment if needed" << std::endl;

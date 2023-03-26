@@ -94,6 +94,11 @@ struct BlockPsis
 	Complex5Vec values[VALUES_IN_BLOCK];
 };
 
+struct BlockEdges
+{
+	Complex5Vec values[EDGES_IN_BLOCK];
+};
+
 struct PitchedPtr
 {
 	char* __restrict__ ptr;
