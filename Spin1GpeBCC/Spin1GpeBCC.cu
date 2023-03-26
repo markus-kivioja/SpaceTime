@@ -1,6 +1,8 @@
 #include <cuda_runtime.h>
 #include "helper_cuda.h"
 
+constexpr double EXPANSION_START = 0.5;
+
 //#include "AliceRingRamps.h"
 #include "KnotRamps.h"
 
@@ -94,8 +96,6 @@ double t = 0; // Start time in ms
 double END_TIME = 5; // End time in ms
 
 double POLAR_FERRO_MIX = 0.0;
-
-constexpr double EXPANSION_START = 0.5;
 
 __device__ __inline__ double trap(double3 p, double t)
 {
@@ -558,7 +558,7 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __rest
 			otherBoundaryZeroCell = ((BlockPsis*)(prevPsi + offset))->values[laplacian.w];
 		}
 
-		const double hodge = hodges[primaryFace];
+		const double hodge = hodges[primaryFace] / (block_scale * block_scale);
 		H.s1 += hodge * (otherBoundaryZeroCell.s1 - prev.s1);
 		H.s0 += hodge * (otherBoundaryZeroCell.s0 - prev.s0);
 		H.s_1 += hodge * (otherBoundaryZeroCell.s_1 - prev.s_1);
@@ -664,7 +664,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __r
 			otherBoundaryZeroCell = ((BlockPsis*)(prevPsi + offset))->values[laplacian.w];
 		}
 
-		const double hodge = hodges[primaryFace];
+		const double hodge = hodges[primaryFace] / (block_scale * block_scale);
 		H.s1 += hodge * (otherBoundaryZeroCell.s1 - prev.s1);
 		H.s0 += hodge * (otherBoundaryZeroCell.s0 - prev.s0);
 		H.s_1 += hodge * (otherBoundaryZeroCell.s_1 - prev.s_1);
@@ -1381,7 +1381,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			// update odd values
 			t += dt / omega_r * 1e3; // [ms]
 			if (t >= EXPANSION_START) {
-				double k = 0.7569772335291065;
+				double k = 0.7569772335291065; // From the Aalto QCD code
 				expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
 			}
 			signal = getSignal(t);
@@ -1394,7 +1394,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			// update even values
 			t += dt / omega_r * 1e3; // [ms]
 			if (t >= EXPANSION_START) {
-				double k = 0.7569772335291065;
+				double k = 0.7569772335291065; // From the Aalto QCD code
 				expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
 			}
 			signal = getSignal(t);

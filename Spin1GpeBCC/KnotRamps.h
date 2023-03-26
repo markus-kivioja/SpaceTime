@@ -26,7 +26,7 @@ enum class RampType
 
 //// Quadrupole ////
 std::array<double, 2> Bqs = { 4.3, 0.0 };
-std::array<double, 2> BqDurations = { 0.5, 100 };
+std::array<double, 2> BqDurations = { EXPANSION_START, 100 };
 std::array<RampType, 2> BqTypes = { RampType::CONSTANT, RampType::CONSTANT };
 
 //// Bias ////

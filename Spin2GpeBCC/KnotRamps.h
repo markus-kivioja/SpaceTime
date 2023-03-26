@@ -18,15 +18,17 @@ enum class RampType
 	FAST_EXTRACTION
 };
 
+constexpr double CREATION_RAMP_START = 0.1;
+
 // Experimentally realistic ramps
 //// Quadrupole ////
-std::array<double, 1> Bqs = { 4.3 };
-std::array<double, 1> BqDurations = { 100.0 };
-std::array<RampType, 1> BqTypes = { RampType::CONSTANT };
+std::array<double, 2> Bqs = { 4.3, 0.0 };
+std::array<double, 2> BqDurations = { CREATION_RAMP_START + EXPANSION_START, 100 };
+std::array<RampType, 2> BqTypes = { RampType::CONSTANT, RampType::CONSTANT };
 
 //// Bias ////
 std::array<double3, 2> Bbs = { make_double3(0, 0, 0.205), make_double3(0, 0, 0) };
-std::array<double, 2> BbDurations = { 0.1, 100 };
+std::array<double, 2> BbDurations = { CREATION_RAMP_START, 100 };
 std::array<RampType, 2> BbTypes = { RampType::CONSTANT, RampType::CONSTANT };
 
 // Start with the magnetic field zero being at the center of the condensate

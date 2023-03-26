@@ -288,10 +288,75 @@ void drawIandR(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, s
 void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t, MagFields Bs, const double3 p0, double block_scale)
 {
 	const int SIZE = 2;
-	const double INTENSITY = 1;
+	double INTENSITY = 1;
 	const double MAG_ZERO = 0.195;
 	const int width = dxsize * SIZE, height = dysize * SIZE, depth = dzsize * SIZE;
 	Picture pic1(width * 5, height * 3);
+
+	double maxVal = 0;
+	// XZ-plane
+	for (uint k = 0; k < depth; ++k)
+	{
+		for (uint i = 0; i < width; i++)
+		{
+			double norm_s2 = 0;
+			double norm_s1 = 0;
+			double norm_s0 = 0;
+			double norm_s_1 = 0;
+			double norm_s_2 = 0;
+			double minB = 99999999999999.9;
+			for (uint j = 0; j < height; j++)
+			{
+				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					double2 s2 = h_evenPsi[idx].values[dualNode].s2;
+					double2 s1 = h_evenPsi[idx].values[dualNode].s1;
+					double2 s0 = h_evenPsi[idx].values[dualNode].s0;
+					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
+					double2 s_2 = h_evenPsi[idx].values[dualNode].s_2;
+
+#if BASIS == X_QUANTIZED
+					double c = sqrt(6) * 0.25;
+					double2 x_s2 = 0.25 * s2 + 0.5 * s1 + c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					double2 x_s1 = -0.5 * s2 - 0.5 * s1 + 0.5 * s_1 + 0.5 * s_2;
+					double2 x_s0 = c * s2 - 0.5 * s0 + c * s_2;
+					double2 x_s_1 = -0.5 * s2 + 0.5 * s1 - 0.5 * s_1 + 0.5 * s_2;
+					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 + c * s0 - 0.5 * s_1 + 0.25 * s_2;
+
+					s2 = x_s2;
+					s1 = x_s1;
+					s0 = x_s0;
+					s_1 = x_s_1;
+					s_2 = x_s_2;
+#elif BASIS == Y_QUANTIZED
+					double c = sqrt(6) * 0.25;
+					double2 im = { 0, 1 };
+					double2 y_s2 = 0.25 * s2 - im * 0.5 * s1 - c * s0 + im * 0.5 * s_1 + 0.25 * s_2;
+					double2 y_s1 = -im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 + im * 0.5 * s_2;
+					double2 y_s0 = -c * s2 - 0.5 * s0 - c * s_2;
+					double2 y_s_1 = im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 - im * 0.5 * s_2;
+					double2 y_s_2 = 0.25 * s2 + im * 0.5 * s1 - c * s0 - im * 0.5 * s_1 + 0.25 * s_2;
+
+					s2 = y_s2;
+					s1 = y_s1;
+					s0 = y_s0;
+					s_1 = y_s_1;
+					s_2 = y_s_2;
+#endif
+
+					norm_s2 += s2.x * s2.x + s2.y * s2.y;
+					norm_s1 += s1.x * s1.x + s1.y * s1.y;
+					norm_s0 += s0.x * s0.x + s0.y * s0.y;
+					norm_s_1 += s_1.x * s_1.x + s_1.y * s_1.y;
+					norm_s_2 += s_2.x * s_2.x + s_2.y * s_2.y;
+
+					maxVal = std::max(maxVal, std::max(norm_s2, std::max(norm_s1, std::max(norm_s0, std::max(norm_s_1, norm_s_2)))));
+				}
+			}
+		}
+	}
+	INTENSITY = 1.0 / maxVal;
 
 	// XZ-plane
 	for (uint k = 0; k < depth; ++k)
@@ -385,6 +450,71 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 		}
 	}
 
+	maxVal = 0;
+	// YZ-plane
+	for (uint k = 0; k < depth; ++k)
+	{
+		for (uint j = 0; j < height; j++)
+		{
+			double norm_s2 = 0;
+			double norm_s1 = 0;
+			double norm_s0 = 0;
+			double norm_s_1 = 0;
+			double norm_s_2 = 0;
+			double minB = 99999999999999.9;
+			for (uint i = 0; i < width; i++)
+			{
+				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					double2 s2 = h_evenPsi[idx].values[dualNode].s2;
+					double2 s1 = h_evenPsi[idx].values[dualNode].s1;
+					double2 s0 = h_evenPsi[idx].values[dualNode].s0;
+					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
+					double2 s_2 = h_evenPsi[idx].values[dualNode].s_2;
+
+#if BASIS == X_QUANTIZED
+					double c = sqrt(6) * 0.25;
+					double2 x_s2 = 0.25 * s2 + 0.5 * s1 + c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					double2 x_s1 = -0.5 * s2 - 0.5 * s1 + 0.5 * s_1 + 0.5 * s_2;
+					double2 x_s0 = c * s2 - 0.5 * s0 + c * s_2;
+					double2 x_s_1 = -0.5 * s2 + 0.5 * s1 - 0.5 * s_1 + 0.5 * s_2;
+					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 + c * s0 - 0.5 * s_1 + 0.25 * s_2;
+
+					s2 = x_s2;
+					s1 = x_s1;
+					s0 = x_s0;
+					s_1 = x_s_1;
+					s_2 = x_s_2;
+#elif BASIS == Y_QUANTIZED
+					double c = sqrt(6) * 0.25;
+					double2 im = { 0, 1 };
+					double2 y_s2 = 0.25 * s2 - im * 0.5 * s1 - c * s0 + im * 0.5 * s_1 + 0.25 * s_2;
+					double2 y_s1 = -im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 + im * 0.5 * s_2;
+					double2 y_s0 = -c * s2 - 0.5 * s0 - c * s_2;
+					double2 y_s_1 = im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 - im * 0.5 * s_2;
+					double2 y_s_2 = 0.25 * s2 + im * 0.5 * s1 - c * s0 - im * 0.5 * s_1 + 0.25 * s_2;
+
+					s2 = y_s2;
+					s1 = y_s1;
+					s0 = y_s0;
+					s_1 = y_s_1;
+					s_2 = y_s_2;
+#endif
+
+					norm_s2 += s2.x * s2.x + s2.y * s2.y;
+					norm_s1 += s1.x * s1.x + s1.y * s1.y;
+					norm_s0 += s0.x * s0.x + s0.y * s0.y;
+					norm_s_1 += s_1.x * s_1.x + s_1.y * s_1.y;
+					norm_s_2 += s_2.x * s_2.x + s_2.y * s_2.y;
+
+					maxVal = std::max(maxVal, std::max(norm_s2, std::max(norm_s1, std::max(norm_s0, std::max(norm_s_1, norm_s_2)))));
+				}
+			}
+		}
+	}
+	INTENSITY = 1.0 / maxVal;
+
 	// YZ-plane
 	for (uint k = 0; k < depth; ++k)
 	{
@@ -476,6 +606,71 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 			}
 		}
 	}
+
+	// XY-plane
+	maxVal = 0;
+	for (uint j = 0; j < height; j++)
+	{
+		for (uint i = 0; i < width; i++)
+		{
+			double norm_s2 = 0;
+			double norm_s1 = 0;
+			double norm_s0 = 0;
+			double norm_s_1 = 0;
+			double norm_s_2 = 0;
+			double minB = 99999999999999.9;
+			for (uint k = 0; k < depth; ++k)
+			{
+				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					double2 s2 = h_evenPsi[idx].values[dualNode].s2;
+					double2 s1 = h_evenPsi[idx].values[dualNode].s1;
+					double2 s0 = h_evenPsi[idx].values[dualNode].s0;
+					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
+					double2 s_2 = h_evenPsi[idx].values[dualNode].s_2;
+
+#if BASIS == X_QUANTIZED
+					double c = sqrt(6) * 0.25;
+					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					double2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
+					double2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
+					double2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
+					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
+
+					s2 = x_s2;
+					s1 = x_s1;
+					s0 = x_s0;
+					s_1 = x_s_1;
+					s_2 = x_s_2;
+#elif BASIS == Y_QUANTIZED
+					double c = sqrt(6) * 0.25;
+					double2 im = { 0, 1 };
+					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					double2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
+					double2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
+					double2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
+					double2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
+
+					s2 = y_s2;
+					s1 = y_s1;
+					s0 = y_s0;
+					s_1 = y_s_1;
+					s_2 = y_s_2;
+#endif
+
+					norm_s2 += s2.x * s2.x + s2.y * s2.y;
+					norm_s1 += s1.x * s1.x + s1.y * s1.y;
+					norm_s0 += s0.x * s0.x + s0.y * s0.y;
+					norm_s_1 += s_1.x * s_1.x + s_1.y * s_1.y;
+					norm_s_2 += s_2.x * s_2.x + s_2.y * s_2.y;
+
+					maxVal = std::max(maxVal, std::max(norm_s2, std::max(norm_s1, std::max(norm_s0, std::max(norm_s_1, norm_s_2)))));
+				}
+			}
+		}
+	}
+	INTENSITY = 1.0 / maxVal;
 	
 	// XY-plane
 	for (uint j = 0; j < height; j++)
