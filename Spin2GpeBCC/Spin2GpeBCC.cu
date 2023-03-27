@@ -5,7 +5,7 @@
 #define Y_QUANTIZED 1
 #define X_QUANTIZED 2
 
-#define BASIS Z_QUANTIZED
+#define BASIS Y_QUANTIZED
 
 enum class Phase {
 	UN = 0,
@@ -13,7 +13,7 @@ enum class Phase {
 	BN_HORI,
 	CYCLIC
 };
-constexpr Phase initPhase = Phase::BN_VERT;
+Phase initPhase = Phase::BN_VERT;
 
 std::string phaseToString(Phase phase)
 {
@@ -43,7 +43,7 @@ std::string getProjectionString()
 #endif
 }
 
-constexpr double EXPANSION_START = 0.24; // When the expansion starts in ms
+constexpr double EXPANSION_START = 1.24; // When the expansion starts in ms
 
 //#include "AliceRingRamps.h"
 #include "KnotRamps.h"
@@ -128,13 +128,13 @@ constexpr double NOISE_AMPLITUDE = 0; //0.1;
 constexpr double dt = 5e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
 //const double IMAGE_SAVE_INTERVAL = 0.02; // ms
-const double IMAGE_SAVE_INTERVAL = 0.05; // ms
+const double IMAGE_SAVE_INTERVAL = 0.25; // ms
 const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-constexpr double END_TIME = 20; // End time in ms
+constexpr double END_TIME = 0.6; // End time in ms
 
 __device__ __inline__ double trap(double3 p, double t)
 {
@@ -1427,24 +1427,45 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	double expansionBlockScale = block_scale;
 
-	while (true)
+	while (t < CREATION_RAMP_START)
 	{
-#if SAVE_PICTURE
-		// Copy back from device memory to host memory
-		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
-
-		// Measure wall clock time
-		static auto prevTime = std::chrono::high_resolution_clock::now();
-		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
-		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
-		prevTime = std::chrono::high_resolution_clock::now();
-
-		signal = getSignal(0);
+		// update odd values
+		t += dt / omega_r * 1e3; // [ms]
+		signal = getSignal(t);
 		Bs.Bq = BqScale * signal.Bq;
 		Bs.Bb = BzScale * signal.Bb;
-		drawDensity(densDir, h_oddPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, Bs, d_p0, block_scale);
+		Bs.BqQuad = BqQuadScale * signal.Bq;
+		Bs.BbQuad = BzQuadScale * signal.Bb;
+		leapfrog << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
+
+		// update even values
+		t += dt / omega_r * 1e3; // [ms]
+		signal = getSignal(t);
+		Bs.Bq = BqScale * signal.Bq;
+		Bs.Bb = BzScale * signal.Bb;
+		Bs.BqQuad = BqQuadScale * signal.Bq;
+		Bs.BbQuad = BzQuadScale * signal.Bb;
+		leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
+	}
+
+#if SAVE_PICTURE
+	// Copy back from device memory to host memory
+	checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
+
+	// Measure wall clock time
+	static auto prevTime = std::chrono::high_resolution_clock::now();
+	auto duration = std::chrono::high_resolution_clock::now() - prevTime;
+	std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
+	prevTime = std::chrono::high_resolution_clock::now();
+
+	signal = getSignal(0);
+	Bs.Bq = BqScale * signal.Bq;
+	Bs.Bb = BzScale * signal.Bb;
+	drawDensity(densDir, h_oddPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, Bs, d_p0, block_scale);
 #endif
 
+	while (t < END_TIME)
+	{
 		// integrate one iteration
 		for (uint step = 0; step < IMAGE_SAVE_FREQUENCY; step++)
 		{
@@ -1475,18 +1496,28 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
 		}
 
-#if SAVE_STATES
+#if SAVE_PICTURE
 		// Copy back from device memory to host memory
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
-		//if (t - CREATION_RAMP_START > 0.2)
-		//	//saveVolume(vtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - CREATION_RAMP_START);
-		//	saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - CREATION_RAMP_START);
+		// Measure wall clock time
+		static auto prevTime = std::chrono::high_resolution_clock::now();
+		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
+		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
+		prevTime = std::chrono::high_resolution_clock::now();
 
-		if (t > END_TIME)
-		{
-			return 0;
-		}
+		signal = getSignal(0);
+		Bs.Bq = BqScale * signal.Bq;
+		Bs.Bb = BzScale * signal.Bb;
+		drawDensity(densDir, h_oddPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, Bs, d_p0, block_scale);
+#endif
+#if SAVE_STATES
+		// Copy back from device memory to host memory
+		//checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
+
+		//if (t - CREATION_RAMP_START > 0.2)
+		saveVolume(vtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - CREATION_RAMP_START);
+		saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - CREATION_RAMP_START);
 #endif
 	}
 #endif
@@ -1497,6 +1528,23 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		fprintf(stderr, "Failed to launch kernels (error code %s)!\n", cudaGetErrorString(err));
 		exit(EXIT_FAILURE);
 	}
+
+	checkCudaErrors(cudaFree(d_cudaEvenPsi.ptr));
+	checkCudaErrors(cudaFree(d_cudaOddPsi.ptr));
+	checkCudaErrors(cudaFree(d_spinNorm));
+	checkCudaErrors(cudaFree(d_density));
+	checkCudaErrors(cudaFree(d_localAvgSpin));
+	checkCudaErrors(cudaFree(d_u));
+	checkCudaErrors(cudaFree(d_v));
+	checkCudaErrors(cudaFree(d_theta));
+	checkCudaErrors(cudaFree(d_lapind));
+	checkCudaErrors(cudaFree(d_hodges));
+	checkCudaErrors(cudaFreeHost(h_evenPsi));
+	checkCudaErrors(cudaFreeHost(h_oddPsi));
+	checkCudaErrors(cudaFreeHost(h_density));
+	checkCudaErrors(cudaFreeHost(h_u));
+	checkCudaErrors(cudaFreeHost(h_theta));
+	checkCudaErrors(cudaFreeHost(h_localAvgSpin));
 
 	return 0;
 }
@@ -1517,17 +1565,19 @@ int main(int argc, char** argv)
 	std::cout << "No quadratic Zeeman term" << std::endl;
 #endif
 
-#if CREATE_KNOT
-	std::cout << "Create knot" << std::endl;
-#elif CREATE_SKYRMION
-	std::cout << "Create skyrmion" << std::endl;
-#endif
 	printBasis();
 
 	// integrate in time using DEC
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
-	integrateInTime(blockScale, domainMin, domainMax);
+
+	Phase phases[] = {Phase::BN_VERT, Phase::BN_HORI, Phase::CYCLIC};
+	for (auto phase : phases)
+	{
+		initPhase = phase;
+		t = 0;
+		integrateInTime(blockScale, domainMin, domainMax);
+	}
 
 	return 0;
 }

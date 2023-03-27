@@ -1437,9 +1437,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	int lastSaveTime = 0;
 
 #if RELATIVISTIC
-	std::string dirPrefix = "hyperbolic_" + phaseToString(initPhase) + "\\" + getProjectionString() + "\\";
+	std::string dirPrefix = "hyperbolic\\" + phaseToString(initPhase) + "\\" + getProjectionString() + "\\";
 #else
-	std::string dirPrefix = "parabolic_" + phaseToString(initPhase) + "\\" + getProjectionString() + "\\";
+	std::string dirPrefix = "parabolic\\" + phaseToString(initPhase) + "\\" + getProjectionString() + "\\";
 #endif
 
 	std::string densDir = dirPrefix + "dens";
