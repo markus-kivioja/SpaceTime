@@ -22,7 +22,7 @@ constexpr double EXPANSION_START = CREATION_RAMP_START + 10.5; // When the expan
 
 #define COMPUTE_GROUND_STATE 0
 
-#define SAVE_STATES 1
+#define SAVE_STATES 0
 #define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
@@ -88,13 +88,13 @@ constexpr double NOISE_AMPLITUDE = 0.1;
 double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 //double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-const double IMAGE_SAVE_INTERVAL = 0.1; // ms
+const double IMAGE_SAVE_INTERVAL = 0.5; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 5; // End time in ms
+double END_TIME = 0.6; // End time in ms
 
 double POLAR_FERRO_MIX = 0.0;
 
@@ -1352,30 +1352,51 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	double expansionBlockScale = block_scale;
 
-	while (true)
+	while (t < CREATION_RAMP_START)
 	{
+		// update odd values
+		t += dt / omega_r * 1e3; // [ms]
+		signal = getSignal(t);
+		Bs.Bq = BqScale * signal.Bq;
+		Bs.Bb = BzScale * signal.Bb;
+		Bs.BqQuad = BqQuadScale * signal.Bq;
+		Bs.BbQuad = BzQuadScale * signal.Bb;
+		leapfrog << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt, t);
+
+		// update even values
+		t += dt / omega_r * 1e3; // [ms]
+		signal = getSignal(t);
+		Bs.Bq = BqScale * signal.Bq;
+		Bs.Bb = BzScale * signal.Bb;
+		Bs.BqQuad = BqQuadScale * signal.Bq;
+		Bs.BbQuad = BzQuadScale * signal.Bb;
+		leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt, t);
+	}
+
 #if SAVE_PICTURE
-		// Copy back from device memory to host memory
-		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
+	// Copy back from device memory to host memory
+	checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
-		// Measure wall clock time
-		static auto prevTime = std::chrono::high_resolution_clock::now();
-		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
-		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
-		prevTime = std::chrono::high_resolution_clock::now();
+	// Measure wall clock time
+	static auto prevTime = std::chrono::high_resolution_clock::now();
+	auto duration = std::chrono::high_resolution_clock::now() - prevTime;
+	std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
+	prevTime = std::chrono::high_resolution_clock::now();
 
-		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t, resultsDir);
+	drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t, resultsDir);
 
-		//uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
-		//cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
-		//cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
-		//drawUtheta(h_u, h_theta, xsize, ysize, zsize, t - 202.03);
-		//
-		//ferromagneticDomain << <dimGrid, dimBlock >> > (d_ferroDom, d_oddPsi, dimensions);
-		//cudaMemcpy(h_ferroDom, d_ferroDom, bodies * sizeof(double), cudaMemcpyDeviceToHost);
-		//drawFerroDom(h_ferroDom, xsize, ysize, zsize, t - 202.03);
+	//uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
+	//cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
+	//cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
+	//drawUtheta(h_u, h_theta, xsize, ysize, zsize, t - 202.03);
+	//
+	//ferromagneticDomain << <dimGrid, dimBlock >> > (d_ferroDom, d_oddPsi, dimensions);
+	//cudaMemcpy(h_ferroDom, d_ferroDom, bodies * sizeof(double), cudaMemcpyDeviceToHost);
+	//drawFerroDom(h_ferroDom, xsize, ysize, zsize, t - 202.03);
 #endif
 
+	while (t < END_TIME)
+	{
 		// integrate one iteration
 		for (uint step = 0; step < IMAGE_SAVE_FREQUENCY; step++)
 		{
@@ -1406,6 +1427,27 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt, t);
 		}
 
+#if SAVE_PICTURE
+		// Copy back from device memory to host memory
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
+
+		// Measure wall clock time
+		static auto prevTime = std::chrono::high_resolution_clock::now();
+		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
+		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
+		prevTime = std::chrono::high_resolution_clock::now();
+
+		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t, resultsDir);
+
+		//uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
+		//cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
+		//cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
+		//drawUtheta(h_u, h_theta, xsize, ysize, zsize, t - 202.03);
+		//
+		//ferromagneticDomain << <dimGrid, dimBlock >> > (d_ferroDom, d_oddPsi, dimensions);
+		//cudaMemcpy(h_ferroDom, d_ferroDom, bodies * sizeof(double), cudaMemcpyDeviceToHost);
+		//drawFerroDom(h_ferroDom, xsize, ysize, zsize, t - 202.03);
+#endif
 #if SAVE_STATES
 		// Copy back from device memory to host memory
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
@@ -1473,11 +1515,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			densityStr = std::string("norm = [norm");
 
 			lastSaveTime = int(t);
-
-			if (t > END_TIME)
-			{
-				return 0;
-			}
 		}
 #endif
 	}
@@ -1489,6 +1526,23 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		fprintf(stderr, "Failed to launch kernels (error code %s)!\n", cudaGetErrorString(err));
 		exit(EXIT_FAILURE);
 	}
+
+	checkCudaErrors(cudaFree(d_cudaEvenPsi.ptr));
+	checkCudaErrors(cudaFree(d_cudaOddPsi.ptr));
+	checkCudaErrors(cudaFree(d_spinNorm));
+	checkCudaErrors(cudaFree(d_density));
+	checkCudaErrors(cudaFree(d_localAvgSpin));
+	checkCudaErrors(cudaFree(d_u));
+	checkCudaErrors(cudaFree(d_v));
+	checkCudaErrors(cudaFree(d_theta));
+	checkCudaErrors(cudaFree(d_lapind));
+	checkCudaErrors(cudaFree(d_hodges));
+	checkCudaErrors(cudaFreeHost(h_evenPsi));
+	checkCudaErrors(cudaFreeHost(h_oddPsi));
+	checkCudaErrors(cudaFreeHost(h_density));
+	checkCudaErrors(cudaFreeHost(h_u));
+	checkCudaErrors(cudaFreeHost(h_theta));
+	checkCudaErrors(cudaFreeHost(h_localAvgSpin));
 
 	return 0;
 }
@@ -1574,7 +1628,11 @@ int main(int argc, char** argv)
 	// integrate in time using DEC
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
-	integrateInTime(blockScale, domainMin, domainMax);
+	for (POLAR_FERRO_MIX = 0.1; POLAR_FERRO_MIX <= 1.0; POLAR_FERRO_MIX += 0.1)
+	{
+		t = 0;
+		integrateInTime(blockScale, domainMin, domainMax);
+	}
 
 	return 0;
 }

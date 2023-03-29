@@ -5,7 +5,7 @@
 #define Y_QUANTIZED 1
 #define X_QUANTIZED 2
 
-#define BASIS Z_QUANTIZED
+#define BASIS Y_QUANTIZED
 
 enum class Phase {
 	UN = 0,
@@ -44,7 +44,7 @@ std::string getProjectionString()
 }
 
 constexpr double CREATION_RAMP_START = 0.1;
-constexpr double EXPANSION_START = CREATION_RAMP_START + 0.5; // When the expansion starts in ms
+constexpr double EXPANSION_START = CREATION_RAMP_START + 10.5; // When the expansion starts in ms
 
 //#include "AliceRingRamps.h"
 #include "KnotRamps.h"
@@ -128,14 +128,13 @@ constexpr double NOISE_AMPLITUDE = 0; //0.1;
 //constexpr double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 constexpr double dt = 5e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-//const double IMAGE_SAVE_INTERVAL = 0.02; // ms
-const double IMAGE_SAVE_INTERVAL = 0.1; // ms
+const double IMAGE_SAVE_INTERVAL = 0.25; // ms
 const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-constexpr double END_TIME = 17; // End time in ms
+constexpr double END_TIME = 0.6; // End time in ms
 
 __device__ __inline__ double trap(double3 p, double t)
 {
@@ -1573,8 +1572,8 @@ int main(int argc, char** argv)
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
 
-	//Phase phases[] = {Phase::BN_VERT, Phase::BN_HORI, Phase::CYCLIC};
-	Phase phases[] = {Phase::BN_VERT};
+	Phase phases[] = {Phase::BN_VERT, Phase::BN_HORI, Phase::CYCLIC};
+	//Phase phases[] = {Phase::BN_VERT};
 	for (auto phase : phases)
 	{
 		initPhase = phase;
