@@ -2,12 +2,11 @@ import numpy as np
 import cupy as cp
 from tvtk.api import tvtk
 import math
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib import animation
 from matplotlib import widgets
+from matplotlib.colors import ListedColormap
 
-filename = 'build/Spin2GpeBCC/bn_vert/proj_z/spinor_vtks/0.241425.vtk'
+filename = 'build/Spin2GpeBCC/bn_vert/proj_z/spinor_vtks/0.250141.vtk'
 #filename = '../cyclic_0.241425.vtk'
 #filename = '../bn_0.502515.vtk'
 
@@ -217,7 +216,10 @@ integ_dens_top(grid_size, block_size, (d_dens, d_m2, d_m1, d_m0, d_m_1, d_m_2, N
 integ_dens_side(grid_size, block_size, (d_dens, d_m2, d_m1, d_m0, d_m_1, d_m_2, N, 0))
 
 fig, ax = plt.subplots()
-im = ax.imshow(d_dens.get().reshape((2 * N, 5 * N)), cmap=mpl.colormaps['gray'], animated=True)
+gray_scale = np.linspace(0, 1, 256)
+colors = [[gray, gray, gray, 1.0] for gray in gray_scale]
+my_cmap = ListedColormap(colors)
+im = ax.imshow(d_dens.get().reshape((2 * N, 5 * N)), cmap=my_cmap, animated=True)
 
 slider_ax = plt.axes([0.1, 0.01, 0.75, 0.04])
 slider = widgets.Slider(
