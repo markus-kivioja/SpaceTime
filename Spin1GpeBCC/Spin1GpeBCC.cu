@@ -1,7 +1,8 @@
 #include <cuda_runtime.h>
 #include "helper_cuda.h"
 
-constexpr double EXPANSION_START = 0.5;
+constexpr double CREATION_RAMP_START = 0.1;
+constexpr double EXPANSION_START = CREATION_RAMP_START + 10.5; // When the expansion starts in ms
 
 //#include "AliceRingRamps.h"
 #include "KnotRamps.h"

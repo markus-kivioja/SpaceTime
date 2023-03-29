@@ -24,16 +24,28 @@ enum class RampType
 	FAST_EXTRACTION
 };
 
+// Experimentally realistic ramps
 //// Quadrupole ////
 std::array<double, 2> Bqs = { 4.3, 0.0 };
 std::array<double, 2> BqDurations = { EXPANSION_START, 100 };
 std::array<RampType, 2> BqTypes = { RampType::CONSTANT, RampType::CONSTANT };
 
 //// Bias ////
-// Implement also the other basises, this is now only for z-quantized
-std::array<double3, 1> Bbs = { make_double3(0, 0, 0) };
-std::array<double, 1> BbDurations = { 100 };
-std::array<RampType, 1> BbTypes = { RampType::CONSTANT };
+std::array<double3, 2> Bbs = { make_double3(0, 0, 0.205), make_double3(0, 0, 0) };
+std::array<double, 2> BbDurations = { CREATION_RAMP_START, 100 };
+std::array<RampType, 2> BbTypes = { RampType::CONSTANT, RampType::CONSTANT };
+
+// Start with the magnetic field zero being at the center of the condensate
+//// Quadrupole ////
+//std::array<double, 1> Bqs = { 4.3 };
+//std::array<double, 1> BqDurations = { 100.0 };
+//std::array<RampType, 1> BqTypes = { RampType::CONSTANT };
+//
+////// Bias ////
+//// Implement also the other basises, this is now only for z-quantized
+//std::array<double3, 1> Bbs = { make_double3(0, 0, 0) };
+//std::array<double, 1> BbDurations = { 100 };
+//std::array<RampType, 1> BbTypes = { RampType::CONSTANT };
 
 void printBasis()
 {
