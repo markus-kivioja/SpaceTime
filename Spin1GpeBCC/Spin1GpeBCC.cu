@@ -427,7 +427,7 @@ __global__ void polarState(PitchedPtr psi, const uint3 dimensions)
 	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
 
 	pPsi->values[dualNodeId].s1 = { 0, 0 };
-	pPsi->values[dualNodeId].s0 = sqrt(normSq) * prev.s0 / sqrt(normSq_s0);
+	pPsi->values[dualNodeId].s0 = { sqrt(normSq), 0 };
 	pPsi->values[dualNodeId].s_1 = { 0, 0 };
 };
 
@@ -456,7 +456,7 @@ __global__ void ferromagneticState(PitchedPtr psi, const uint3 dimensions)
 	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
 	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
 
-	pPsi->values[dualNodeId].s1 = sqrt(normSq) * prev.s1 / sqrt(normSq_s1);
+	pPsi->values[dualNodeId].s1 = { sqrt(normSq), 0 };
 	pPsi->values[dualNodeId].s0 = { 0, 0 };
 	pPsi->values[dualNodeId].s_1 = { 0, 0 };
 };
@@ -486,8 +486,8 @@ __global__ void mixedState(PitchedPtr psi, const uint3 dimensions, const double 
 	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
 	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
 
-	pPsi->values[dualNodeId].s1 = polarFerroMix * sqrt(normSq) * prev.s1 / sqrt(normSq_s1);
-	pPsi->values[dualNodeId].s0 = (1.0 - polarFerroMix) * sqrt(normSq) * prev.s0 / sqrt(normSq_s0);
+	pPsi->values[dualNodeId].s1 = { sqrt(normSq * polarFerroMix), 0 };
+	pPsi->values[dualNodeId].s0 = { sqrt(normSq * (1.0 - polarFerroMix)), 0 };
 	pPsi->values[dualNodeId].s_1 = { 0, 0 };
 };
 
