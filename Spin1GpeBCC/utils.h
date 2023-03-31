@@ -140,6 +140,14 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 					s1 = x_s1;
 					s0 = x_s0;
 					s_1 = x_s_1;
+#elif BASIS == Y_QUANTIZED
+					double2 y_s1 = 0.5 * (s1 - s_1) + s0 * double2{ 0, -1 } / sqrt(2);
+					double2 y_s0 = (s1 + s_1) * double2{ 0, -1 } / sqrt(2);
+					double2 y_s_1 = 0.5 * (s_1 - s1) + s0 * double2{ 0, -1 } / sqrt(2);
+
+					s1 = y_s1;
+					s0 = y_s0;
+					s_1 = y_s_1;
 #endif
 
 					norm_s1 += s1.x * s1.x + s1.y * s1.y;
@@ -183,6 +191,14 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 					s1 = x_s1;
 					s0 = x_s0;
 					s_1 = x_s_1;
+#elif BASIS == Y_QUANTIZED
+					double2 y_s1 = 0.5 * (s1 - s_1) + s0 * double2{ 0, -1 } / sqrt(2);
+					double2 y_s0 = (s1 + s_1) * double2{ 0, -1 } / sqrt(2);
+					double2 y_s_1 = 0.5 * (s_1 - s1) + s0 * double2{ 0, -1 } / sqrt(2);
+
+					s1 = y_s1;
+					s0 = y_s0;
+					s_1 = y_s_1;
 #endif
 
 					norm_s1 += s1.x * s1.x + s1.y * s1.y;
