@@ -5,7 +5,7 @@
 #define Y_QUANTIZED 1
 #define X_QUANTIZED 2
 
-#define BASIS Y_QUANTIZED
+#define BASIS X_QUANTIZED
 
 enum class Phase {
 	UN = 0,
@@ -67,7 +67,7 @@ constexpr double EXPANSION_START = CREATION_RAMP_START + 10.5; // When the expan
 #define USE_QUADRUPOLE_OFFSET 0
 #define USE_INITIAL_NOISE 0
 
-#define SAVE_STATES 0
+#define SAVE_STATES 1
 #define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
@@ -1453,17 +1453,16 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	// Copy back from device memory to host memory
 	checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
-	// Measure wall clock time
-	static auto prevTime = std::chrono::high_resolution_clock::now();
-	auto duration = std::chrono::high_resolution_clock::now() - prevTime;
-	std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
-	prevTime = std::chrono::high_resolution_clock::now();
-
 	signal = getSignal(0);
 	Bs.Bq = BqScale * signal.Bq;
 	Bs.Bb = BzScale * signal.Bb;
 	drawDensity(densDir, h_oddPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, Bs, d_p0, block_scale);
 #endif
+	// Measure wall clock time
+	static auto prevTime = std::chrono::high_resolution_clock::now();
+	auto duration = std::chrono::high_resolution_clock::now() - prevTime;
+	std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
+	prevTime = std::chrono::high_resolution_clock::now();
 
 	while (t < END_TIME)
 	{
@@ -1496,16 +1495,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 			leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
 		}
-
-#if SAVE_PICTURE
-		// Copy back from device memory to host memory
-		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
-
 		// Measure wall clock time
 		static auto prevTime = std::chrono::high_resolution_clock::now();
 		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
 		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 		prevTime = std::chrono::high_resolution_clock::now();
+#if SAVE_PICTURE
+		// Copy back from device memory to host memory
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
 		signal = getSignal(0);
 		Bs.Bq = BqScale * signal.Bq;

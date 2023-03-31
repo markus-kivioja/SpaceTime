@@ -350,10 +350,9 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 					norm_s0 += s0.x * s0.x + s0.y * s0.y;
 					norm_s_1 += s_1.x * s_1.x + s_1.y * s_1.y;
 					norm_s_2 += s_2.x * s_2.x + s_2.y * s_2.y;
-
-					maxVal = std::max(maxVal, std::max(norm_s2, std::max(norm_s1, std::max(norm_s0, std::max(norm_s_1, norm_s_2)))));
 				}
 			}
+			maxVal = std::max(maxVal, std::max(norm_s2, std::max(norm_s1, std::max(norm_s0, std::max(norm_s_1, norm_s_2)))));
 		}
 	}
 	INTENSITY = 1.0 / maxVal;
@@ -507,10 +506,9 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 					norm_s0 += s0.x * s0.x + s0.y * s0.y;
 					norm_s_1 += s_1.x * s_1.x + s_1.y * s_1.y;
 					norm_s_2 += s_2.x * s_2.x + s_2.y * s_2.y;
-
-					maxVal = std::max(maxVal, std::max(norm_s2, std::max(norm_s1, std::max(norm_s0, std::max(norm_s_1, norm_s_2)))));
 				}
 			}
+			maxVal = std::max(maxVal, std::max(norm_s2, std::max(norm_s1, std::max(norm_s0, std::max(norm_s_1, norm_s_2)))));
 		}
 	}
 	INTENSITY = 1.0 / maxVal;
@@ -664,10 +662,9 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 					norm_s0 += s0.x * s0.x + s0.y * s0.y;
 					norm_s_1 += s_1.x * s_1.x + s_1.y * s_1.y;
 					norm_s_2 += s_2.x * s_2.x + s_2.y * s_2.y;
-
-					maxVal = std::max(maxVal, std::max(norm_s2, std::max(norm_s1, std::max(norm_s0, std::max(norm_s_1, norm_s_2)))));
 				}
 			}
+			maxVal = std::max(maxVal, std::max(norm_s2, std::max(norm_s1, std::max(norm_s0, std::max(norm_s_1, norm_s_2)))));
 		}
 	}
 	INTENSITY = 1.0 / maxVal;
