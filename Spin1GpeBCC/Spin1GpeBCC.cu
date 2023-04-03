@@ -201,6 +201,28 @@ __global__ void density(double* density, PitchedPtr prevStep, uint3 dimensions)
 	density[idx] = (psi.s1 * conj(psi.s1)).x + (psi.s0 * conj(psi.s0)).x + (psi.s_1 * conj(psi.s_1)).x;
 }
 
+__global__ void innerProduct(double* result, PitchedPtr pLeft, PitchedPtr pRight, uint3 dimensions)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	Complex3Vec left = ((BlockPsis*)(pLeft.ptr + pLeft.slicePitch * zid + pLeft.pitch * yid) + dataXid)->values[dualNodeId];
+	Complex3Vec right = ((BlockPsis*)(pRight.ptr + pRight.slicePitch * zid + pRight.pitch * yid) + dataXid)->values[dualNodeId];
+
+	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
+	result[idx] = (conj(left.s1) * right.s1).x + (conj(left.s0) * right.s0).x + (conj(left.s_1) * right.s_1).x;
+}
+
 __global__ void localAvgSpinAndDensity(double* pSpinNorm, double3* pLocalAvgSpin, double* pDensity, PitchedPtr prevStep, uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -493,7 +515,7 @@ __global__ void mixedState(PitchedPtr psi, const uint3 dimensions, const double 
 };
 
 #if COMPUTE_GROUND_STATE
-__global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __restrict__ laplace, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double dt, const double t)
+__global__ void itp(PitchedPtr HPsiPtr, PitchedPtr nextStep, PitchedPtr prevStep, const int4* __restrict__ laplace, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double dt, const double t)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -515,6 +537,9 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __rest
 	// Calculate the pointers for this block
 	char* prevPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
 	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + dataXid;
+
+	// For computing the energy/chemical potential
+	BlockPsis* HPsi = (BlockPsis*)(HPsiPtr.ptr + HPsiPtr.slicePitch * zid + HPsiPtr.pitch * yid) + dataXid;
 
 	// Update psi
 	const Complex3Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
@@ -591,12 +616,16 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __rest
 	H.s0 += (Bxy * prev.s1 + BxyConj * prev.s_1);
 	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
 
+	HPsi->values[dualNodeId].s1 = H.s1;
+	HPsi->values[dualNodeId].s0 = H.s0;
+	HPsi->values[dualNodeId].s_1 = H.s_1;
+
 	nextPsi->values[dualNodeId].s1 = prev.s1 - dt * H.s1;
 	nextPsi->values[dualNodeId].s0 = prev.s0 - dt * H.s0;
 	nextPsi->values[dualNodeId].s_1 = prev.s_1 - dt * H.s_1;
 };
 
-__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restrict__ laplace, double* __restrict__ hodges, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double alpha)
+__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restrict__ laplace, double* __restrict__ hodges, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double alpha, bool USE_THREE_BODY_LOSS, bool USE_QUADRATIC_ZEEMAN, bool USE_QUADRUPOLE_OFFSET, double dt, const double t)
 {};
 #else
 __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restrict__ laplace, double* __restrict__ hodges, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double alpha, bool USE_THREE_BODY_LOSS, bool USE_QUADRATIC_ZEEMAN, bool USE_QUADRUPOLE_OFFSET, double dt, const double t)
@@ -973,12 +1002,15 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	cudaPitchedPtr d_cudaEvenPsi;
 	cudaPitchedPtr d_cudaOddPsi;
+	cudaPitchedPtr d_cudaHPsi;
 	checkCudaErrors(cudaMalloc3D(&d_cudaEvenPsi, psiExtent));
 	checkCudaErrors(cudaMalloc3D(&d_cudaOddPsi, psiExtent));
+	checkCudaErrors(cudaMalloc3D(&d_cudaHPsi, psiExtent));
 
 	//double* d_energy;
 	double* d_spinNorm;
 	double* d_density;
+	double* d_energy;
 	double3* d_localAvgSpin;
 	double3* d_u;
 	double3* d_v;
@@ -986,6 +1018,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	//checkCudaErrors(cudaMalloc(&d_energy, bodies * sizeof(double)));
 	checkCudaErrors(cudaMalloc(&d_spinNorm, bodies * sizeof(double)));
 	checkCudaErrors(cudaMalloc(&d_density, bodies * sizeof(double)));
+	checkCudaErrors(cudaMalloc(&d_energy, bodies * sizeof(double)));
 	checkCudaErrors(cudaMalloc(&d_localAvgSpin, bodies * sizeof(double3)));
 	checkCudaErrors(cudaMalloc(&d_u, bodies * sizeof(double3)));
 	checkCudaErrors(cudaMalloc(&d_v, bodies * sizeof(double3)));
@@ -994,6 +1027,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	size_t offset = d_cudaEvenPsi.pitch * dysize + d_cudaEvenPsi.pitch + sizeof(BlockPsis);
 	PitchedPtr d_evenPsi = { (char*)d_cudaEvenPsi.ptr + offset, d_cudaEvenPsi.pitch, d_cudaEvenPsi.pitch * dysize };
 	PitchedPtr d_oddPsi = { (char*)d_cudaOddPsi.ptr + offset, d_cudaOddPsi.pitch, d_cudaOddPsi.pitch * dysize };
+	PitchedPtr d_HPsi = { (char*)d_cudaHPsi.ptr + offset, d_cudaHPsi.pitch, d_cudaHPsi.pitch * dysize };
 
 	// find terms for laplacian
 	Buffer<int4> lapind;
@@ -1280,7 +1314,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		if ((iter % 1000) == 0)
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-			drawDensity("GS", h_evenPsi, dxsize, dysize, dzsize, iter);
+			drawDensity("GS", h_evenPsi, dxsize, dysize, dzsize, iter, "ground_state");
 			printDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 
 			double3 com = centerOfMass(h_evenPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
@@ -1299,30 +1333,27 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			return 0;
 		}
 		// Take an imaginary time step
-		itp << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
+		itp << <dimGrid, dimBlock >> > (d_HPsi, d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, 0);
 		// Normalize
 		normalize_h(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 
 		// Take an imaginary time step
-		itp << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
+		itp << <dimGrid, dimBlock >> > (d_HPsi, d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, 0);
 		// Normalize
 		normalize_h(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 
-		//energy_h(dimGrid, dimBlock, d_energy, d_evenPsi, d_pot, d_lapind, d_hodges, g, dimensions, volume, bodies);
-		//double hDensity = 0;
-		//double hEnergy = 0;
-		//checkCudaErrors(cudaMemcpy(&hDensity, d_density, sizeof(double), cudaMemcpyDeviceToHost));
-		//checkCudaErrors(cudaMemcpy(&hEnergy, d_energy, sizeof(double), cudaMemcpyDeviceToHost));
-
-		//double newMu = hEnergy / hDensity;
-		//double newE = hEnergy;
-		//
-		//std::cout << "Total density: " << hDensity << ", Total energy: " << hEnergy << ", mu: " << newMu << std::endl;
-
-		//if (std::abs(mu - newMu) < 1e-4) break;
-
-		//mu = newMu;
-		//E = newE;
+		// Compute energy/chemical potential // Alice ring experimen E = 127.295
+		innerProduct << <dimGrid, dimBlock >> > (d_energy, d_evenPsi, d_HPsi, dimensions);
+		int prevStride = bodies;
+		while (prevStride > 1)
+		{
+			int newStride = prevStride / 2;
+			integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_energy, newStride, ((newStride * 2) != prevStride), volume);
+			prevStride = newStride;
+		}
+		double hEnergy = 0;
+		checkCudaErrors(cudaMemcpy(&hEnergy, d_energy, sizeof(double), cudaMemcpyDeviceToHost));
+		std::cout << "Energy: " << hEnergy << std::endl;
 
 		iter++;
 	}
@@ -1352,6 +1383,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	double expansionBlockScale = block_scale;
 
+	// Measure wall clock time
+	static auto prevTime = std::chrono::high_resolution_clock::now();
+
 	while (t < CREATION_RAMP_START)
 	{
 		// update odd values
@@ -1378,7 +1412,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
 	// Measure wall clock time
-	static auto prevTime = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::high_resolution_clock::now() - prevTime;
 	std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 	prevTime = std::chrono::high_resolution_clock::now();
@@ -1432,7 +1465,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
 		// Measure wall clock time
-		static auto prevTime = std::chrono::high_resolution_clock::now();
 		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
 		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 		prevTime = std::chrono::high_resolution_clock::now();
