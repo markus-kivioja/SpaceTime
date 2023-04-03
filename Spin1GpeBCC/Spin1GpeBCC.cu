@@ -879,6 +879,30 @@ __global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, const int4* _
 	nextPsi->values[dualNodeId].s0 += 2 * dt * double2{ H.s0.y, -H.s0.x };
 	nextPsi->values[dualNodeId].s_1 += 2 * dt * double2{ H.s_1.y, -H.s_1.x };
 };
+
+__global__ void analyticStep(PitchedPtr nextStep, PitchedPtr prevStep, uint3 dimensions, const double2 phaseShift)
+{
+	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	const size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	const size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+	const size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid > dimensions.x || yid > dimensions.y || zid > dimensions.z)
+	{
+		return;
+	}
+
+	// Calculate the pointers for this block
+	char* prevPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
+	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + dataXid;
+
+	const Complex3Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
+	nextPsi->values[dualNodeId].s1 = prev.s1 * phaseShift;
+	nextPsi->values[dualNodeId].s0 = prev.s0 * phaseShift;
+	nextPsi->values[dualNodeId].s_1 = prev.s_1 * phaseShift;
+};
 #endif
 //void energy_h(dim3 dimGrid, dim3 dimBlock, double* energyPtr, PitchedPtr psi, PitchedPtr potentials, int4* lapInd, double* hodges, double g, uint3 dimensions, double volume, size_t bodies)
 //{
@@ -1285,6 +1309,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		printDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 	}
 
+	const double E = 127.295; // Computed with ITP
+	double analytic_t = 0;
+
 	// Take one forward Euler step if starting from the ground state or time step changed
 	if (doForward)
 	{
@@ -1296,6 +1323,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
 		forwardEuler << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt, t);
+		//analyticStep << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, dimensions, double2{ cos(-analytic_t * E), sin(-analytic_t * E) });
+		//analytic_t += dt;
 	}
 	else
 	{
