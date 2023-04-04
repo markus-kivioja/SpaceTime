@@ -1689,7 +1689,7 @@ int main(int argc, char** argv)
 	// integrate in time using DEC
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
-	for (POLAR_FERRO_MIX = 0.1; POLAR_FERRO_MIX <= 1.0; POLAR_FERRO_MIX += 0.1)
+	for (POLAR_FERRO_MIX = 0.0; POLAR_FERRO_MIX <= 1.0; POLAR_FERRO_MIX += 0.1)
 	{
 		t = 0;
 		integrateInTime(blockScale, domainMin, domainMax);

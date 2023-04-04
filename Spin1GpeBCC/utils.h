@@ -206,9 +206,10 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 			const double s0 = INTENSITY * norm_s0;
 			const double s_1 = INTENSITY * norm_s_1;
 
-			pic1.setColor(i, k, Vector4(s1, s1, s1, 1.0));
-			pic1.setColor(width + i, k, Vector4(s0, s0, s0, 1.0));
-			pic1.setColor(2 * width + i, k, Vector4(s_1, s_1, s_1, 1.0));
+			int uv_x = (width - i - 1);
+			pic1.setColor(uv_x, k, Vector4(s1, s1, s1, 1.0));
+			pic1.setColor(width + uv_x, k, Vector4(s0, s0, s0, 1.0));
+			pic1.setColor(2 * width + uv_x, k, Vector4(s_1, s_1, s_1, 1.0));
 		}
 	}
 
@@ -302,9 +303,11 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 			const double s0 = INTENSITY * norm_s0;
 			const double s_1 = INTENSITY * norm_s_1;
 
-			pic1.setColor(i, height + j, Vector4(s1, s1, s1, 1.0));
-			pic1.setColor(width + i, height + j, Vector4(s0, s0, s0, 1.0));
-			pic1.setColor(2 * width + i, height + j, Vector4(s_1, s_1, s_1, 1.0));
+			int uv_x = (width - i - 1);
+			int uv_y = (height - j - 1);
+			pic1.setColor(uv_x, height + uv_y, Vector4(s1, s1, s1, 1.0));
+			pic1.setColor(width + uv_x, height + uv_y, Vector4(s0, s0, s0, 1.0));
+			pic1.setColor(2 * width + uv_x, height + uv_y, Vector4(s_1, s_1, s_1, 1.0));
 		}
 	}
 
