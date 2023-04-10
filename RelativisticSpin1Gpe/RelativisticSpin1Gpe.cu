@@ -17,7 +17,7 @@
 
 #define RELATIVISTIC 1
 
-#define COMPUTE_GROUND_STATE 0
+#define COMPUTE_GROUND_STATE 1
 
 #define SAVE_STATES 1
 #define SAVE_PICTURE 1
@@ -25,12 +25,6 @@
 #define THREAD_BLOCK_X 16
 #define THREAD_BLOCK_Y 2
 #define THREAD_BLOCK_Z 1
-
-bool USE_QUADRUPOLE_OFFSET = false;
-bool USE_INITIAL_NOISE = false;
-
-bool USE_QUADRATIC_ZEEMAN = false;
-bool USE_THREE_BODY_LOSS = false;
 
 constexpr double DOMAIN_SIZE_X = 24.0;
 constexpr double DOMAIN_SIZE_Y = 24.0;
@@ -77,7 +71,8 @@ const double BzQuadScale = sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (tra
 constexpr double SQRT_2 = 1.41421356237309;
 constexpr double INV_SQRT_2 = 0.70710678118655;
 
-const std::string GROUND_STATE_FILENAME = "ground_state.dat";
+const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi.dat";
+const std::string GROUND_STATE_Q_FILENAME = "ground_state_q.dat";
 const std::string SAVE_FILE_PREFIX = "";
 
 constexpr double NOISE_AMPLITUDE = 0.1;
@@ -110,25 +105,14 @@ __constant__ double quadrupoleCenterX = -0.20590789;
 __constant__ double quadrupoleCenterY = -0.48902826;
 __constant__ double quadrupoleCenterZ = -0.27353409;
 
-__device__ __inline__ double3 magneticField(double3 p, double Bq, double Bz, bool USE_QUADRUPOLE_OFFSET)
+__device__ __inline__ double3 magneticField(double3 p, double Bq, double Bz)
 {
-	if (USE_QUADRUPOLE_OFFSET)
-	{
-		return {
-			Bq * (p.x - quadrupoleCenterX),
-			Bq * (p.y - quadrupoleCenterY),
-			-2 * Bq * (p.z - quadrupoleCenterZ) + Bz
-};
-	}
-	else
-	{
-		return { Bq * p.x, Bq * p.y, -2 * Bq * p.z + Bz };
-	}
+	return { Bq * p.x, Bq * p.y, -2 * Bq * p.z + Bz };
 }
 
 #include "utils.h"
 
-__global__ void maxHamilton(double* maxHamlPtr, PitchedPtr prevStep, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double alpha)
+__global__ void maxHamilton(double* maxHamlPtr, PitchedPtr prevStep, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -163,7 +147,7 @@ __global__ void maxHamilton(double* maxHamlPtr, PitchedPtr prevStep, MagFields B
 
 	const double2 temp = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
 	const double3 magnetization = { temp.x, temp.y, normSq_s1 - normSq_s_1 };
-	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz, false);
+	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
 	B += c2 * magnetization;
 
 	// Linear Zeeman shift
@@ -195,6 +179,28 @@ __global__ void density(double* density, PitchedPtr prevStep, uint3 dimensions)
 
 	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
 	density[idx] = (psi.s1 * conj(psi.s1)).x + (psi.s0 * conj(psi.s0)).x + (psi.s_1 * conj(psi.s_1)).x;
+}
+
+__global__ void innerProduct(double* result, PitchedPtr pLeft, PitchedPtr pRight, uint3 dimensions)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	Complex3Vec left = ((BlockPsis*)(pLeft.ptr + pLeft.slicePitch * zid + pLeft.pitch * yid) + dataXid)->values[dualNodeId];
+	Complex3Vec right = ((BlockPsis*)(pRight.ptr + pRight.slicePitch * zid + pRight.pitch * yid) + dataXid)->values[dualNodeId];
+
+	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
+	result[idx] = (conj(left.s1) * right.s1).x + (conj(left.s0) * right.s0).x + (conj(left.s_1) * right.s_1).x;
 }
 
 __global__ void localAvgSpinAndDensity(double* pSpinNorm, double3* pLocalAvgSpin, double* pDensity, PitchedPtr prevStep, uint3 dimensions)
@@ -429,7 +435,7 @@ __global__ void polarState(PitchedPtr psi, uint3 dimensions)
 };
 
 #if COMPUTE_GROUND_STATE
-__global__ void itp_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3 * d0, uint3 dimensions)
+__global__ void itp_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3 * d0, uint3 dimensions, double dt_per_sigma)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -458,9 +464,9 @@ __global__ void itp_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3
 	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
 	Complex3Vec q;
-	q.s1 = dt_per_sigma * (prev->values[dualEdgeId].s1 + d0psi.s1);
-	q.s0 = dt_per_sigma * (prev->values[dualEdgeId].s0 + d0psi.s0);
-	q.s_1 = dt_per_sigma * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
+	q.s1 = dt_per_sigma * (d0psi.s1 + prev->values[dualEdgeId].s1);
+	q.s0 = dt_per_sigma * (d0psi.s0 + prev->values[dualEdgeId].s0);
+	q.s_1 = dt_per_sigma * (d0psi.s_1 + prev->values[dualEdgeId].s_1);
 
 	next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1 - make_double2(q.s1.x, q.s1.y);
 	next->values[dualEdgeId].s0 = prev->values[dualEdgeId].s0 - make_double2(q.s0.x, q.s0.y);
@@ -470,7 +476,7 @@ __global__ void itp_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3
 #endif
 }
 
-__global__ void itp_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2 * __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2)
+__global__ void itp_psi(PitchedPtr HPsiPtr, PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2 * __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double dt)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -488,6 +494,9 @@ __global__ void itp_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs,
 	char* prevPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
 	char* qPtr = qs.ptr + qs.slicePitch * zid + qs.pitch * yid + sizeof(BlockEdges) * dataXid;
 	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + dataXid;
+
+	// For computing the energy/chemical potential
+	BlockPsis* HPsi = (BlockPsis*)(HPsiPtr.ptr + HPsiPtr.slicePitch * zid + HPsiPtr.pitch * yid) + dataXid;
 
 	// Update psi
 	const Complex3Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
@@ -541,15 +550,16 @@ __global__ void itp_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs,
 	H.s0 += (Bxy * prev.s1 + BxyConj * prev.s_1);
 	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
 
+	HPsi->values[dualNodeId].s1 = H.s1;
+	HPsi->values[dualNodeId].s0 = H.s0;
+	HPsi->values[dualNodeId].s_1 = H.s_1;
+
 	nextPsi->values[dualNodeId].s1 = prev.s1 - dt * H.s1;
 	nextPsi->values[dualNodeId].s0 = prev.s0 - dt * H.s0;
 	nextPsi->values[dualNodeId].s_1 = prev.s_1 - dt * H.s_1;
 };
-
-__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __restrict__ laplace, double* __restrict__ hodges, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double alpha)
-{};
 #else
-__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2 * __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double alpha, bool USE_THREE_BODY_LOSS, bool USE_QUADRATIC_ZEEMAN, bool USE_QUADRUPOLE_OFFSET, double dt)
+__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2 * __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double dt)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -606,17 +616,13 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 
 	double2 totalPot = { trap(globalPos) + c0 * normSq, 0 };
-	if (USE_THREE_BODY_LOSS)
-	{
-		totalPot.y = -alpha * normSq * normSq;
-	}
 
 	H.s1 += totalPot * prev.s1;
 	H.s0 += totalPot * prev.s0;
 	H.s_1 += totalPot * prev.s_1;
 
 	const double2 magXY = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
-	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz, USE_QUADRUPOLE_OFFSET);
+	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
 	B += c2 * double3{ magXY.x, magXY.y, normSq_s1 - normSq_s_1 };
 
 	// Linear Zeeman shift
@@ -625,23 +631,6 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 	H.s1 += (B.z * prev.s1 + BxyConj * prev.s0);
 	H.s0 += (Bxy * prev.s1 + BxyConj * prev.s_1);
 	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
-
-	if (USE_QUADRATIC_ZEEMAN)
-	{
-		// Quadratic Zeeman shift
-		B = magneticField(globalPos, Bs.BqQuad, Bs.BzQuad, USE_QUADRUPOLE_OFFSET);
-		Bxy = INV_SQRT_2 * double2{ B.x, B.y };
-		BxyConj = conj(Bxy);
-		double BxyNormSq = (BxyConj * Bxy).x;
-		double2 BxySq = Bxy * Bxy;
-		double2 BxyConjSq = BxyConj * BxyConj;
-		double BzSq = B.z * B.z;
-		double2 BzBxy = B.z * Bxy;
-		double2 BzBxyConj = B.z * BxyConj;
-		H.s1 += (BzSq + BxyNormSq) * prev.s1 + BzBxyConj * prev.s0 + BxyConjSq * prev.s_1;
-		H.s0 += BzBxy * prev.s1 + 2 * BxyNormSq * prev.s0 - BzBxyConj * prev.s_1;
-		H.s_1 += BxySq * prev.s1 - BzBxy * prev.s0 + (BzSq + BxyNormSq) * prev.s_1;
-	}
 
 	nextPsi->values[dualNodeId].s1 = prev.s1 + dt * double2{ H.s1.y, -H.s1.x };
 	nextPsi->values[dualNodeId].s0 = prev.s0 + dt * double2{ H.s0.y, -H.s0.x };
@@ -677,9 +666,9 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 	
 	Complex3Vec q;
-	q.s1 = dt_per_sigma * (prev->values[dualEdgeId].s1 + d0psi.s1);
-	q.s0 = dt_per_sigma * (prev->values[dualEdgeId].s0 + d0psi.s0);
-	q.s_1 = dt_per_sigma * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
+	q.s1 = dt_per_sigma * (d0psi.s1 + prev->values[dualEdgeId].s1);
+	q.s0 = dt_per_sigma * (d0psi.s0 + prev->values[dualEdgeId].s0);
+	q.s_1 = dt_per_sigma * (d0psi.s_1 + prev->values[dualEdgeId].s_1);
 
 	next->values[dualEdgeId].s1 += make_double2(-q.s1.y, q.s1.x);
 	next->values[dualEdgeId].s0 += make_double2(-q.s0.y, q.s0.x);
@@ -689,7 +678,7 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 #endif
 }
 
-__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double alpha, bool USE_THREE_BODY_LOSS, bool USE_QUADRATIC_ZEEMAN, bool USE_QUADRUPOLE_OFFSET, double dt)
+__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double dt)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -746,17 +735,13 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 
 	double2 totalPot = { trap(globalPos) + c0 * normSq, 0 };
-	if (USE_THREE_BODY_LOSS)
-	{
-		totalPot.y = -alpha * normSq * normSq;
-	}
 
 	H.s1 += totalPot * prev.s1;
 	H.s0 += totalPot * prev.s0;
 	H.s_1 += totalPot * prev.s_1;
 
 	const double2 magXY = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
-	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz, USE_QUADRUPOLE_OFFSET);
+	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
 	B += c2 * double3{ magXY.x, magXY.y, normSq_s1 - normSq_s_1 };
 
 	// Linear Zeeman shift
@@ -766,39 +751,11 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 	H.s0 += (Bxy * prev.s1 + BxyConj * prev.s_1);
 	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
 
-	if (USE_QUADRATIC_ZEEMAN)
-	{
-		// Quadratic Zeeman shift
-		B = magneticField(globalPos, Bs.BqQuad, Bs.BzQuad, USE_QUADRUPOLE_OFFSET);
-		Bxy = INV_SQRT_2 * double2{ B.x, B.y };
-		BxyConj = conj(Bxy);
-		double BxyNormSq = (BxyConj * Bxy).x;
-		double2 BxySq = Bxy * Bxy;
-		double2 BxyConjSq = BxyConj * BxyConj;
-		double BzSq = B.z * B.z;
-		double2 BzBxy = B.z * Bxy;
-		double2 BzBxyConj = B.z * BxyConj;
-		H.s1 += (BzSq + BxyNormSq) * prev.s1 + BzBxyConj * prev.s0 + BxyConjSq * prev.s_1;
-		H.s0 += BzBxy * prev.s1 + 2 * BxyNormSq * prev.s0 - BzBxyConj * prev.s_1;
-		H.s_1 += BxySq * prev.s1 - BzBxy * prev.s0 + (BzSq + BxyNormSq) * prev.s_1;
-	}
-
 	nextPsi->values[dualNodeId].s1 += 2 * dt * double2{ H.s1.y, -H.s1.x };
 	nextPsi->values[dualNodeId].s0 += 2 * dt * double2{ H.s0.y, -H.s0.x };
 	nextPsi->values[dualNodeId].s_1 += 2 * dt * double2{ H.s_1.y, -H.s_1.x };
 };
 #endif
-//void energy_h(dim3 dimGrid, dim3 dimBlock, double* energyPtr, PitchedPtr psi, PitchedPtr potentials, int4* lapInd, double* hodges, double g, uint3 dimensions, double volume, size_t bodies)
-//{
-//	energy << <dimGrid, dimBlock >> > (energyPtr, psi, potentials, lapInd, hodges, g, dimensions, volume);
-//	int prevStride = bodies;
-//	while (prevStride > 1)
-//	{
-//		int newStride = prevStride / 2;
-//		integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (energyPtr, newStride, ((newStride * 2) != prevStride));
-//		prevStride = newStride;
-//	}
-//}
 
 void normalize_h(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, double volume)
 {
@@ -869,7 +826,7 @@ SpinMagDens integrateSpinAndDensity(dim3 dimGrid, dim3 dimBlock, double* spinNor
 
 float getMaxHamilton(dim3 dimGrid, dim3 dimBlock, double* maxHamlPtr, PitchedPtr psi, MagFields Bs, uint3 dimensions, size_t bodies, double block_scale, double3 p0)
 {
-	maxHamilton << <dimGrid, dimBlock >> > (maxHamlPtr, psi, Bs, dimensions, block_scale, p0, c0, c2, alpha);
+	maxHamilton << <dimGrid, dimBlock >> > (maxHamlPtr, psi, Bs, dimensions, block_scale, p0, c0, c2);
 	int prevStride = bodies;
 	while (prevStride > 1)
 	{
@@ -918,16 +875,20 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	checkCudaErrors(cudaMalloc3D(&d_cudaOddPsi, psiExtent));
 	checkCudaErrors(cudaMalloc3D(&d_cudaOddQ, edgeExtent));
 
-	//double* d_energy;
+	// For computing the energy/chemical potential
+	cudaPitchedPtr d_cudaHPsi;
+	checkCudaErrors(cudaMalloc3D(&d_cudaHPsi, psiExtent));
+
 	double* d_spinNorm;
 	double* d_density;
+	double* d_energy;
 	double3* d_localAvgSpin;
 	double3* d_u;
 	double3* d_v;
 	double* d_theta;
-	//checkCudaErrors(cudaMalloc(&d_energy, bodies * sizeof(double)));
 	checkCudaErrors(cudaMalloc(&d_spinNorm, bodies * sizeof(double)));
 	checkCudaErrors(cudaMalloc(&d_density, bodies * sizeof(double)));
+	checkCudaErrors(cudaMalloc(&d_energy, bodies * sizeof(double)));
 	checkCudaErrors(cudaMalloc(&d_localAvgSpin, bodies * sizeof(double3)));
 	checkCudaErrors(cudaMalloc(&d_u, bodies * sizeof(double3)));
 	checkCudaErrors(cudaMalloc(&d_v, bodies * sizeof(double3)));
@@ -940,6 +901,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	PitchedPtr d_oddPsi = { (char*)d_cudaOddPsi.ptr + offset, d_cudaOddPsi.pitch, d_cudaOddPsi.pitch * dysize };
 	PitchedPtr d_oddQ = { (char*)d_cudaOddQ.ptr + edgeOffset, d_cudaOddQ.pitch, d_cudaOddQ.pitch * dysize };
 
+	PitchedPtr d_HPsi = { (char*)d_cudaHPsi.ptr + offset, d_cudaHPsi.pitch, d_cudaHPsi.pitch * dysize };
+
 	// find terms for laplacian
 	Buffer<int3> d0;
 	Buffer<int2> d1;
@@ -947,15 +910,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	getLaplacian(hodges, d0, d1, sizeof(BlockPsis), d_evenPsi.pitch, d_evenPsi.slicePitch, sizeof(BlockEdges), d_evenQ.pitch, d_evenQ.slicePitch);
 
 	//std::cout << "lapsize = " << lapsize << ", lapfac = " << lapfac << ", lapfac0 = " << lapfac0 << std::endl;
-
-	if (USE_QUADRUPOLE_OFFSET)
-	{
-		std::cout << "Quadrupole field offset is in use." << std::endl;
-	}
-	else
-	{
-		std::cout << "Not using quadrupole field offset." << std::endl;
-	}
 
 	for (int i = 0; i < hodges.size(); ++i) hodges[i] = -0.5 * hodges[i] / (block_scale * block_scale);
 
@@ -972,10 +926,16 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	size_t hostSize = dxsize * dysize * dzsize;
 	BlockPsis* h_evenPsi;
 	BlockPsis* h_oddPsi;
+	BlockPsis* h_evenQ;
+	BlockPsis* h_oddQ;
 	checkCudaErrors(cudaMallocHost(&h_evenPsi, hostSize * sizeof(BlockPsis)));
 	checkCudaErrors(cudaMallocHost(&h_oddPsi, hostSize * sizeof(BlockPsis)));
+	checkCudaErrors(cudaMallocHost(&h_evenQ, hostSize * sizeof(BlockEdges)));
+	checkCudaErrors(cudaMallocHost(&h_oddQ, hostSize * sizeof(BlockEdges)));
 	memset(h_evenPsi, 0, hostSize * sizeof(BlockPsis));
 	memset(h_oddPsi, 0, hostSize * sizeof(BlockPsis));
+	memset(h_evenQ, 0, hostSize * sizeof(BlockEdges));
+	memset(h_oddQ, 0, hostSize * sizeof(BlockEdges));
 
 	double* h_density;
 	double3* h_u;
@@ -988,7 +948,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 #if COMPUTE_GROUND_STATE
 	// Initialize discrete field
-	std::ifstream fs(GROUND_STATE_FILENAME, std::ios::binary | std::ios::in);
+	std::ifstream fs(GROUND_STATE_PSI_FILENAME, std::ios::binary | std::ios::in);
 	if (fs.fail() != 0)
 	{
 		std::cout << "Initialized ground state with random noise." << std::endl;
@@ -1017,9 +977,17 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	}
 	else
 	{
-		std::cout << "Initialized ground state from file." << std::endl;
+		std::cout << "Initialized ground state psi from file." << std::endl;
 
 		fs.read((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+		fs.close();
+	}
+	std::ifstream fs_q(GROUND_STATE_Q_FILENAME, std::ios::binary | std::ios::in);
+	if (fs.fail() == 0)
+	{
+		std::cout << "Initialized ground state q from file." << std::endl;
+
+		fs.read((char*)&h_evenQ[0], hostSize * sizeof(BlockEdges));
 		fs.close();
 	}
 
@@ -1037,65 +1005,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	fs.read((char*)&h_oddPsi[0], hostSize * sizeof(BlockPsis));
 	fs.close();
 
-	if (USE_THREE_BODY_LOSS)
-	{
-		std::cout << "The three-body loss is taken into account." << std::endl;
-	}
-	else
-	{
-		std::cout << "The three-body loss is ignored." << std::endl;
-	}
-
-	if (USE_QUADRATIC_ZEEMAN)
-	{
-		std::cout << "The quadratic Zeeman shift is taken into account." << std::endl;
-	}
-	else
-	{
-		std::cout << "The quadratic Zeeman shift is ignored." << std::endl;
-	}
-
-	if (USE_INITIAL_NOISE)
-	{
-		if (loadGroundState && (NOISE_AMPLITUDE > 0))
-		{
-			std::default_random_engine generator;
-			std::normal_distribution<double> distribution(0.0, 1.0);
-
-			for (uint k = 0; k < zsize; k++)
-			{
-				for (uint j = 0; j < ysize; j++)
-				{
-					for (uint i = 0; i < xsize; i++)
-					{
-						for (uint l = 0; l < bsize; l++)
-						{
-							// Add noise
-							const uint dstI = (k + 1) * dxsize * dysize + (j + 1) * dxsize + (i + 1);
-							const double2 rand_s1 = { distribution(generator), distribution(generator) };
-							const double2 rand_s0 = { distribution(generator), distribution(generator) };
-							const double2 rand_s_1 = { distribution(generator), distribution(generator) };
-
-							const double dens_s1 = (conj(h_oddPsi[dstI].values[l].s1) * h_oddPsi[dstI].values[l].s1).x;
-							const double dens_s0 = (conj(h_oddPsi[dstI].values[l].s0) * h_oddPsi[dstI].values[l].s0).x;
-							const double dens_s_1 = (conj(h_oddPsi[dstI].values[l].s_1) * h_oddPsi[dstI].values[l].s_1).x;
-							const double dens = dens_s1 + dens_s0 + dens_s_1;
-
-							h_oddPsi[dstI].values[l].s1 += sqrt(dens) * NOISE_AMPLITUDE * rand_s1;
-							h_oddPsi[dstI].values[l].s0 += sqrt(dens) * NOISE_AMPLITUDE * rand_s0;
-							h_oddPsi[dstI].values[l].s_1 += sqrt(dens) * NOISE_AMPLITUDE * rand_s_1;
-						}
-					}
-				}
-			}
-			std::cout << "Initial noise of " << NOISE_AMPLITUDE << " applied." << std::endl;
-		}
-	}
-	else
-	{
-		std::cout << "No initial noise." << std::endl;
-	}
-
 	bool doForward = true;
 	std::string evenFilename = SAVE_FILE_PREFIX + "even_" + toString(t) + ".dat";
 	std::ifstream evenFs(evenFilename, std::ios::binary | std::ios::in);
@@ -1111,6 +1020,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	cudaPitchedPtr h_cudaEvenPsi = { 0 };
 	cudaPitchedPtr h_cudaOddPsi = { 0 };
+	cudaPitchedPtr h_cudaEvenQ = { 0 };
+	cudaPitchedPtr h_cudaOddQ = { 0 };
 
 	h_cudaEvenPsi.ptr = h_evenPsi;
 	h_cudaEvenPsi.pitch = dxsize * sizeof(BlockPsis);
@@ -1121,6 +1032,16 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	h_cudaOddPsi.pitch = dxsize * sizeof(BlockPsis);
 	h_cudaOddPsi.xsize = d_cudaOddPsi.xsize;
 	h_cudaOddPsi.ysize = d_cudaOddPsi.ysize;
+
+	h_cudaEvenQ.ptr = h_evenQ;
+	h_cudaEvenQ.pitch = dxsize * sizeof(BlockEdges);
+	h_cudaEvenQ.xsize = d_cudaEvenQ.xsize;
+	h_cudaEvenQ.ysize = d_cudaEvenQ.ysize;
+
+	h_cudaOddQ.ptr = h_oddQ;
+	h_cudaOddQ.pitch = dxsize * sizeof(BlockEdges);
+	h_cudaOddQ.xsize = d_cudaOddQ.xsize;
+	h_cudaOddQ.ysize = d_cudaOddQ.ysize;
 
 	// Copy from host memory to device memory
 	cudaMemcpy3DParms evenPsiParams = { 0 };
@@ -1136,19 +1057,18 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	oddPsiParams.extent = psiExtent;
 	oddPsiParams.kind = cudaMemcpyHostToDevice;
 
-	// TODO: Implement a possibility to save and load q states.
-	//cudaMemcpy3DParms evenQParams = { 0 };
-	//cudaMemcpy3DParms oddQParams = { 0 };
-	//
-	//evenQParams.srcPtr = h_cudaEvenQ;
-	//evenQParams.dstPtr = d_cudaEvenQ;
-	//evenQParams.extent = psiExtent;
-	//evenQParams.kind = cudaMemcpyHostToDevice;
-	//
-	//oddQParams.srcPtr = h_cudaOddPsi;
-	//oddQParams.dstPtr = d_cudaOddPsi;
-	//oddQParams.extent = psiExtent;
-	//oddQParams.kind = cudaMemcpyHostToDevice;
+	cudaMemcpy3DParms evenQParams = { 0 };
+	cudaMemcpy3DParms oddQParams = { 0 };
+	
+	evenQParams.srcPtr = h_cudaEvenQ;
+	evenQParams.dstPtr = d_cudaEvenQ;
+	evenQParams.extent = edgeExtent;
+	evenQParams.kind = cudaMemcpyHostToDevice;
+	
+	oddQParams.srcPtr = h_cudaOddQ;
+	oddQParams.dstPtr = d_cudaOddQ;
+	oddQParams.extent = edgeExtent;
+	oddQParams.kind = cudaMemcpyHostToDevice;
 
 	checkCudaErrors(cudaMemcpy3D(&evenPsiParams));
 	checkCudaErrors(cudaMemcpy3D(&oddPsiParams));
@@ -1177,6 +1097,18 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	oddPsiBackParams.extent = psiExtent;
 	oddPsiBackParams.kind = cudaMemcpyDeviceToHost;
 
+	cudaMemcpy3DParms evenQBackParams = { 0 };
+	evenQBackParams.srcPtr = d_cudaEvenQ;
+	evenQBackParams.dstPtr = h_cudaEvenQ;
+	evenQBackParams.extent = edgeExtent;
+	evenQBackParams.kind = cudaMemcpyDeviceToHost;
+
+	cudaMemcpy3DParms oddQBackParams = { 0 };
+	oddQBackParams.srcPtr = d_cudaOddQ;
+	oddQBackParams.dstPtr = h_cudaOddQ;
+	oddQBackParams.extent = edgeExtent;
+	oddQBackParams.kind = cudaMemcpyDeviceToHost;
+
 	// Integrate in time
 	uint3 dimensions = make_uint3(xsize, ysize, zsize);
 	dim3 psiDimBlock(THREAD_BLOCK_X * VALUES_IN_BLOCK, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
@@ -1192,16 +1124,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	if (loadGroundState)
 	{
-		if (USE_INITIAL_NOISE)
-		{
-			normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
-			std::cout << "Density after normilizing the noised ground state:" << std::endl;
-			printDensity(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
-		}
 		polarState << <dimGrid, psiDimBlock >> > (d_oddPsi, dimensions);
 		printDensity(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 	}
 
+#if !COMPUTE_GROUND_STATE
 	// Take one forward Euler step if starting from the ground state or time step changed
 	if (doForward)
 	{
@@ -1213,9 +1140,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BzQuad = BzQuadScale * signal.Bz;
 		update_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
-		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 	}
 	else
+#endif
 	{
 		std::cout << "Skipping the forward step." << std::endl;
 	}
@@ -1225,8 +1153,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 	normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
-	itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions);
-	itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions);
+	itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
+	itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
 
 	while (true)
 	{
@@ -1237,59 +1165,64 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
 			drawDensity("GS", h_evenPsi, dxsize, dysize, dzsize, iter);
 			printDensity(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+
+			// Compute energy/chemical potential
+			innerProduct << <dimGrid, psiDimBlock >> > (d_energy, d_evenPsi, d_HPsi, dimensions);
+			int prevStride = bodies;
+			while (prevStride > 1)
+			{
+				int newStride = prevStride / 2;
+				integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_energy, newStride, ((newStride * 2) != prevStride), volume);
+				prevStride = newStride;
+			}
+			double hEnergy = 0;
+			checkCudaErrors(cudaMemcpy(&hEnergy, d_energy, sizeof(double), cudaMemcpyDeviceToHost));
+			std::cout << "Energy: " << hEnergy << std::endl;
 		}
 #endif
 		if (iter == 100000)
 		{
-			//polarState << <dimGrid, psiDimBlock >> > (d_evenPsi, dimensions);
+			// Psi
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-			std::ofstream fs(GROUND_STATE_FILENAME, std::ios::binary | std::ios_base::trunc);
-			if (fs.fail() != 0) return 1;
-			fs.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
-			fs.close();
+			std::ofstream fs_psi(GROUND_STATE_PSI_FILENAME, std::ios::binary | std::ios_base::trunc);
+			if (fs_psi.fail() != 0) return 1;
+			fs_psi.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+			fs_psi.close();
+
+			// Q
+			checkCudaErrors(cudaMemcpy3D(&evenQBackParams));
+			std::ofstream fs_q(GROUND_STATE_Q_FILENAME, std::ios::binary | std::ios_base::trunc);
+			if (fs_q.fail() != 0) return 1;
+			fs_q.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+			fs_q.close();
+
 			return 0;
 		}
 #if RELATIVISTIC
 		// Take an imaginary time step
-		itp_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
+		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
-		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_evenQ, d_evenPsi, d_d0, dimensions);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
 
 		// Take an imaginary time step
-		itp_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
+		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
-		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
 #else
 		// Take an imaginary time step
-		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions);
-		itp_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
+		itp_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 
 		// Take an imaginary time step
-		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions);
-		itp_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
+		itp_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 #endif
-
-		//energy_h(dimGrid, dimBlock, d_energy, d_evenPsi, d_pot, d_lapind, d_hodges, g, dimensions, volume, bodies);
-		//double hDensity = 0;
-		//double hEnergy = 0;
-		//checkCudaErrors(cudaMemcpy(&hDensity, d_density, sizeof(double), cudaMemcpyDeviceToHost));
-		//checkCudaErrors(cudaMemcpy(&hEnergy, d_energy, sizeof(double), cudaMemcpyDeviceToHost));
-
-		//double newMu = hEnergy / hDensity;
-		//double newE = hEnergy;
-		//
-		//std::cout << "Total density: " << hDensity << ", Total energy: " << hEnergy << ", mu: " << newMu << std::endl;
-
-		//if (std::abs(mu - newMu) < 1e-4) break;
-
-		//mu = newMu;
-		//E = newE;
 
 		iter++;
 	}
@@ -1345,7 +1278,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.Bz = BzScale * signal.Bz;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BzQuad = BzQuadScale * signal.Bz;
-			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt);
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 			update_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
 
 			// update even values (real terms)
@@ -1355,7 +1288,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.Bz = BzScale * signal.Bz;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BzQuad = BzQuadScale * signal.Bz;
-			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt);
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 			update_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
 #else
 			// update odd values
@@ -1491,22 +1424,6 @@ void readConfFile()
 			{
 				sigma = std::stod(line.substr(pos + 5));
 				dt_per_sigma = dt / sigma;
-			}
-			else if (size_t pos = line.find("qz") != std::string::npos)
-			{
-				USE_QUADRATIC_ZEEMAN = true;
-			}
-			else if (size_t pos = line.find("offset") != std::string::npos)
-			{
-				USE_QUADRUPOLE_OFFSET = true;
-			}
-			else if (size_t pos = line.find("noise") != std::string::npos)
-			{
-				USE_INITIAL_NOISE = true;
-			}
-			else if (size_t pos = line.find("loss") != std::string::npos)
-			{
-				USE_THREE_BODY_LOSS = true;
 			}
 		}
 	}
