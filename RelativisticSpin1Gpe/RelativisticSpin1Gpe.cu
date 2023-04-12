@@ -468,9 +468,9 @@ __global__ void itp_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3
 	q.s0 = dt_per_sigma * (d0psi.s0 + prev->values[dualEdgeId].s0);
 	q.s_1 = dt_per_sigma * (d0psi.s_1 + prev->values[dualEdgeId].s_1);
 
-	next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1 - make_double2(q.s1.x, q.s1.y);
-	next->values[dualEdgeId].s0 = prev->values[dualEdgeId].s0 - make_double2(q.s0.x, q.s0.y);
-	next->values[dualEdgeId].s_1 = prev->values[dualEdgeId].s_1 - make_double2(q.s_1.x, q.s_1.y);
+	next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1 - q.s1;
+	next->values[dualEdgeId].s0 = prev->values[dualEdgeId].s0 - q.s0;
+	next->values[dualEdgeId].s_1 = prev->values[dualEdgeId].s_1 - q.s_1;
 #else
 	next->values[dualEdgeId] = d0psi;
 #endif
@@ -949,7 +949,28 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #if COMPUTE_GROUND_STATE
 	// Initialize discrete field
 	std::ifstream fs(GROUND_STATE_PSI_FILENAME, std::ios::binary | std::ios::in);
-	if (fs.fail() != 0)
+	bool continueFromEarlier = (fs.fail() == 0);
+	if (continueFromEarlier)
+	{
+		std::cout << "Initialized ground state psi from file." << std::endl;
+
+		fs.read((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+		fs.close();
+
+		std::ifstream fs_q(GROUND_STATE_Q_FILENAME, std::ios::binary | std::ios::in);
+		if (fs.fail() == 0)
+		{
+			std::cout << "Initialized ground state q from file." << std::endl;
+
+			fs.read((char*)&h_evenQ[0], hostSize * sizeof(BlockEdges));
+			fs.close();
+		}
+		else
+		{
+			std::cout << "Failed to open the ground state q file." << std::endl;
+		}
+	}
+	else
 	{
 		std::cout << "Initialized ground state with random noise." << std::endl;
 
@@ -974,21 +995,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 				}
 			}
 		}
-	}
-	else
-	{
-		std::cout << "Initialized ground state psi from file." << std::endl;
-
-		fs.read((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
-		fs.close();
-	}
-	std::ifstream fs_q(GROUND_STATE_Q_FILENAME, std::ios::binary | std::ios::in);
-	if (fs.fail() == 0)
-	{
-		std::cout << "Initialized ground state q from file." << std::endl;
-
-		fs.read((char*)&h_evenQ[0], hostSize * sizeof(BlockEdges));
-		fs.close();
 	}
 
 	bool loadGroundState = false;
@@ -1072,6 +1078,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	checkCudaErrors(cudaMemcpy3D(&evenPsiParams));
 	checkCudaErrors(cudaMemcpy3D(&oddPsiParams));
+	checkCudaErrors(cudaMemcpy3D(&evenQParams));
+	checkCudaErrors(cudaMemcpy3D(&oddQParams));
 	checkCudaErrors(cudaMemcpy(d_d0, &d0[0], d0.size() * sizeof(int3), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_d1, &d1[0], d1.size() * sizeof(int2), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_hodges, &hodges[0], hodges.size() * sizeof(double), cudaMemcpyHostToDevice));
@@ -1150,11 +1158,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 #if COMPUTE_GROUND_STATE
 	uint iter = 0;
-
-	normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
-	normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
-	itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
-	itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
+	
+	if (!continueFromEarlier)
+	{
+		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
+	}
 
 	while (true)
 	{
@@ -1180,7 +1191,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			std::cout << "Energy: " << hEnergy << std::endl;
 		}
 #endif
-		if (iter == 100000)
+		if (iter == 500000)
 		{
 			// Psi
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
@@ -1193,23 +1204,23 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			checkCudaErrors(cudaMemcpy3D(&evenQBackParams));
 			std::ofstream fs_q(GROUND_STATE_Q_FILENAME, std::ios::binary | std::ios_base::trunc);
 			if (fs_q.fail() != 0) return 1;
-			fs_q.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+			fs_q.write((char*)&h_evenQ[0], hostSize * sizeof(BlockEdges));
 			fs_q.close();
 
 			return 0;
 		}
 #if RELATIVISTIC
 		// Take an imaginary time step
+		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
 		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
-		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
 
 		// Take an imaginary time step
+		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
 		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
-		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
 #else
 		// Take an imaginary time step
 		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
