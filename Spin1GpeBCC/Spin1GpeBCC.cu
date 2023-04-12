@@ -7,6 +7,17 @@ constexpr double EXPANSION_START = CREATION_RAMP_START + 10.5; // When the expan
 //#include "AliceRingRamps.h"
 #include "KnotRamps.h"
 
+std::string getProjectionString()
+{
+#if BASIS == X_QUANTIZED
+	return "proj_x";
+#elif BASIS == Y_QUANTIZED
+	return "proj_y";
+#elif BASIS == Z_QUANTIZED
+	return "proj_z";
+#endif
+}
+
 #include "Output/Picture.hpp"
 #include "Output/Text.hpp"
 #include "Types/Complex.hpp"
@@ -88,13 +99,13 @@ constexpr double NOISE_AMPLITUDE = 0.1;
 double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 //double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-const double IMAGE_SAVE_INTERVAL = 0.5; // ms
+const double IMAGE_SAVE_INTERVAL = 0.025; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 0.6; // End time in ms
+double END_TIME = 1.1; // End time in ms
 
 double POLAR_FERRO_MIX = 0.0;
 
@@ -1026,12 +1037,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	cudaPitchedPtr d_cudaEvenPsi;
 	cudaPitchedPtr d_cudaOddPsi;
-	cudaPitchedPtr d_cudaHPsi;
 	checkCudaErrors(cudaMalloc3D(&d_cudaEvenPsi, psiExtent));
 	checkCudaErrors(cudaMalloc3D(&d_cudaOddPsi, psiExtent));
+
+	cudaPitchedPtr d_cudaHPsi;
 	checkCudaErrors(cudaMalloc3D(&d_cudaHPsi, psiExtent));
 
-	//double* d_energy;
 	double* d_spinNorm;
 	double* d_density;
 	double* d_energy;
@@ -1039,7 +1050,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	double3* d_u;
 	double3* d_v;
 	double* d_theta;
-	//checkCudaErrors(cudaMalloc(&d_energy, bodies * sizeof(double)));
 	checkCudaErrors(cudaMalloc(&d_spinNorm, bodies * sizeof(double)));
 	checkCudaErrors(cudaMalloc(&d_density, bodies * sizeof(double)));
 	checkCudaErrors(cudaMalloc(&d_energy, bodies * sizeof(double)));
@@ -1051,6 +1061,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	size_t offset = d_cudaEvenPsi.pitch * dysize + d_cudaEvenPsi.pitch + sizeof(BlockPsis);
 	PitchedPtr d_evenPsi = { (char*)d_cudaEvenPsi.ptr + offset, d_cudaEvenPsi.pitch, d_cudaEvenPsi.pitch * dysize };
 	PitchedPtr d_oddPsi = { (char*)d_cudaOddPsi.ptr + offset, d_cudaOddPsi.pitch, d_cudaOddPsi.pitch * dysize };
+
 	PitchedPtr d_HPsi = { (char*)d_cudaHPsi.ptr + offset, d_cudaHPsi.pitch, d_cudaHPsi.pitch * dysize };
 
 	// find terms for laplacian
@@ -1399,9 +1410,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	int lastSaveTime = 0;
 
-	std::string resultsDir = "results_" + std::to_string(POLAR_FERRO_MIX);
-	std::string vtksDir = "vtks_" + std::to_string(POLAR_FERRO_MIX);
-	std::string datsDir = "dats_" + std::to_string(POLAR_FERRO_MIX);
+	std::string resultsDir = getProjectionString() + "\\results_" + std::to_string(POLAR_FERRO_MIX);
+	std::string vtksDir = getProjectionString() + "\\vtks_" + std::to_string(POLAR_FERRO_MIX);
+	std::string datsDir = getProjectionString() + "\\dats_" + std::to_string(POLAR_FERRO_MIX);
 
 	std::string createResultsDirCommand = "mkdir " + resultsDir;
 	std::string createVtksDirCommand = "mkdir " + vtksDir;
@@ -1445,7 +1456,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 	prevTime = std::chrono::high_resolution_clock::now();
 
-	drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t, resultsDir);
+	drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, resultsDir);
 
 	//uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
 	//cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
@@ -1459,10 +1470,16 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	while (t < END_TIME)
 	{
+		const uint centerIdx = 57 * dxsize * dysize + 57 * dxsize + 57;
+		double2 temp = h_oddPsi[centerIdx].values[5].s0;
+		double startPhase = atan2(temp.y, temp.x);
+		double phaseTime = 0;
+
 		// integrate one iteration
 		for (uint step = 0; step < IMAGE_SAVE_FREQUENCY; step++)
 		{
 			// update odd values
+			phaseTime += dt;
 			t += dt / omega_r * 1e3; // [ms]
 			if (t >= EXPANSION_START) {
 				double k = 0.7569772335291065; // From the Aalto QCD code
@@ -1476,6 +1493,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			leapfrog << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt, t);
 
 			// update even values
+			phaseTime += dt;
 			t += dt / omega_r * 1e3; // [ms]
 			if (t >= EXPANSION_START) {
 				double k = 0.7569772335291065; // From the Aalto QCD code
@@ -1493,12 +1511,17 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		// Copy back from device memory to host memory
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
+		temp = h_oddPsi[centerIdx].values[5].s0;
+		double endPhase = atan2(temp.y, temp.x);
+		double phaseDiff = endPhase - startPhase;
+		std::cout << "Energy was " << phaseDiff / phaseTime << std::endl;
+
 		// Measure wall clock time
 		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
 		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 		prevTime = std::chrono::high_resolution_clock::now();
 
-		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t, resultsDir);
+		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, resultsDir);
 
 		//uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
 		//cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
@@ -1689,9 +1712,9 @@ int main(int argc, char** argv)
 	// integrate in time using DEC
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
-	for (POLAR_FERRO_MIX = 0.0; POLAR_FERRO_MIX <= 1.0; POLAR_FERRO_MIX += 0.1)
+	//for (POLAR_FERRO_MIX = 0.0; POLAR_FERRO_MIX <= 1.0; POLAR_FERRO_MIX += 0.1)
 	{
-		t = 0;
+		//t = 0;
 		integrateInTime(blockScale, domainMin, domainMax);
 	}
 
