@@ -71,9 +71,6 @@ const double BzQuadScale = sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (tra
 constexpr double SQRT_2 = 1.41421356237309;
 constexpr double INV_SQRT_2 = 0.70710678118655;
 
-const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi.dat";
-const std::string GROUND_STATE_Q_FILENAME = "ground_state_q.dat";
-
 constexpr double NOISE_AMPLITUDE = 0.1;
 
 double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
@@ -88,9 +85,20 @@ double t = 0; // Start time in ms
 double END_TIME = 220; // End time in ms
 
 #if RELATIVISTIC
-double sigma = 0.01;
+double sigma = 0.1; // 0.01;
 double dt_per_sigma = dt / sigma;
 #endif
+
+std::string toString(const double value, int precision = 18)
+{
+	std::ostringstream out;
+	out.precision(precision);
+	out << std::fixed << value;
+	return out.str();
+};
+
+const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + toString(sigma, 2) + ".dat";
+const std::string GROUND_STATE_Q_FILENAME = "ground_state_q.dat_" + toString(sigma, 2) + ".dat";
 
 __device__ __inline__ double trap(double3 p)
 {

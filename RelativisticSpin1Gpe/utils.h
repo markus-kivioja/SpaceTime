@@ -101,14 +101,6 @@ struct MagFields
 	double BzQuad{};
 };
 
-std::string toString(const double value)
-{
-	std::ostringstream out;
-	out.precision(18);
-	out << std::fixed << value;
-	return out.str();
-};
-
 void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t)
 {
 	const int SIZE = 2;
