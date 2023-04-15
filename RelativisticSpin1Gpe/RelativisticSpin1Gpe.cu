@@ -1,7 +1,11 @@
 #include <cuda_runtime.h>
 #include "helper_cuda.h"
 
-#include "AliceRingRamps.h"
+constexpr double CREATION_RAMP_START = 0.1;
+constexpr double EXPANSION_START = CREATION_RAMP_START + 0.5; // When the expansion starts in ms
+
+//#include "AliceRingRamps.h"
+#include "KnotRamps.h"
 
 #include "Output/Picture.hpp"
 #include "Output/Text.hpp"
@@ -76,29 +80,36 @@ constexpr double NOISE_AMPLITUDE = 0.1;
 double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 //double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-const float IMAGE_SAVE_INTERVAL = 0.025; // ms
+const float IMAGE_SAVE_INTERVAL = 0.1; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 220; // End time in ms
+double END_TIME = 1.0; // End time in ms
 
 #if RELATIVISTIC
 double sigma = 0.1; // 0.01;
 double dt_per_sigma = dt / sigma;
 #endif
 
-std::string toString(const double value, int precision = 18)
+enum class Phase
+{
+	Polar = 0,
+	Ferromagnetic
+};
+constexpr Phase initPhase = Phase::Polar;
+
+std::string toStringShort(const double value)
 {
 	std::ostringstream out;
-	out.precision(precision);
+	out.precision(2);
 	out << std::fixed << value;
 	return out.str();
 };
 
-const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + toString(sigma, 2) + ".dat";
-const std::string GROUND_STATE_Q_FILENAME = "ground_state_q.dat_" + toString(sigma, 2) + ".dat";
+const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + toStringShort(sigma) + ".dat";
+const std::string GROUND_STATE_Q_FILENAME = "ground_state_q_" + toStringShort(sigma) + ".dat";
 
 __device__ __inline__ double trap(double3 p)
 {
@@ -112,12 +123,10 @@ __constant__ double quadrupoleCenterX = -0.20590789;
 __constant__ double quadrupoleCenterY = -0.48902826;
 __constant__ double quadrupoleCenterZ = -0.27353409;
 
-__device__ __inline__ double3 magneticField(double3 p, double Bq, double Bz)
+__device__ __inline__ double3 magneticField(double3 p, double Bq, double3 Bb)
 {
-	return { Bq * p.x, Bq * p.y, -2 * Bq * p.z + Bz };
+	return { Bq * p.x + Bb.x, Bq * p.y + Bb.y, -2 * Bq * p.z + Bb.z };
 }
-
-#include "utils.h"
 
 __global__ void maxHamilton(double* maxHamlPtr, PitchedPtr prevStep, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2)
 {
@@ -154,7 +163,7 @@ __global__ void maxHamilton(double* maxHamlPtr, PitchedPtr prevStep, MagFields B
 
 	const double2 temp = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
 	const double3 magnetization = { temp.x, temp.y, normSq_s1 - normSq_s_1 };
-	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
+	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bb);
 	B += c2 * magnetization;
 
 	// Linear Zeeman shift
@@ -411,7 +420,7 @@ __global__ void normalize(double* density, PitchedPtr psiPtr, uint3 dimensions)
 	blockPsis->values[dualNodeId] = psi;
 }
 
-__global__ void polarState(PitchedPtr psi, uint3 dimensions)
+__global__ void polarState(PitchedPtr psi, const uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -437,7 +446,37 @@ __global__ void polarState(PitchedPtr psi, uint3 dimensions)
 	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
 
 	pPsi->values[dualNodeId].s1 = { 0, 0 };
-	pPsi->values[dualNodeId].s0 = sqrt(normSq) * prev.s0 / sqrt(normSq_s0);
+	pPsi->values[dualNodeId].s0 = { sqrt(normSq), 0 };
+	pPsi->values[dualNodeId].s_1 = { 0, 0 };
+};
+
+__global__ void ferromagneticState(PitchedPtr psi, const uint3 dimensions)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	BlockPsis* pPsi = (BlockPsis*)(psi.ptr + psi.slicePitch * zid + psi.pitch * yid) + dataXid;
+
+	// Update psi
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	Complex3Vec prev = pPsi->values[dualNodeId];
+
+	double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
+	double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
+	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
+	double normSq = normSq_s1 + normSq_s0 + normSq_s_1;
+
+	pPsi->values[dualNodeId].s1 = { sqrt(normSq), 0 };
+	pPsi->values[dualNodeId].s0 = { 0, 0 };
 	pPsi->values[dualNodeId].s_1 = { 0, 0 };
 };
 
@@ -629,7 +668,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 	H.s_1 += totalPot * prev.s_1;
 
 	const double2 magXY = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
-	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
+	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bb);
 	B += c2 * double3{ magXY.x, magXY.y, normSq_s1 - normSq_s_1 };
 
 	// Linear Zeeman shift
@@ -789,7 +828,7 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 	H.s_1 += totalPot * prev.s_1;
 
 	const double2 magXY = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
-	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
+	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bb);
 	B += c2 * double3{ magXY.x, magXY.y, normSq_s1 - normSq_s_1 };
 
 	// Linear Zeeman shift
@@ -902,10 +941,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	// compute discrete dimensions
 	const uint bsize = VALUES_IN_BLOCK; // bpos.size(); // number of values inside a block
 
-	std::cout << "Dual 0-cells in a replicable structure: " << bsize << std::endl;
-	std::cout << "Replicable structure instances in x: " << xsize << ", y: " << ysize << ", z: " << zsize << std::endl;
+	//std::cout << "Dual 0-cells in a replicable structure: " << bsize << std::endl;
+	//std::cout << "Replicable structure instances in x: " << xsize << ", y: " << ysize << ", z: " << zsize << std::endl;
 	uint64_t bodies = xsize * ysize * zsize * bsize;
-	std::cout << "Dual 0-cells in total: " << bodies << std::endl;
+	//std::cout << "Dual 0-cells in total: " << bodies << std::endl;
 
 	// Initialize device memory
 	size_t dxsize = xsize + 2; // One element buffer to both ends
@@ -1050,14 +1089,32 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #else
 	bool loadGroundState = (t == 0);
 	std::string psi_filename = loadGroundState ? GROUND_STATE_PSI_FILENAME : toString(t) + ".dat";
-	std::ifstream fs(psi_filename, std::ios::binary | std::ios::in);
-	if (fs.fail() != 0)
+	std::ifstream psi_fs(psi_filename, std::ios::binary | std::ios::in);
+	if (psi_fs.fail() != 0)
 	{
 		std::cout << "Failed to open file " << psi_filename << std::endl;
 		return 1;
 	}
-	fs.read((char*)&h_oddPsi[0], hostSize * sizeof(BlockPsis));
-	fs.close();
+	else
+	{
+		std::cout << "Loading ground state psi from " << psi_filename << "..." << std::endl;
+	}
+	psi_fs.read((char*)&h_oddPsi[0], hostSize * sizeof(BlockPsis));
+	psi_fs.close();
+
+	std::string q_filename = loadGroundState ? GROUND_STATE_Q_FILENAME : toString(t) + ".dat";
+	std::ifstream q_fs(q_filename, std::ios::binary | std::ios::in);
+	if (q_fs.fail() != 0)
+	{
+		std::cout << "Failed to open file " << q_filename << std::endl;
+		return 1;
+	}
+	else
+	{
+		std::cout << "Loading ground state q from " << q_filename << "..." << std::endl;
+	}
+	q_fs.read((char*)&h_oddQ[0], hostSize * sizeof(BlockEdges));
+	q_fs.close();
 
 	bool doForward = true;
 	std::string evenFilename = "even_" + toString(t) + ".dat";
@@ -1180,8 +1237,20 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	if (loadGroundState)
 	{
-		std::cout << "Transform ground state to polar phase" << std::endl;
-		polarState << <dimGrid, psiDimBlock >> > (d_oddPsi, dimensions);
+		switch (initPhase)
+		{
+		case Phase::Polar:
+			std::cout << "Transform ground state to polar phase" << std::endl;
+			polarState << <dimGrid, psiDimBlock >> > (d_oddPsi, dimensions);
+			break;
+		case Phase::Ferromagnetic:
+			std::cout << "Transform ground state to ferromagnetic phase" << std::endl;
+			ferromagneticState << <dimGrid, psiDimBlock >> > (d_oddPsi, dimensions);
+			break;
+		default:
+			break;
+		}
+
 		printDensity(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 	}
 
@@ -1193,9 +1262,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 		signal = getSignal(t);
 		Bs.Bq = BqScale * signal.Bq;
-		Bs.Bz = BzScale * signal.Bz;
+		Bs.Bb = BzScale * signal.Bb;
 		Bs.BqQuad = BqQuadScale * signal.Bq;
-		Bs.BzQuad = BzQuadScale * signal.Bz;
+		Bs.BbQuad = BzQuadScale * signal.Bb;
 		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
 	}
@@ -1299,7 +1368,16 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	int lastSaveTime = 0;
 
-	while (true)
+#if RELATIVISTIC
+	std::string folder = "hyperbolic";
+#else
+	std::string folder = "parabolic";
+#endif
+
+	std::string createResultsDirCommand = "mkdir " + folder;
+	system(createResultsDirCommand.c_str());
+
+	while (t < END_TIME)
 	{
 #if SAVE_PICTURE
 		// Copy back from device memory to host memory
@@ -1312,8 +1390,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		prevTime = std::chrono::high_resolution_clock::now();
 
 #if RELATIVISTIC
-		//drawDensity("hyperbolic_", h_oddPsi, dxsize, dysize, dzsize, t);
-		drawDensityRI("", h_oddPsi, dxsize, dysize, dzsize, t, "energy_test");
+		drawDensity(h_oddPsi, dxsize, dysize, dzsize, t, folder);
+		//drawDensityRI(h_oddPsi, dxsize, dysize, dzsize, t, "energy_test");
 #else
 		drawDensity("parabolic_", h_oddPsi, dxsize, dysize, dzsize, t);
 #endif
@@ -1341,9 +1419,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			t += dt / omega_r * 1e3; // [ms]
 			signal = getSignal(t);
 			Bs.Bq = BqScale * signal.Bq;
-			Bs.Bz = BzScale * signal.Bz;
+			Bs.Bb = BzScale * signal.Bb;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
-			Bs.BzQuad = BzQuadScale * signal.Bz;
+			Bs.BbQuad = BzQuadScale * signal.Bb;
 			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 			update_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
 
@@ -1352,9 +1430,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			t += dt / omega_r * 1e3; // [ms]
 			signal = getSignal(t);
 			Bs.Bq = BqScale * signal.Bq;
-			Bs.Bz = BzScale * signal.Bz;
+			Bs.Bb = BzScale * signal.Bb;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
-			Bs.BzQuad = BzQuadScale * signal.Bz;
+			Bs.BbQuad = BzQuadScale * signal.Bb;
 			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 			update_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
 #else
@@ -1451,11 +1529,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			densityStr = std::string("norm = [norm");
 
 			lastSaveTime = int(t);
-
-			if (t > END_TIME)
-			{
-				return 0;
-			}
 		}
 #endif
 	}
@@ -1511,8 +1584,8 @@ int main(int argc, char** argv)
 
 	std::cout << "Start simulating from t = " << t << " ms, with a time step size of " << dt << "." << std::endl;
 	std::cout << "The simulation will end at " << END_TIME << " ms." << std::endl;
-	std::cout << "Block scale = " << blockScale << std::endl;
-	std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
+	//std::cout << "Block scale = " << blockScale << std::endl;
+	//std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
 	std::cout << "Relativistic sigma = " << sigma << std::endl;
 
 	// integrate in time using DEC

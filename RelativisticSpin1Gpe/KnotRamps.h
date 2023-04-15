@@ -7,7 +7,7 @@
 #define Y_QUANTIZED 1
 #define X_QUANTIZED 2
 
-#define BASIS X_QUANTIZED
+#define BASIS Z_QUANTIZED
 
 #include "utils.h"
 

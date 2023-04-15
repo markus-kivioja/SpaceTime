@@ -2,7 +2,7 @@
 #include "helper_cuda.h"
 
 constexpr double CREATION_RAMP_START = 0.1;
-constexpr double EXPANSION_START = CREATION_RAMP_START + 10.5; // When the expansion starts in ms
+constexpr double EXPANSION_START = CREATION_RAMP_START + 0.5; // When the expansion starts in ms
 
 //#include "AliceRingRamps.h"
 #include "KnotRamps.h"
@@ -99,15 +99,15 @@ constexpr double NOISE_AMPLITUDE = 0.1;
 double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 //double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-const double IMAGE_SAVE_INTERVAL = 0.025; // ms
+const double IMAGE_SAVE_INTERVAL = 0.5; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 1.1; // End time in ms
+double END_TIME = 21.1; // End time in ms
 
-double POLAR_FERRO_MIX = 0.0;
+double POLAR_FERRO_MIX = 0.5;
 
 __device__ __inline__ double trap(double3 p, double t)
 {
@@ -140,8 +140,6 @@ __device__ __inline__ double3 magneticField(double3 p, double Bq, double3 Bb, bo
 		return { Bq * p.x + Bb.x, Bq * p.y + Bb.y, -2 * Bq * p.z + Bb.z };
 	}
 }
-
-#include "utils.h"
 
 __global__ void maxHamilton(double* maxHamlPtr, PitchedPtr prevStep, MagFields Bs, uint3 dimensions, double block_scale, double3 p0, double c0, double c2, double alpha, double t)
 {
@@ -1482,7 +1480,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			phaseTime += dt;
 			t += dt / omega_r * 1e3; // [ms]
 			if (t >= EXPANSION_START) {
-				double k = 0.7569772335291065; // From the Aalto QCD code
+				double k = 0.82; // 0.7569772335291065; // From the Aalto QCD code for F=2
 				expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
 			}
 			signal = getSignal(t);
@@ -1496,7 +1494,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			phaseTime += dt;
 			t += dt / omega_r * 1e3; // [ms]
 			if (t >= EXPANSION_START) {
-				double k = 0.7569772335291065; // From the Aalto QCD code
+				double k = 0.82; // 0.7569772335291065; // From the Aalto QCD code for F=2
 				expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
 			}
 			signal = getSignal(t);
@@ -1705,7 +1703,7 @@ int main(int argc, char** argv)
 	std::cout << "The simulation will end at " << END_TIME << " ms." << std::endl;
 	//std::cout << "Block scale = " << blockScale << std::endl;
 	//std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
-	std::cout << "Image save interval is " << IMAGE_SAVE_INTERVAL << std::endl;
+	std::cout << "Image save interval is " << IMAGE_SAVE_INTERVAL << " ms." << std::endl;
 	std::cout << "Mix betweem polar and ferromagnetic phases = " << POLAR_FERRO_MIX << std::endl;
 	printBasis();
 

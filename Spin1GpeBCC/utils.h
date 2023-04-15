@@ -134,9 +134,9 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
 
 #if BASIS == X_QUANTIZED
-					double2 x_s1 = 0.5 * (s1 + s_1) + s0 / sqrt(2);
-					double2 x_s0 = (s_1 - s1) / sqrt(2);
-					double2 x_s_1 = 0.5 * (s_1 + s1) - s0 / sqrt(2);
+					double2 x_s1 = 0.5 * (s1 + s_1) - s0 / sqrt(2);
+					double2 x_s0 = (s1 - s_1) / sqrt(2);
+					double2 x_s_1 = 0.5 * (s_1 + s1) + s0 / sqrt(2);
 
 					s1 = x_s1;
 					s0 = x_s0;
@@ -179,9 +179,9 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
 
 #if BASIS == X_QUANTIZED
-					double2 x_s1 = 0.5 * (s1 + s_1) + s0 / sqrt(2);
-					double2 x_s0 = (s_1 - s1) / sqrt(2);
-					double2 x_s_1 = 0.5 * (s_1 + s1) - s0 / sqrt(2);
+					double2 x_s1 = 0.5 * (s1 + s_1) - s0 / sqrt(2);
+					double2 x_s0 = (s1 - s_1) / sqrt(2);
+					double2 x_s_1 = 0.5 * (s_1 + s1) + s0 / sqrt(2);
 
 					s1 = x_s1;
 					s0 = x_s0;
@@ -232,9 +232,9 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
 
 #if BASIS == X_QUANTIZED
-					double2 x_s1 = 0.5 * (s1 + s_1) + s0 / sqrt(2);
-					double2 x_s0 = (s_1 - s1) / sqrt(2);
-					double2 x_s_1 = 0.5 * (s_1 + s1) - s0 / sqrt(2);
+					double2 x_s1 = 0.5 * (s1 + s_1) - s0 / sqrt(2);
+					double2 x_s0 = (s1 - s_1) / sqrt(2);
+					double2 x_s_1 = 0.5 * (s_1 + s1) + s0 / sqrt(2);
 
 					s1 = x_s1;
 					s0 = x_s0;
@@ -276,9 +276,9 @@ void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, s
 					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
 
 #if BASIS == X_QUANTIZED
-					double2 x_s1 = 0.5 * (s1 + s_1) + s0 / sqrt(2);
-					double2 x_s0 = (s_1 - s1) / sqrt(2);
-					double2 x_s_1 = 0.5 * (s_1 + s1) - s0 / sqrt(2);
+					double2 x_s1 = 0.5 * (s1 + s_1) - s0 / sqrt(2);
+					double2 x_s0 = (s1 - s_1) / sqrt(2);
+					double2 x_s_1 = 0.5 * (s_1 + s1) + s0 / sqrt(2);
 
 					s1 = x_s1;
 					s0 = x_s0;
@@ -351,9 +351,9 @@ void drawDensityRI(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize,
 					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
 
 #if BASIS == X_QUANTIZED
-					double2 x_s1 = 0.5 * (s1 + s_1) + s0 / sqrt(2);
-					double2 x_s0 = (s_1 - s1) / sqrt(2);
-					double2 x_s_1 = 0.5 * (s_1 + s1) - s0 / sqrt(2);
+					double2 x_s1 = 0.5 * (s1 + s_1) - s0 / sqrt(2);
+					double2 x_s0 = (s1 - s_1) / sqrt(2);
+					double2 x_s_1 = 0.5 * (s_1 + s1) + s0 / sqrt(2);
 
 					s1 = x_s1;
 					s0 = x_s0;
@@ -396,9 +396,9 @@ void drawDensityRI(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize,
 					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
 
 #if BASIS == X_QUANTIZED
-					double2 x_s1 = 0.5 * (s1 + s_1) + s0 / sqrt(2);
-					double2 x_s0 = (s_1 - s1) / sqrt(2);
-					double2 x_s_1 = 0.5 * (s_1 + s1) - s0 / sqrt(2);
+					double2 x_s1 = 0.5 * (s1 + s_1) - s0 / sqrt(2);
+					double2 x_s0 = (s1 - s_1) / sqrt(2);
+					double2 x_s_1 = 0.5 * (s_1 + s1) + s0 / sqrt(2);
 
 					s1 = x_s1;
 					s0 = x_s0;
@@ -448,9 +448,9 @@ void drawDensityRI(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize,
 					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
 
 #if BASIS == X_QUANTIZED
-					double2 x_s1 = 0.5 * (s1 + s_1) + s0 / sqrt(2);
-					double2 x_s0 = (s_1 - s1) / sqrt(2);
-					double2 x_s_1 = 0.5 * (s_1 + s1) - s0 / sqrt(2);
+					double2 x_s1 = 0.5 * (s1 + s_1) - s0 / sqrt(2);
+					double2 x_s0 = (s1 - s_1) / sqrt(2);
+					double2 x_s_1 = 0.5 * (s_1 + s1) + s0 / sqrt(2);
 
 					s1 = x_s1;
 					s0 = x_s0;
@@ -492,9 +492,9 @@ void drawDensityRI(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize,
 					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
 
 #if BASIS == X_QUANTIZED
-					double2 x_s1 = 0.5 * (s1 + s_1) + s0 / sqrt(2);
-					double2 x_s0 = (s_1 - s1) / sqrt(2);
-					double2 x_s_1 = 0.5 * (s_1 + s1) - s0 / sqrt(2);
+					double2 x_s1 = 0.5 * (s1 + s_1) - s0 / sqrt(2);
+					double2 x_s0 = (s1 - s_1) / sqrt(2);
+					double2 x_s_1 = 0.5 * (s_1 + s1) + s0 / sqrt(2);
 
 					s1 = x_s1;
 					s0 = x_s0;
