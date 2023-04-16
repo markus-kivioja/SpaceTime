@@ -30,7 +30,7 @@ std::string getProjectionString()
 
 #include "mesh.h"
 
-#define RELATIVISTIC 0
+#define RELATIVISTIC 1
 
 #define COMPUTE_GROUND_STATE 0
 
@@ -112,6 +112,7 @@ enum class Phase
 	Polar = 0,
 	Ferromagnetic
 };
+//constexpr Phase initPhase = Phase::Polar;
 constexpr Phase initPhase = Phase::Ferromagnetic;
 
 std::string toStringShort(const double value)
@@ -1301,6 +1302,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	}
 
 #if COMPUTE_GROUND_STATE
+	std::string folder = "gs_dens_profles";
+	std::string createResultsDirCommand = "mkdir " + folder;
+	system(createResultsDirCommand.c_str());
+
 	uint iter = 0;
 	
 	if (!continueFromEarlier)
@@ -1318,7 +1323,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		if ((iter % 1000) == 0)
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-			drawDensity("GS", h_evenPsi, dxsize, dysize, dzsize, iter);
+			drawDensity(h_evenPsi, dxsize, dysize, dzsize, iter, folder);
 			printDensity(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 
 			// Compute energy/chemical potential
@@ -1363,18 +1368,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		// Take an imaginary time step
 		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
 		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
-		// Normalize
-		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
-#else
-		// Take an imaginary time step
-		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
-		itp_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
-		// Normalize
-		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
-
-		// Take an imaginary time step
-		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
-		itp_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 #endif
