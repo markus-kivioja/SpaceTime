@@ -2,10 +2,21 @@
 #include "helper_cuda.h"
 
 constexpr double CREATION_RAMP_START = 0.1;
-constexpr double EXPANSION_START = CREATION_RAMP_START + 0.5; // When the expansion starts in ms
+constexpr double EXPANSION_START = CREATION_RAMP_START + 10.5; // When the expansion starts in ms
 
 //#include "AliceRingRamps.h"
 #include "KnotRamps.h"
+
+std::string getProjectionString()
+{
+#if BASIS == X_QUANTIZED
+	return "proj_x";
+#elif BASIS == Y_QUANTIZED
+	return "proj_y";
+#elif BASIS == Z_QUANTIZED
+	return "proj_z";
+#endif
+}
 
 #include "Output/Picture.hpp"
 #include "Output/Text.hpp"
@@ -19,7 +30,7 @@ constexpr double EXPANSION_START = CREATION_RAMP_START + 0.5; // When the expans
 
 #include "mesh.h"
 
-#define RELATIVISTIC 1
+#define RELATIVISTIC 0
 
 #define COMPUTE_GROUND_STATE 0
 
@@ -68,7 +79,7 @@ constexpr double muB = 9.27400968e-24; // [m^2 kg / s^2 T^-1] Bohr magneton
 const double BqScale = -(0.5 * muB / (hbar * omega_r) * a_r) / 100.; // [cm/Gauss]
 constexpr double BzScale = -(0.5 * muB / (hbar * omega_r)) / 10000.; // [1/Gauss]
 
-constexpr double A_hfs = 10.11734130545215;
+constexpr double A_hfs = 3.41734130545215;
 const double BqQuadScale = 100 * a_r * sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (trapFreq_r * 2 * A_hfs)); //[cm/Gauss]
 const double BzQuadScale = sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (trapFreq_r * 2 * A_hfs)); //[1/Gauss]  \sqrt{g_q}
 
@@ -89,8 +100,11 @@ double t = 0; // Start time in ms
 double END_TIME = 1.0; // End time in ms
 
 #if RELATIVISTIC
-double sigma = 0.1; // 0.01;
+double sigma = 0.01; // 0.01;
 double dt_per_sigma = dt / sigma;
+#else
+double sigma = 0.0;
+double dt_per_sigma = 1.0;
 #endif
 
 enum class Phase
@@ -98,7 +112,7 @@ enum class Phase
 	Polar = 0,
 	Ferromagnetic
 };
-constexpr Phase initPhase = Phase::Polar;
+constexpr Phase initPhase = Phase::Ferromagnetic;
 
 std::string toStringShort(const double value)
 {
@@ -108,8 +122,12 @@ std::string toStringShort(const double value)
 	return out.str();
 };
 
+#if RELATIVISTIC
 const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + toStringShort(sigma) + ".dat";
 const std::string GROUND_STATE_Q_FILENAME = "ground_state_q_" + toStringShort(sigma) + ".dat";
+#else
+const std::string GROUND_STATE_PSI_FILENAME = "ground_state.dat";
+#endif
 
 __device__ __inline__ double trap(double3 p)
 {
@@ -1102,6 +1120,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	psi_fs.read((char*)&h_oddPsi[0], hostSize * sizeof(BlockPsis));
 	psi_fs.close();
 
+#if RELATIVISTIC
 	std::string q_filename = loadGroundState ? GROUND_STATE_Q_FILENAME : toString(t) + ".dat";
 	std::ifstream q_fs(q_filename, std::ios::binary | std::ios::in);
 	if (q_fs.fail() != 0)
@@ -1115,6 +1134,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	}
 	q_fs.read((char*)&h_oddQ[0], hostSize * sizeof(BlockEdges));
 	q_fs.close();
+#endif
 
 	bool doForward = true;
 	std::string evenFilename = "even_" + toString(t) + ".dat";
@@ -1265,8 +1285,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.Bb = BzScale * signal.Bb;
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
+#if RELATIVISTIC
 		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
+#else
+		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
+		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
+#endif
 	}
 	else
 #endif
@@ -1393,7 +1419,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		drawDensity(h_oddPsi, dxsize, dysize, dzsize, t, folder);
 		//drawDensityRI(h_oddPsi, dxsize, dysize, dzsize, t, "energy_test");
 #else
-		drawDensity("parabolic_", h_oddPsi, dxsize, dysize, dzsize, t);
+		drawDensity(h_oddPsi, dxsize, dysize, dzsize, t, folder);
 #endif
 
 		//uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
@@ -1413,7 +1439,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		// integrate one iteration
 		for (uint step = 0; step < IMAGE_SAVE_FREQUENCY; step++)
 		{
-#if RELATIVISTIC
 			// update odd values (imaginary terms)
 			phaseTime += dt;
 			t += dt / omega_r * 1e3; // [ms]
@@ -1423,7 +1448,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
+#if RELATIVISTIC
 			update_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
+#else
+			update_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
+#endif
 
 			// update even values (real terms)
 			phaseTime += dt;
@@ -1434,25 +1463,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
+#if RELATIVISTIC
 			update_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
 #else
-			// update odd values
-			t += dt / omega_r * 1e3; // [ms]
-			signal = getSignal(t);
-			Bs.Bq = BqScale * signal.Bq;
-			Bs.Bz = BzScale * signal.Bz;
-			Bs.BqQuad = BqQuadScale * signal.Bq;
-			Bs.BzQuad = BzQuadScale * signal.Bz;
-			leapfrog << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt);
-
-			// update even values
-			t += dt / omega_r * 1e3; // [ms]
-			signal = getSignal(t);
-			Bs.Bq = BqScale * signal.Bq;
-			Bs.Bz = BzScale * signal.Bz;
-			Bs.BqQuad = BqQuadScale * signal.Bq;
-			Bs.BzQuad = BzQuadScale * signal.Bz;
-			leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt);
+			update_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
 #endif
 		}
 		// Copy back from device memory to host memory
