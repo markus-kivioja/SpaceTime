@@ -88,19 +88,22 @@ constexpr double INV_SQRT_2 = 0.70710678118655;
 
 constexpr double NOISE_AMPLITUDE = 0.1;
 
-double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
-//double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
+#if RELATIVISTIC
+double dt = 3e-3; // Max hyperbolic: 3e-3
+#else
+double dt = 7e-4; // Max parabolic: 7e-4
+#endif
 
-const float IMAGE_SAVE_INTERVAL = 0.1; // ms
+const float IMAGE_SAVE_INTERVAL = 0.5; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 1.0; // End time in ms
+double END_TIME = 0.6; // End time in ms
 
 #if RELATIVISTIC
-double sigma = 0.01; // 0.01;
+double sigma = 1.0; // 0.01;
 double dt_per_sigma = dt / sigma;
 #else
 double sigma = 0.0;
@@ -112,8 +115,8 @@ enum class Phase
 	Polar = 0,
 	Ferromagnetic
 };
-//constexpr Phase initPhase = Phase::Polar;
-constexpr Phase initPhase = Phase::Ferromagnetic;
+constexpr Phase initPhase = Phase::Polar;
+//constexpr Phase initPhase = Phase::Ferromagnetic;
 
 std::string toStringShort(const double value)
 {
@@ -137,10 +140,6 @@ __device__ __inline__ double trap(double3 p)
 	double z = p.z * lambda_z;
 	return 0.5 * (x * x + y * y + z * z) + 100.0;
 }
-
-__constant__ double quadrupoleCenterX = -0.20590789;
-__constant__ double quadrupoleCenterY = -0.48902826;
-__constant__ double quadrupoleCenterZ = -0.27353409;
 
 __device__ __inline__ double3 magneticField(double3 p, double Bq, double3 Bb)
 {
@@ -529,9 +528,9 @@ __global__ void itp_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3
 	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
 	Complex3Vec q;
-	q.s1 = dt_per_sigma * (d0psi.s1 + prev->values[dualEdgeId].s1);
-	q.s0 = dt_per_sigma * (d0psi.s0 + prev->values[dualEdgeId].s0);
-	q.s_1 = dt_per_sigma * (d0psi.s_1 + prev->values[dualEdgeId].s_1);
+	q.s1  = dt_per_sigma * (-d0psi.s1  + prev->values[dualEdgeId].s1);
+	q.s0  = dt_per_sigma * (-d0psi.s0  + prev->values[dualEdgeId].s0);
+	q.s_1 = dt_per_sigma * (-d0psi.s_1 + prev->values[dualEdgeId].s_1);
 
 	next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1 - q.s1;
 	next->values[dualEdgeId].s0 = prev->values[dualEdgeId].s0 - q.s0;
@@ -585,11 +584,6 @@ __global__ void itp_psi(PitchedPtr HPsiPtr, PitchedPtr nextStep, PitchedPtr prev
 		H.s0 += hodge * d0psi.s0;
 		H.s_1 += hodge * d0psi.s_1;
 	}
-#if RELATIVISTIC
-	H.s1 = -1.0 * H.s1;
-	H.s0 = -1.0 * H.s0;
-	H.s_1 = -1.0 * H.s_1;
-#endif
 
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
 	const double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
@@ -665,11 +659,6 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 		H.s0 += hodge * d0psi.s0;
 		H.s_1 += hodge * d0psi.s_1;
 	}
-#if RELATIVISTIC
-	H.s1 = -1.0 * H.s1;
-	H.s0 = -1.0 * H.s0;
-	H.s_1 = -1.0 * H.s_1;
-#endif
 
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
 	const double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
@@ -731,13 +720,13 @@ __global__ void forwardEuler_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr 
 	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
 	Complex3Vec q;
-	q.s1 = dt_per_sigma * (d0psi.s1 + prev->values[dualEdgeId].s1);
-	q.s0 = dt_per_sigma * (d0psi.s0 + prev->values[dualEdgeId].s0);
-	q.s_1 = dt_per_sigma * (d0psi.s_1 + prev->values[dualEdgeId].s_1);
+	q.s1 =  dt_per_sigma * (d0psi.s1  - prev->values[dualEdgeId].s1);
+	q.s0 =  dt_per_sigma * (d0psi.s0  - prev->values[dualEdgeId].s0);
+	q.s_1 = dt_per_sigma * (d0psi.s_1 - prev->values[dualEdgeId].s_1);
 
-	next->values[dualEdgeId].s1  = prev->values[dualEdgeId].s1 + make_double2(-q.s1.y, q.s1.x);
-	next->values[dualEdgeId].s0  = prev->values[dualEdgeId].s0 + make_double2(-q.s0.y, q.s0.x);
-	next->values[dualEdgeId].s_1 = prev->values[dualEdgeId].s_1 + make_double2(-q.s_1.y, q.s_1.x);
+	next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1  + make_double2(q.s1.y,  -q.s1.x);
+	next->values[dualEdgeId].s0 = prev->values[dualEdgeId].s0  + make_double2(q.s0.y,  -q.s0.x);
+	next->values[dualEdgeId].s_1 = prev->values[dualEdgeId].s_1 + make_double2(q.s_1.y, -q.s_1.x);
 #else
 	next->values[dualEdgeId] = d0psi;
 #endif
@@ -772,13 +761,13 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
 	Complex3Vec q;
-	q.s1 =  2 * dt_per_sigma * (d0psi.s1 + prev->values[dualEdgeId].s1);
-	q.s0 =  2 * dt_per_sigma * (d0psi.s0 + prev->values[dualEdgeId].s0);
-	q.s_1 = 2 * dt_per_sigma * (d0psi.s_1 + prev->values[dualEdgeId].s_1);
+	q.s1 =  2 * dt_per_sigma * (d0psi.s1  - prev->values[dualEdgeId].s1);
+	q.s0 =  2 * dt_per_sigma * (d0psi.s0  - prev->values[dualEdgeId].s0);
+	q.s_1 = 2 * dt_per_sigma * (d0psi.s_1 - prev->values[dualEdgeId].s_1);
 
-	next->values[dualEdgeId].s1 += make_double2(-q.s1.y, q.s1.x);
-	next->values[dualEdgeId].s0 += make_double2(-q.s0.y, q.s0.x);
-	next->values[dualEdgeId].s_1 += make_double2(-q.s_1.y, q.s_1.x);
+	next->values[dualEdgeId].s1 += make_double2( q.s1.y,  -q.s1.x);
+	next->values[dualEdgeId].s0 += make_double2( q.s0.y,  -q.s0.x);
+	next->values[dualEdgeId].s_1 += make_double2(q.s_1.y, -q.s_1.x);
 #else
 	next->values[dualEdgeId] = d0psi;
 #endif
@@ -825,11 +814,6 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 		H.s0 += hodge * d0psi.s0;
 		H.s_1 += hodge * d0psi.s_1;
 	}
-#if RELATIVISTIC
-	H.s1 = -1.0 * H.s1;
-	H.s0 = -1.0 * H.s0;
-	H.s_1 = -1.0 * H.s_1;
-#endif
 
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
 	const double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
@@ -1302,7 +1286,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	}
 
 #if COMPUTE_GROUND_STATE
-	std::string folder = "gs_dens_profles";
+	std::string folder = "gs_dens_profiles";
 	std::string createResultsDirCommand = "mkdir " + folder;
 	system(createResultsDirCommand.c_str());
 

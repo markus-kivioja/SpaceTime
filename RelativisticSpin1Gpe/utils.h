@@ -23,6 +23,10 @@ __host__ __device__ __inline__ double2 operator-(double2 a, double2 b)
 {
 	return { a.x - b.x, a.y - b.y };
 }
+__host__ __device__ __inline__ double2 operator-(double2 a)
+{
+	return { -a.x, -a.y };
+}
 __host__ __device__ __inline__ double3 operator-(double3 a, double3 b)
 {
 	return { a.x - b.x, a.y - b.y, a.z - b.z };
