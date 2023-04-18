@@ -5,7 +5,7 @@
 #define Y_QUANTIZED 1
 #define X_QUANTIZED 2
 
-#define BASIS X_QUANTIZED
+#define BASIS Z_QUANTIZED
 
 enum class Phase {
 	UN = 0,
@@ -13,7 +13,7 @@ enum class Phase {
 	BN_HORI,
 	CYCLIC
 };
-Phase initPhase = Phase::BN_VERT;
+constexpr Phase initPhase = Phase::UN;
 
 std::string phaseToString(Phase phase)
 {
@@ -44,10 +44,10 @@ std::string getProjectionString()
 }
 
 constexpr double CREATION_RAMP_START = 0.1;
-constexpr double EXPANSION_START = CREATION_RAMP_START + 10.5; // When the expansion starts in ms
+constexpr double EXPANSION_START = CREATION_RAMP_START + 1000.5; // When the expansion starts in ms
 
-//#include "AliceRingRamps.h"
-#include "KnotRamps.h"
+#include "AliceRingRamps.h"
+//#include "KnotRamps.h"
 
 #include "Output/Picture.hpp"
 #include "Output/Text.hpp"
@@ -128,13 +128,13 @@ constexpr double NOISE_AMPLITUDE = 0; //0.1;
 //constexpr double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 constexpr double dt = 5e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-const double IMAGE_SAVE_INTERVAL = 0.25; // ms
+const double IMAGE_SAVE_INTERVAL = 1.0; // ms
 const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-constexpr double END_TIME = 0.6; // End time in ms
+constexpr double END_TIME = 185; // End time in ms
 
 __device__ __inline__ double trap(double3 p, double t)
 {
@@ -156,8 +156,6 @@ __device__ __inline__ double3 magneticField(double3 p, double Bq, double3 Bb)
 {
 	return { Bq * p.x + Bb.x, Bq * p.y + Bb.y, -2 * Bq * p.z + Bb.z };
 }
-
-#include "utils.h"
 
 __global__ void density(double* density, PitchedPtr prevStep, uint3 dimensions)
 {
@@ -1051,10 +1049,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	// compute discrete dimensions
 	const uint bsize = VALUES_IN_BLOCK; // bpos.size(); // number of values inside a block
 
-	std::cout << "Dual 0-cells in a replicable structure: " << bsize << std::endl;
-	std::cout << "Replicable structure instances in x: " << xsize << ", y: " << ysize << ", z: " << zsize << std::endl;
+	//std::cout << "Dual 0-cells in a replicable structure: " << bsize << std::endl;
+	//std::cout << "Replicable structure instances in x: " << xsize << ", y: " << ysize << ", z: " << zsize << std::endl;
 	uint64_t bodies = xsize * ysize * zsize * bsize;
-	std::cout << "Dual 0-cells in total: " << bodies << std::endl;
+	//std::cout << "Dual 0-cells in total: " << bodies << std::endl;
 
 	// Initialize device memory
 	const size_t dxsize = xsize + 2; // One element buffer to both ends
@@ -1428,6 +1426,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	double expansionBlockScale = block_scale;
 
+	// Measure wall clock time
+	static auto prevTime = std::chrono::high_resolution_clock::now();
+
 	while (t < CREATION_RAMP_START)
 	{
 		// update odd values
@@ -1453,16 +1454,16 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	// Copy back from device memory to host memory
 	checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
+	// Measure wall clock time
+	auto duration = std::chrono::high_resolution_clock::now() - prevTime;
+	std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
+	prevTime = std::chrono::high_resolution_clock::now();
+
 	signal = getSignal(0);
 	Bs.Bq = BqScale * signal.Bq;
 	Bs.Bb = BzScale * signal.Bb;
 	drawDensity(densDir, h_oddPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, Bs, d_p0, block_scale);
 #endif
-	// Measure wall clock time
-	static auto prevTime = std::chrono::high_resolution_clock::now();
-	auto duration = std::chrono::high_resolution_clock::now() - prevTime;
-	std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
-	prevTime = std::chrono::high_resolution_clock::now();
 
 	while (t < END_TIME)
 	{
@@ -1495,14 +1496,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 			leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
 		}
-		// Measure wall clock time
-		static auto prevTime = std::chrono::high_resolution_clock::now();
-		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
-		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
-		prevTime = std::chrono::high_resolution_clock::now();
 #if SAVE_PICTURE
 		// Copy back from device memory to host memory
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
+
+		// Measure wall clock time
+		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
+		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
+		prevTime = std::chrono::high_resolution_clock::now();
 
 		signal = getSignal(0);
 		Bs.Bq = BqScale * signal.Bq;
@@ -1513,9 +1514,22 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		// Copy back from device memory to host memory
 		//checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
-		//if (t - CREATION_RAMP_START > 0.2)
-		saveVolume(vtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - CREATION_RAMP_START);
-		saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - CREATION_RAMP_START);
+		if (t - CREATION_RAMP_START >= 179)
+		{
+			saveVolume(vtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - CREATION_RAMP_START);
+			saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - CREATION_RAMP_START);
+
+			std::ofstream oddFs(datsDir + "/" + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
+			if (oddFs.fail() != 0) return 1;
+			oddFs.write((char*)&h_oddPsi[0], hostSize * sizeof(BlockPsis));
+			oddFs.close();
+
+			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
+			std::ofstream evenFs(datsDir + "/" + "even_" + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
+			if (evenFs.fail() != 0) return 1;
+			evenFs.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+			evenFs.close();
+		}
 #endif
 	}
 #endif
@@ -1553,9 +1567,9 @@ int main(int argc, char** argv)
 
 	std::cout << "Start simulating from t = " << t << " ms, with a time step size of " << dt << "." << std::endl;
 	std::cout << "The simulation will end at " << END_TIME << " ms." << std::endl;
-	std::cout << "Block scale = " << blockScale << std::endl;
-	std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
-	std::cout << "c0: " << c0 << ", c2: " << c2 << ", c4: " << c4 << std::endl;
+	//std::cout << "Block scale = " << blockScale << std::endl;
+	//std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
+	//std::cout << "c0: " << c0 << ", c2: " << c2 << ", c4: " << c4 << std::endl;
 	std::cout << "Three-body loss magnitude: " << alpha << std::endl;
 #if USE_QUADRATIC_ZEEMAN
 	std::cout << "Taking the quadratic Zeeman term into account" << std::endl;
@@ -1563,6 +1577,7 @@ int main(int argc, char** argv)
 	std::cout << "No quadratic Zeeman term" << std::endl;
 #endif
 
+	printRamp();
 	printBasis();
 
 	// integrate in time using DEC
@@ -1571,10 +1586,10 @@ int main(int argc, char** argv)
 
 	Phase phases[] = {Phase::BN_VERT, Phase::BN_HORI, Phase::CYCLIC};
 	//Phase phases[] = {Phase::BN_VERT};
-	for (auto phase : phases)
+	//for (auto phase : phases)
 	{
-		initPhase = phase;
-		t = 0;
+		//initPhase = phase;
+		//t = 0;
 		integrateInTime(blockScale, domainMin, domainMax);
 	}
 

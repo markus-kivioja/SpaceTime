@@ -41,6 +41,11 @@ std::array<RampType, 2> BbTypes = { RampType::CONSTANT, RampType::CONSTANT };
 //std::array<double, 1> BbDurations = { 100 };
 //std::array<RampType, 1> BbTypes = { RampType::CONSTANT };
 
+void printRamp()
+{
+	std::cout << "Using knot/skyrmion creation ramp" << std::endl;
+}
+
 Signal getSignal(double t)
 {
 	Signal signal;
@@ -78,7 +83,7 @@ Signal getSignal(double t)
 
 	t = tOrig;
 
-	// Bz
+	// Bb
 	uint32_t BbRampIdx = 0;
 	for (; BbRampIdx < Bbs.size(); ++BbRampIdx)
 	{
