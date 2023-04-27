@@ -5,7 +5,7 @@
 #define Y_QUANTIZED 1
 #define X_QUANTIZED 2
 
-#define BASIS Z_QUANTIZED
+#define BASIS Y_QUANTIZED
 
 enum class Phase {
 	UN = 0,
@@ -13,7 +13,7 @@ enum class Phase {
 	BN_HORI,
 	CYCLIC
 };
-constexpr Phase initPhase = Phase::UN;
+Phase initPhase = Phase::BN_VERT;
 
 std::string phaseToString(Phase phase)
 {
@@ -44,10 +44,10 @@ std::string getProjectionString()
 }
 
 constexpr double CREATION_RAMP_START = 0.1;
-constexpr double EXPANSION_START = CREATION_RAMP_START + 1000.5; // When the expansion starts in ms
+constexpr double EXPANSION_START = CREATION_RAMP_START + 0.5; // When the expansion starts in ms
 
-#include "AliceRingRamps.h"
-//#include "KnotRamps.h"
+//#include "AliceRingRamps.h"
+#include "KnotRamps.h"
 
 #include "Output/Picture.hpp"
 #include "Output/Text.hpp"
@@ -67,7 +67,7 @@ constexpr double EXPANSION_START = CREATION_RAMP_START + 1000.5; // When the exp
 #define USE_QUADRUPOLE_OFFSET 0
 #define USE_INITIAL_NOISE 0
 
-#define SAVE_STATES 1
+#define SAVE_STATES 0
 #define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
@@ -128,13 +128,15 @@ constexpr double NOISE_AMPLITUDE = 0; //0.1;
 //constexpr double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 constexpr double dt = 5e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-const double IMAGE_SAVE_INTERVAL = 1.0; // ms
+const double IMAGE_SAVE_INTERVAL = 0.25; // ms
 const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-constexpr double END_TIME = 185; // End time in ms
+constexpr double END_TIME = 20.0; // End time in ms
+
+constexpr double PHASE = 5.105088062083414; // In radians
 
 __device__ __inline__ double trap(double3 p, double t)
 {
@@ -1290,8 +1292,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	if (loadGroundState)
 	{
-		const double PHASE = 0;// PI / 2;
-
 		switch (initPhase)
 		{
 		case Phase::UN:
@@ -1408,7 +1408,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	int lastSaveTime = 0;
 
 	std::string dirPrefix = (END_TIME > EXPANSION_START) ? "expansion\\" : "";
-	dirPrefix += phaseToString(initPhase) + "\\" + getProjectionString() + "\\";
+	dirPrefix += phaseToString(initPhase) + "\\" + toString(PHASE / PI * 180.0, 2) + "_deg\\" + getProjectionString() + "\\";
 
 	std::string densDir = dirPrefix + "dens";
 	std::string vtksDir = dirPrefix + "dens_vtks";
@@ -1514,7 +1514,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		// Copy back from device memory to host memory
 		//checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
-		if (t - CREATION_RAMP_START >= 179)
+		//if (t - CREATION_RAMP_START >= 179)
 		{
 			saveVolume(vtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - CREATION_RAMP_START);
 			saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - CREATION_RAMP_START);
@@ -1584,14 +1584,16 @@ int main(int argc, char** argv)
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
 
-	Phase phases[] = {Phase::BN_VERT, Phase::BN_HORI, Phase::CYCLIC};
+	//Phase phases[] = {Phase::BN_VERT, Phase::BN_HORI, Phase::CYCLIC};
 	//Phase phases[] = {Phase::BN_VERT};
 	//for (auto phase : phases)
-	{
-		//initPhase = phase;
-		//t = 0;
-		integrateInTime(blockScale, domainMin, domainMax);
-	}
+	//{
+	//	initPhase = phase;
+	//	t = 0;
+	//	integrateInTime(blockScale, domainMin, domainMax);
+	//}
+
+	integrateInTime(blockScale, domainMin, domainMax);
 
 	return 0;
 }

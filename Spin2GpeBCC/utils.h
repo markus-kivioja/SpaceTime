@@ -27,6 +27,10 @@ __host__ __device__ __inline__ double3 operator-(double3 a, double3 b)
 {
 	return { a.x - b.x, a.y - b.y, a.z - b.z };
 }
+__host__ __device__ __inline__ double2 operator-(double2 a)
+{
+	return { -a.x, -a.y };
+}
 __host__ __device__ __inline__ void operator+=(double2& a, double2 b)
 {
 	a.x += b.x;
@@ -44,6 +48,10 @@ __host__ __device__ __inline__ void operator-=(double2& a, double2 b)
 	a.y -= b.y;
 }
 __host__ __device__ __inline__ double2 operator*(double b, double2 a)
+{
+	return { b * a.x, b * a.y };
+}
+__host__ __device__ __inline__ double2 operator*(double2 a, double b)
 {
 	return { b * a.x, b * a.y };
 }
@@ -101,10 +109,10 @@ struct MagFields
 	double3 BbQuad{};
 };
 
-std::string toString(const double value)
+std::string toString(const double value, int precision = 18)
 {
 	std::ostringstream out;
-	out.precision(18);
+	out.precision(precision);
 	out << std::fixed << value;
 	return out.str();
 };

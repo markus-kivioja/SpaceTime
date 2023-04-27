@@ -2,7 +2,7 @@
 #include "helper_cuda.h"
 
 constexpr double CREATION_RAMP_START = 0.1;
-constexpr double EXPANSION_START = CREATION_RAMP_START + 0.5; // When the expansion starts in ms
+constexpr double EXPANSION_START = CREATION_RAMP_START + 10.5; // When the expansion starts in ms
 
 //#include "AliceRingRamps.h"
 #include "KnotRamps.h"
@@ -96,18 +96,18 @@ const std::string SAVE_FILE_PREFIX = "";
 
 constexpr double NOISE_AMPLITUDE = 0.1;
 
-double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
+double dt = 4.3e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 //double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-const double IMAGE_SAVE_INTERVAL = 0.5; // ms
+const double IMAGE_SAVE_INTERVAL = 0.1; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 21.1; // End time in ms
+double END_TIME = 1.0; // End time in ms
 
-double POLAR_FERRO_MIX = 0.5;
+double POLAR_FERRO_MIX = 0.0;
 
 __device__ __inline__ double trap(double3 p, double t)
 {
