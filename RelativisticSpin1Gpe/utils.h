@@ -116,7 +116,7 @@ std::string toString(const double value)
 	return out.str();
 };
 
-void drawDensity(BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t, const std::string& folder)
+void drawDensity(const std::string& filePrefix, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t, const std::string& folder)
 {
 	const int SIZE = 2;
 	double INTENSITY = 1.0;
@@ -330,7 +330,7 @@ void drawDensity(BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsi
 		pic1.setColor(2 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
 	}
 
-	pic1.save(folder + "/" + toString(t) + "ms.bmp", false);
+	pic1.save(folder + "/" + filePrefix + "_" + toString(t) + "ms.bmp", false);
 }
 
 void drawDensityRI(BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t, const std::string& folder)

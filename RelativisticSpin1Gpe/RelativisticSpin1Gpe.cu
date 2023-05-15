@@ -30,8 +30,6 @@ std::string getProjectionString()
 
 #include "mesh.h"
 
-#define RELATIVISTIC 1
-
 #define COMPUTE_GROUND_STATE 0
 
 #define SAVE_STATES 0
@@ -91,7 +89,7 @@ constexpr double NOISE_AMPLITUDE = 0.1;
 double para_dt = 7e-4; // Max parabolic: 7e-4
 double hyper_dt = para_dt; //3e-3; // Max hyperbolic: 3e-3
 
-const float IMAGE_SAVE_INTERVAL = 0.5; // ms
+const float IMAGE_SAVE_INTERVAL = 0.05; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / hyper_dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
@@ -99,7 +97,7 @@ const uint STATE_SAVE_INTERVAL = 10.0; // ms
 double t = 0; // Start time in ms
 double END_TIME = 0.6; // End time in ms
 
-double sigma = 1.0; // 0.01;
+double sigma = 1.0; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
 double dt_per_sigma = hyper_dt / sigma;
 
 enum class Phase
@@ -120,10 +118,10 @@ std::string toStringShort(const double value)
 
 const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + toStringShort(sigma) + ".dat";
 const std::string GROUND_STATE_Q_FILENAME = "ground_state_q_" + toStringShort(sigma) + ".dat";
-const std::string GROUND_STATE_HYPER_FILENAME = "ground_state.dat";
+const std::string GROUND_STATE_PARA_FILENAME = "ground_state.dat";
 
-#include "para_kernels.h"
 #include "hyper_kernels.h"
+#include "para_kernels.h"
 #include "common_kernels.h"
 
 void normalize_h(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, double volume)
@@ -140,7 +138,7 @@ void normalize_h(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr psi
 	normalize << < dimGrid, dimBlock >> > (densityPtr, psi, dimensions);
 }
 
-void printDensity(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, double volume)
+double getDensity(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, double volume)
 {
 	density << <dimGrid, dimBlock >> > (densityPtr, psi, dimensions);
 	int prevStride = bodies;
@@ -153,7 +151,7 @@ void printDensity(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr ps
 	double hDensity = 0;
 	checkCudaErrors(cudaMemcpy(&hDensity, densityPtr, sizeof(double), cudaMemcpyDeviceToHost));
 
-	std::cout << "Total density: " << hDensity << std::endl;
+	return hDensity;
 }
 
 struct SpinMagDens
@@ -218,19 +216,19 @@ T* allocDevice(size_t count)
 	return ptr;
 }
 
+cudaPitchedPtr allocDevice3D(cudaExtent extent)
+{
+	cudaPitchedPtr ptr;
+	checkCudaErrors(cudaMalloc3D(&ptr, extent));
+	return ptr;
+}
+
 template<typename T>
 T* allocHost(size_t count)
 {
 	T* ptr;
 	checkCudaErrors(cudaMallocHost(&ptr, count * sizeof(T)));
 	memset(ptr, 0, count * sizeof(T));
-	return ptr;
-}
-
-cudaPitchedPtr allocDevice3D(cudaExtent extent)
-{
-	cudaPitchedPtr ptr;
-	checkCudaErrors(cudaMalloc3D(&ptr, extent));
 	return ptr;
 }
 
@@ -260,6 +258,22 @@ cudaMemcpy3DParms createDeviceToHostParams(cudaPitchedPtr src, cudaPitchedPtr ds
 	return params;
 }
 
+void loadFromFile(const std::string& filename, char* dst, size_t size)
+{
+	std::ifstream psi_fs(filename, std::ios::binary | std::ios::in);
+	if (psi_fs.fail() != 0)
+	{
+		std::cout << "Failed to open file " << filename << std::endl;
+		exit(1);
+	}
+	else
+	{
+		std::cout << "Loading data from " << filename << "..." << std::endl;
+	}
+	psi_fs.read(dst, size);
+	psi_fs.close();
+}
+
 uint integrateInTime(const double block_scale, const Vector3& minp, const Vector3& maxp)
 {
 	// find dimensions
@@ -285,36 +299,45 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaExtent psiExtent = make_cudaExtent(dxsize * sizeof(BlockPsis), dysize, dzsize);
 	cudaExtent edgeExtent = make_cudaExtent(dxsize * sizeof(BlockEdges), dysize, dzsize);
 
-	cudaPitchedPtr d_cudaEvenPsi = allocDevice3D(psiExtent);
-	cudaPitchedPtr d_cudaEvenQ = allocDevice3D(edgeExtent);
-	cudaPitchedPtr d_cudaOddPsi = allocDevice3D(psiExtent);
-	cudaPitchedPtr d_cudaOddQ = allocDevice3D(edgeExtent);
+	cudaPitchedPtr d_cudaEvenPsiHyper = allocDevice3D(psiExtent);
+	cudaPitchedPtr d_cudaEvenQHyper = allocDevice3D(edgeExtent);
+	cudaPitchedPtr d_cudaOddPsiHyper = allocDevice3D(psiExtent);
+	cudaPitchedPtr d_cudaOddQHyper = allocDevice3D(edgeExtent);
+
+	cudaPitchedPtr d_cudaEvenPsiPara = allocDevice3D(psiExtent);
+	cudaPitchedPtr d_cudaEvenQPara = allocDevice3D(edgeExtent);
+	cudaPitchedPtr d_cudaOddPsiPara = allocDevice3D(psiExtent);
+	cudaPitchedPtr d_cudaOddQPara = allocDevice3D(edgeExtent);
 
 	// For computing the energy/chemical potential
-	cudaPitchedPtr d_cudaHPsi = allocDevice3D(edgeExtent);
+	//cudaPitchedPtr d_cudaHPsi = allocDevice3D(edgeExtent);
 
-	double* d_spinNorm = allocDevice<double>(bodies);
+	//double* d_spinNorm = allocDevice<double>(bodies);
 	double* d_density = allocDevice<double>(bodies);
-	double* d_energy = allocDevice<double>(bodies);
-	double3* d_localAvgSpin = allocDevice<double3>(bodies);
-	double3* d_u = allocDevice<double3>(bodies);
-	double3* d_v = allocDevice<double3>(bodies);
-	double* d_theta = allocDevice<double>(bodies);
+	//double* d_energy = allocDevice<double>(bodies);
+	double2* d_error = allocDevice<double2>(bodies);
 
-	size_t offset = d_cudaEvenPsi.pitch * dysize + d_cudaEvenPsi.pitch + sizeof(BlockPsis);
-	size_t edgeOffset = d_cudaEvenQ.pitch * dysize + d_cudaEvenQ.pitch + sizeof(BlockEdges);
-	PitchedPtr d_evenPsi = { (char*)d_cudaEvenPsi.ptr + offset, d_cudaEvenPsi.pitch, d_cudaEvenPsi.pitch * dysize };
-	PitchedPtr d_evenQ = { (char*)d_cudaEvenQ.ptr + edgeOffset, d_cudaEvenQ.pitch, d_cudaEvenQ.pitch * dysize };
-	PitchedPtr d_oddPsi = { (char*)d_cudaOddPsi.ptr + offset, d_cudaOddPsi.pitch, d_cudaOddPsi.pitch * dysize };
-	PitchedPtr d_oddQ = { (char*)d_cudaOddQ.ptr + edgeOffset, d_cudaOddQ.pitch, d_cudaOddQ.pitch * dysize };
+	// Calculate pointers to the start of the real computational domain (jumping over the zero buffer at the edges)
+	size_t offset = d_cudaEvenPsiHyper.pitch * dysize + d_cudaEvenPsiHyper.pitch + sizeof(BlockPsis);
+	size_t edgeOffset = d_cudaEvenQHyper.pitch * dysize + d_cudaEvenQHyper.pitch + sizeof(BlockEdges);
+	
+	PitchedPtr d_evenPsiHyper = { (char*)d_cudaEvenPsiHyper.ptr + offset, d_cudaEvenPsiHyper.pitch, d_cudaEvenPsiHyper.pitch * dysize };
+	PitchedPtr d_evenQHyper = { (char*)d_cudaEvenQHyper.ptr + edgeOffset, d_cudaEvenQHyper.pitch, d_cudaEvenQHyper.pitch * dysize };
+	PitchedPtr d_oddPsiHyper = { (char*)d_cudaOddPsiHyper.ptr + offset, d_cudaOddPsiHyper.pitch, d_cudaOddPsiHyper.pitch * dysize };
+	PitchedPtr d_oddQHyper = { (char*)d_cudaOddQHyper.ptr + edgeOffset, d_cudaOddQHyper.pitch, d_cudaOddQHyper.pitch * dysize };
 
-	PitchedPtr d_HPsi = { (char*)d_cudaHPsi.ptr + offset, d_cudaHPsi.pitch, d_cudaHPsi.pitch * dysize };
+	PitchedPtr d_evenPsiPara = { (char*)d_cudaEvenPsiPara.ptr + offset, d_cudaEvenPsiPara.pitch, d_cudaEvenPsiPara.pitch * dysize };
+	PitchedPtr d_evenQPara = { (char*)d_cudaEvenQPara.ptr + edgeOffset, d_cudaEvenQPara.pitch, d_cudaEvenQPara.pitch * dysize };
+	PitchedPtr d_oddPsiPara = { (char*)d_cudaOddPsiPara.ptr + offset, d_cudaOddPsiPara.pitch, d_cudaOddPsiPara.pitch * dysize };
+	PitchedPtr d_oddQPara = { (char*)d_cudaOddQPara.ptr + edgeOffset, d_cudaOddQPara.pitch, d_cudaOddQPara.pitch * dysize };
+
+	//PitchedPtr d_HPsi = { (char*)d_cudaHPsi.ptr + offset, d_cudaHPsi.pitch, d_cudaHPsi.pitch * dysize };
 
 	// find terms for laplacian
 	Buffer<int3> d0;
 	Buffer<int2> d1;
 	Buffer<double> hodges;
-	getLaplacian(hodges, d0, d1, sizeof(BlockPsis), d_evenPsi.pitch, d_evenPsi.slicePitch, sizeof(BlockEdges), d_evenQ.pitch, d_evenQ.slicePitch);
+	getLaplacian(hodges, d0, d1, sizeof(BlockPsis), d_evenPsiHyper.pitch, d_evenPsiHyper.slicePitch, sizeof(BlockEdges), d_evenQHyper.pitch, d_evenQHyper.slicePitch);
 
 	//std::cout << "lapsize = " << lapsize << ", lapfac = " << lapfac << ", lapfac0 = " << lapfac0 << std::endl;
 
@@ -331,15 +354,17 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	// Initialize host memory
 	size_t hostSize = dxsize * dysize * dzsize;
-	BlockPsis* h_evenPsi = allocHost<BlockPsis>(hostSize);
-	BlockPsis* h_oddPsi = allocHost<BlockPsis>(hostSize);
-	BlockEdges* h_evenQ = allocHost<BlockEdges>(hostSize);
-	BlockEdges* h_oddQ = allocHost<BlockEdges>(hostSize);
+	BlockPsis* h_evenPsiHyper = allocHost<BlockPsis>(hostSize);
+	BlockPsis* h_oddPsiHyper = allocHost<BlockPsis>(hostSize);
+	BlockEdges* h_evenQHyper = allocHost<BlockEdges>(hostSize);
+	BlockEdges* h_oddQHyper = allocHost<BlockEdges>(hostSize);
+
+	BlockPsis* h_evenPsiPara = allocHost<BlockPsis>(hostSize);
+	BlockPsis* h_oddPsiPara = allocHost<BlockPsis>(hostSize);
+	BlockEdges* h_evenQPara = allocHost<BlockEdges>(hostSize);
+	BlockEdges* h_oddQPara = allocHost<BlockEdges>(hostSize);
 
 	double* h_density = allocHost<double>(bodies);
-	double3* h_u = allocHost<double3>(bodies);
-	double* h_theta = allocHost<double>(bodies);
-	double3* h_localAvgSpin = allocHost<double3>(bodies);
 
 #if COMPUTE_GROUND_STATE
 	// Initialize discrete field
@@ -349,7 +374,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	{
 		std::cout << "Initialized ground state psi from file." << std::endl;
 
-		fs.read((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+		fs.read((char*)&h_evenPsiHyper[0], hostSize * sizeof(BlockPsis));
 		fs.close();
 
 		std::ifstream fs_q(GROUND_STATE_Q_FILENAME, std::ios::binary | std::ios::in);
@@ -357,7 +382,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		{
 			std::cout << "Initialized ground state q from file." << std::endl;
 
-			fs.read((char*)&h_evenQ[0], hostSize * sizeof(BlockEdges));
+			fs.read((char*)&h_evenQHyper[0], hostSize * sizeof(BlockEdges));
 			fs.close();
 		}
 		else
@@ -383,9 +408,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 						const double2 s1{ distribution(generator), distribution(generator) };
 						const double2 s0{ distribution(generator), distribution(generator) };
 						const double2 s_1{ distribution(generator), distribution(generator) };
-						h_evenPsi[dstI].values[l].s1 = s1;
-						h_evenPsi[dstI].values[l].s0 = s0;
-						h_evenPsi[dstI].values[l].s_1 = s_1;
+						h_evenPsiHyper[dstI].values[l].s1 = s1;
+						h_evenPsiHyper[dstI].values[l].s0 = s0;
+						h_evenPsiHyper[dstI].values[l].s_1 = s_1;
 					}
 				}
 			}
@@ -396,53 +421,27 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	bool doForward = false;
 #else
 	bool loadGroundState = (t == 0);
-	std::string psi_filename = loadGroundState ? GROUND_STATE_PSI_FILENAME : toString(t) + ".dat";
-	std::ifstream psi_fs(psi_filename, std::ios::binary | std::ios::in);
-	if (psi_fs.fail() != 0)
-	{
-		std::cout << "Failed to open file " << psi_filename << std::endl;
-		return 1;
-	}
-	else
-	{
-		std::cout << "Loading ground state psi from " << psi_filename << "..." << std::endl;
-	}
-	psi_fs.read((char*)&h_oddPsi[0], hostSize * sizeof(BlockPsis));
-	psi_fs.close();
+	std::string psi_filename_hyper = loadGroundState ? GROUND_STATE_PSI_FILENAME : toString(t) + ".dat";
+	loadFromFile(psi_filename_hyper, (char*)&h_oddPsiHyper[0], hostSize * sizeof(BlockPsis));
 
-#if RELATIVISTIC
+	std::string psi_filename_para = loadGroundState ? GROUND_STATE_PARA_FILENAME : toString(t) + ".dat";
+	loadFromFile(psi_filename_para, (char*)&h_oddPsiPara[0], hostSize * sizeof(BlockPsis));
+
 	std::string q_filename = loadGroundState ? GROUND_STATE_Q_FILENAME : toString(t) + ".dat";
-	std::ifstream q_fs(q_filename, std::ios::binary | std::ios::in);
-	if (q_fs.fail() != 0)
-	{
-		std::cout << "Failed to open file " << q_filename << std::endl;
-		return 1;
-	}
-	else
-	{
-		std::cout << "Loading ground state q from " << q_filename << "..." << std::endl;
-	}
-	q_fs.read((char*)&h_oddQ[0], hostSize * sizeof(BlockEdges));
-	q_fs.close();
-#endif
+	loadFromFile(q_filename, (char*)&h_oddQHyper[0], hostSize * sizeof(BlockEdges));
 
 	bool doForward = true;
-	std::string evenFilename = "even_" + toString(t) + ".dat";
-	std::ifstream evenFs(evenFilename, std::ios::binary | std::ios::in);
-	if (evenFs.fail() == 0)
-	{
-		evenFs.read((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
-		evenFs.close();
-		doForward = false;
-		std::cout << "Loaded even time step from file" << std::endl;
-	}
-
 #endif
 
-	cudaPitchedPtr h_cudaEvenPsi = copyHostToDevice3D(h_evenPsi, d_cudaEvenPsi, psiExtent);
-	cudaPitchedPtr h_cudaOddPsi = copyHostToDevice3D(h_oddPsi, d_cudaOddPsi, psiExtent);
-	cudaPitchedPtr h_cudaEvenQ = copyHostToDevice3D(h_evenQ, d_cudaEvenQ, edgeExtent);
-	cudaPitchedPtr h_cudaOddQ = copyHostToDevice3D(h_oddQ, d_cudaOddQ, edgeExtent);
+	cudaPitchedPtr h_cudaEvenPsiHyper = copyHostToDevice3D(h_evenPsiHyper, d_cudaEvenPsiHyper, psiExtent);
+	cudaPitchedPtr h_cudaOddPsiHyper = copyHostToDevice3D(h_oddPsiHyper, d_cudaOddPsiHyper, psiExtent);
+	cudaPitchedPtr h_cudaEvenQHyper = copyHostToDevice3D(h_evenQHyper, d_cudaEvenQHyper, edgeExtent);
+	cudaPitchedPtr h_cudaOddQHyper = copyHostToDevice3D(h_oddQHyper, d_cudaOddQHyper, edgeExtent);
+
+	cudaPitchedPtr h_cudaEvenPsiPara = copyHostToDevice3D(h_evenPsiPara, d_cudaEvenPsiPara, psiExtent);
+	cudaPitchedPtr h_cudaOddPsiPara = copyHostToDevice3D(h_oddPsiPara, d_cudaOddPsiPara, psiExtent);
+	cudaPitchedPtr h_cudaEvenQPara = copyHostToDevice3D(h_evenQPara, d_cudaEvenQPara, edgeExtent);
+	cudaPitchedPtr h_cudaOddQPara = copyHostToDevice3D(h_oddQPara, d_cudaOddQPara, edgeExtent);
 
 	checkCudaErrors(cudaMemcpy(d_d0, &d0[0], d0.size() * sizeof(int3), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_d1, &d1[0], d1.size() * sizeof(int2), cudaMemcpyHostToDevice));
@@ -454,13 +453,18 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	d1.clear();
 	hodges.clear();
 #if !(SAVE_PICTURE)
-	cudaFreeHost(h_evenPsi);
-	cudaFreeHost(h_oddPsi);
+	cudaFreeHost(h_evenPsiHyper);
+	cudaFreeHost(h_oddPsiHyper);
 #endif
-	cudaMemcpy3DParms evenPsiBackParams = createDeviceToHostParams(d_cudaEvenPsi, h_cudaEvenPsi, psiExtent);
-	cudaMemcpy3DParms oddPsiBackParams = createDeviceToHostParams(d_cudaOddPsi, h_cudaOddPsi, psiExtent);
-	cudaMemcpy3DParms evenQBackParams = createDeviceToHostParams(d_cudaEvenQ, h_cudaEvenQ, edgeExtent);
-	cudaMemcpy3DParms oddQBackParams = createDeviceToHostParams(d_cudaOddQ, h_cudaOddQ, edgeExtent);
+	cudaMemcpy3DParms evenPsiBackParamsHyper = createDeviceToHostParams(d_cudaEvenPsiHyper, h_cudaEvenPsiHyper, psiExtent);
+	cudaMemcpy3DParms oddPsiBackParamsHyper = createDeviceToHostParams(d_cudaOddPsiHyper, h_cudaOddPsiHyper, psiExtent);
+	cudaMemcpy3DParms evenQBackParamsHyper = createDeviceToHostParams(d_cudaEvenQHyper, h_cudaEvenQHyper, edgeExtent);
+	cudaMemcpy3DParms oddQBackParamsHyper = createDeviceToHostParams(d_cudaOddQHyper, h_cudaOddQHyper, edgeExtent);
+
+	cudaMemcpy3DParms evenPsiBackParamsPara = createDeviceToHostParams(d_cudaEvenPsiPara, h_cudaEvenPsiPara, psiExtent);
+	cudaMemcpy3DParms oddPsiBackParamsPara = createDeviceToHostParams(d_cudaOddPsiPara, h_cudaOddPsiPara, psiExtent);
+	cudaMemcpy3DParms evenQBackParamsPara = createDeviceToHostParams(d_cudaEvenQPara, h_cudaEvenQPara, edgeExtent);
+	cudaMemcpy3DParms oddQBackParamsPara = createDeviceToHostParams(d_cudaOddQPara, h_cudaOddQPara, edgeExtent);
 
 	// Integrate in time
 	uint3 dimensions = make_uint3(xsize, ysize, zsize);
@@ -481,17 +485,19 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		{
 		case Phase::Polar:
 			std::cout << "Transform ground state to polar phase" << std::endl;
-			polarState << <dimGrid, psiDimBlock >> > (d_oddPsi, dimensions);
+			polarState << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, dimensions);
+			polarState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions);
 			break;
 		case Phase::Ferromagnetic:
 			std::cout << "Transform ground state to ferromagnetic phase" << std::endl;
-			ferromagneticState << <dimGrid, psiDimBlock >> > (d_oddPsi, dimensions);
+			ferromagneticState << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, dimensions);
+			ferromagneticState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions);
 			break;
 		default:
 			break;
 		}
 
-		printDensity(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
+		std::cout << "Total density: " << getDensity(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume) << std::endl;
 	}
 
 #if !COMPUTE_GROUND_STATE
@@ -505,13 +511,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.Bb = BzScale * signal.Bb;
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
-		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt);
-		forwardEuler_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt);
+		forwardEuler_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
 
 		// Parabolic
-		//forwardEuler_q_para << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions);
-		//forwardEuler_para << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, para_dt);
-		//forwardEuler_q_para << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions);
+		update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, para_dt);
+		update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions);
 	}
 	else
 #endif
@@ -528,10 +534,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	
 	if (!continueFromEarlier)
 	{
-		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
-		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
-		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
-		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
+		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
+		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
 	}
 
 	while (true)
@@ -540,12 +546,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #if SAVE_PICTURE
 		if ((iter % 1000) == 0)
 		{
-			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-			drawDensity(h_evenPsi, dxsize, dysize, dzsize, iter, folder);
-			printDensity(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParamsHyper));
+			drawDensity(h_evenPsiHyper, dxsize, dysize, dzsize, iter, folder);
+			std::cout << "Total density: " << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume) << std::endl;
 
 			// Compute energy/chemical potential
-			innerProduct << <dimGrid, psiDimBlock >> > (d_energy, d_evenPsi, d_HPsi, dimensions);
+			innerProductReal << <dimGrid, psiDimBlock >> > (d_energy, d_evenPsiHyper, d_HPsi, dimensions);
 			int prevStride = bodies;
 			while (prevStride > 1)
 			{
@@ -561,61 +567,52 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		if (iter == 500000)
 		{
 			// Psi
-			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
+			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParamsHyper));
 			std::ofstream fs_psi(GROUND_STATE_PSI_FILENAME, std::ios::binary | std::ios_base::trunc);
 			if (fs_psi.fail() != 0) return 1;
-			fs_psi.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+			fs_psi.write((char*)&h_evenPsiHyper[0], hostSize * sizeof(BlockPsis));
 			fs_psi.close();
 
 			// Q
-			checkCudaErrors(cudaMemcpy3D(&evenQBackParams));
+			checkCudaErrors(cudaMemcpy3D(&evenQBackParamsHyper));
 			std::ofstream fs_q(GROUND_STATE_Q_FILENAME, std::ios::binary | std::ios_base::trunc);
 			if (fs_q.fail() != 0) return 1;
-			fs_q.write((char*)&h_evenQ[0], hostSize * sizeof(BlockEdges));
+			fs_q.write((char*)&h_evenQHyper[0], hostSize * sizeof(BlockEdges));
 			fs_q.close();
 
 			return 0;
 		}
 #if RELATIVISTIC
 		// Take an imaginary time step
-		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
-		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
-		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
+		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume);
 
 		// Take an imaginary time step
-		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
-		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
-		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
 #endif
 
 		iter++;
 	}
 
 #else
-	std::string times = std::string("times = [times");
-	std::string bqString = std::string("Bq = [Bq");
-	std::string bzString = std::string("Bz = [Bz");
-	std::string spinString = std::string("Spin = [Spin");
-	std::string magX = std::string("mag_x = [mag_x");
-	std::string magY = std::string("mag_y = [mag_y");
-	std::string magZ = std::string("mag_z = [mag_z");
-	std::string densityStr = std::string("norm = [norm");
-
 	int lastSaveTime = 0;
 
-	std::string hyper_folder = "hyperbolic";
-	std::string para_folder = "parabolic";
+	std::string dens_folder = "dens_images";
 
-	std::string createResultsDirCommand = "mkdir " + hyper_folder;
+	std::string createResultsDirCommand = "mkdir " + dens_folder;
 	system(createResultsDirCommand.c_str());
 
 	while (t < END_TIME)
 	{
 #if SAVE_PICTURE
 		// Copy back from device memory to host memory
-		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsPara));
 
 		// Measure wall clock time
 		static auto prevTime = std::chrono::high_resolution_clock::now();
@@ -623,19 +620,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 		prevTime = std::chrono::high_resolution_clock::now();
 
-		drawDensity(h_oddPsi, dxsize, dysize, dzsize, t, hyper_folder);
+		drawDensity("hyper", h_oddPsiHyper, dxsize, dysize, dzsize, t, dens_folder);
+		drawDensity("para", h_oddPsiPara, dxsize, dysize, dzsize, t, dens_folder);
 
-		//uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
-		//cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
-		//cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
-		//drawUtheta(h_u, h_theta, xsize, ysize, zsize, t - 202.03);
-		//
-		//ferromagneticDomain << <dimGrid, dimBlock >> > (d_ferroDom, d_oddPsi, dimensions);
-		//cudaMemcpy(h_ferroDom, d_ferroDom, bodies * sizeof(double), cudaMemcpyDeviceToHost);
-		//drawFerroDom(h_ferroDom, xsize, ysize, zsize, t - 202.03);
 #endif
 		const uint centerIdx = 57 * dxsize * dysize + 57 * dxsize + 57;
-		double2 temp = h_oddPsi[centerIdx].values[5].s0;
+		double2 temp = h_oddPsiHyper[centerIdx].values[5].s0;
 		double startPhase = atan2(temp.y, temp.x);
 		double phaseTime = 0;
 
@@ -650,12 +640,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.Bb = BzScale * signal.Bb;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
-			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt);
-			update_q_hyper << <dimGrid, edgeDimBlock >> > (d_oddQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
+
+			// Hyperbolic
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt);
+			update_q_hyper << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
 
 			// Parabolic
-			// update_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, parabolic_dt);
-			//update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions);
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiPara, d_evenPsiPara, d_evenQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, para_dt);
+			update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions);
 
 			// update even values (real terms)
 			phaseTime += hyper_dt;
@@ -665,85 +657,57 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.Bb = BzScale * signal.Bb;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
-			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt);
-			update_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
+			
+			// Hyperbolic
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt);
+			update_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
 		
 			// Parabolic
-			//update_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, para_dt);
-			//update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions);
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, para_dt);
+			update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions);
 		}
-		// Copy back from device memory to host memory
-		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
+		// Compute error
+		innerProduct << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiHyper, dimensions);
+		int prevStride = bodies;
+		while (prevStride > 1)
+		{
+			int newStride = prevStride / 2;
+			integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_error, newStride, ((newStride * 2) != prevStride), volume);
+			prevStride = newStride;
+		}
+		double2 hError = { 0 };
+		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(double2), cudaMemcpyDeviceToHost));
+		std::cout << "Error: " << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - sqrt((conj(hError) * hError).x) << std::endl;
 
-		temp = h_oddPsi[centerIdx].values[5].s0;
+#if COMPUTE_GROUND_STATE
+		// Copy back from device memory to host memory
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
+
+		temp = h_oddPsiHyper[centerIdx].values[5].s0;
 		double endPhase = atan2(temp.y, temp.x);
 		double phaseDiff = endPhase - startPhase;
 		std::cout << "Energy was " << phaseDiff / phaseTime << std::endl;
-
+#endif
 #if SAVE_STATES
 		// Copy back from device memory to host memory
-		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
 
-		localAvgSpinAndDensity << <dimGrid, psiDimBlock >> > (d_spinNorm, d_localAvgSpin, d_density, d_oddPsi, dimensions);
-		cudaMemcpy(h_localAvgSpin, d_localAvgSpin, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
-		uvTheta << <dimGrid, psiDimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
-		cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
-		cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
-		saveVolume(SAVE_FILE_PREFIX, h_oddPsi, h_localAvgSpin, h_u, h_theta, bsize, dxsize, dysize, dzsize, 0, block_scale, d_p0, t - 202.03);
 
-		SpinMagDens spinMagDens = integrateSpinAndDensity(dimGrid, psiDimBlock, d_spinNorm, d_localAvgSpin, d_density, bodies, volume);
-		times += ", " + toString(t);
-		bqString += ", " + toString(Bs.Bq);
-		bzString += ", " + toString(Bs.Bz);
-		spinString += ", " + toString(spinMagDens.spin);
-		magX += ", " + toString(spinMagDens.magnetization.x);
-		magY += ", " + toString(spinMagDens.magnetization.y);
-		magZ += ", " + toString(spinMagDens.magnetization.z);
-		densityStr += ", " + toString(spinMagDens.density);
 
 		if (((int(t) % STATE_SAVE_INTERVAL) == 0) && (int(t) != lastSaveTime))
 		{
-			times += "];";
-			bqString += "];";
-			bzString += "];";
-			spinString += "];";
-			magX += "];";
-			magY += "];";
-			magZ += "];";
-			densityStr += "];";
-
-			Text textFile;
-			textFile << times << std::endl;
-			textFile << bqString << std::endl;
-			textFile << bzString << std::endl;
-			textFile << spinString << std::endl;
-			textFile << magX << std::endl;
-			textFile << magY << std::endl;
-			textFile << magZ << std::endl;
-			textFile << densityStr << std::endl;
-			textFile.save(SAVE_FILE_PREFIX + toString(t) + ".m");
-
 			std::ofstream oddFs(SAVE_FILE_PREFIX + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
 			if (oddFs.fail() != 0) return 1;
-			oddFs.write((char*)&h_oddPsi[0], hostSize * sizeof(BlockPsis));
+			oddFs.write((char*)&h_oddPsiHyper[0], hostSize * sizeof(BlockPsis));
 			oddFs.close();
 
-			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
+			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParamsHyper));
 			std::ofstream evenFs(SAVE_FILE_PREFIX + "even_" + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
 			if (evenFs.fail() != 0) return 1;
-			evenFs.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+			evenFs.write((char*)&h_evenPsiHyper[0], hostSize * sizeof(BlockPsis));
 			evenFs.close();
 
 			std::cout << "Saved the state!" << std::endl;
-
-			times = std::string("times = [times");
-			bqString = std::string("Bq = [Bq");
-			bzString = std::string("Bz = [Bz");
-			spinString = std::string("Spin = [Spin");
-			magX = std::string("mag_x = [mag_x");
-			magY = std::string("mag_y = [mag_y");
-			magZ = std::string("mag_z = [mag_z");
-			densityStr = std::string("norm = [norm");
 
 			lastSaveTime = int(t);
 		}
@@ -799,7 +763,9 @@ int main(int argc, char** argv)
 
 	const double blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
 
-	std::cout << "Start simulating from t = " << t << " ms, with a time step size of " << hyper_dt << "." << std::endl;
+	std::cout << "Start simulating from t = " << t << " ms." << std::endl;
+	std::cout << "Hyperbolic time step size is " << hyper_dt << "." << std::endl;
+	std::cout << "Parabolic time step size is " << para_dt << "." << std::endl;
 	std::cout << "The simulation will end at " << END_TIME << " ms." << std::endl;
 	//std::cout << "Block scale = " << blockScale << std::endl;
 	//std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
