@@ -30,7 +30,7 @@ std::string getProjectionString()
 
 #include "mesh.h"
 
-#define COMPUTE_GROUND_STATE 0
+#define COMPUTE_GROUND_STATE 1
 
 #define SAVE_STATES 0
 #define SAVE_PICTURE 1
@@ -39,9 +39,9 @@ std::string getProjectionString()
 #define THREAD_BLOCK_Y 2
 #define THREAD_BLOCK_Z 1
 
-constexpr double DOMAIN_SIZE_X = 24.0;
-constexpr double DOMAIN_SIZE_Y = 24.0;
-constexpr double DOMAIN_SIZE_Z = 24.0;
+constexpr double DOMAIN_SIZE_X = 16.0;
+constexpr double DOMAIN_SIZE_Y = 16.0;
+constexpr double DOMAIN_SIZE_Z = 16.0;
 
 constexpr double REPLICABLE_STRUCTURE_COUNT_X = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
@@ -86,7 +86,7 @@ constexpr double INV_SQRT_2 = 0.70710678118655;
 
 constexpr double NOISE_AMPLITUDE = 0.1;
 
-double para_dt = 7e-4; // Max parabolic: 7e-4
+double para_dt = 1e-4; // Max parabolic: 7e-4
 double hyper_dt = para_dt; //3e-3; // Max hyperbolic: 3e-3
 
 const float IMAGE_SAVE_INTERVAL = 0.05; // ms
@@ -97,7 +97,7 @@ const uint STATE_SAVE_INTERVAL = 10.0; // ms
 double t = 0; // Start time in ms
 double END_TIME = 0.6; // End time in ms
 
-double sigma = 1.0; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
+double sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
 double dt_per_sigma = hyper_dt / sigma;
 
 enum class Phase
@@ -116,8 +116,9 @@ std::string toStringShort(const double value)
 	return out.str();
 };
 
-const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + toStringShort(sigma) + ".dat";
-const std::string GROUND_STATE_Q_FILENAME = "ground_state_q_" + toStringShort(sigma) + ".dat";
+const std::string EXTRA_INFORMATION = toStringShort(sigma) + "_" + toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X);
+const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + EXTRA_INFORMATION + ".dat";
+const std::string GROUND_STATE_Q_FILENAME = "ground_state_q_" + EXTRA_INFORMATION + ".dat";
 const std::string GROUND_STATE_PARA_FILENAME = "ground_state.dat";
 
 #include "hyper_kernels.h"
@@ -288,9 +289,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const uint bsize = VALUES_IN_BLOCK; // bpos.size(); // number of values inside a block
 
 	//std::cout << "Dual 0-cells in a replicable structure: " << bsize << std::endl;
-	//std::cout << "Replicable structure instances in x: " << xsize << ", y: " << ysize << ", z: " << zsize << std::endl;
+	std::cout << "Replicable structure instances in x: " << xsize << ", y: " << ysize << ", z: " << zsize << std::endl;
 	uint64_t bodies = xsize * ysize * zsize * bsize;
-	//std::cout << "Dual 0-cells in total: " << bodies << std::endl;
+	std::cout << "Dual 0-cells in total: " << bodies << std::endl;
 
 	// Initialize device memory
 	size_t dxsize = xsize + 2; // One element buffer to both ends
@@ -304,18 +305,25 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaPitchedPtr d_cudaOddPsiHyper = allocDevice3D(psiExtent);
 	cudaPitchedPtr d_cudaOddQHyper = allocDevice3D(edgeExtent);
 
+#if !COMPUTE_GROUND_STATE
 	cudaPitchedPtr d_cudaEvenPsiPara = allocDevice3D(psiExtent);
 	cudaPitchedPtr d_cudaEvenQPara = allocDevice3D(edgeExtent);
 	cudaPitchedPtr d_cudaOddPsiPara = allocDevice3D(psiExtent);
 	cudaPitchedPtr d_cudaOddQPara = allocDevice3D(edgeExtent);
+#endif
 
+#if COMPUTE_GROUND_STATE
 	// For computing the energy/chemical potential
-	//cudaPitchedPtr d_cudaHPsi = allocDevice3D(edgeExtent);
+	cudaPitchedPtr d_cudaHPsi = allocDevice3D(edgeExtent);
+#endif
 
 	//double* d_spinNorm = allocDevice<double>(bodies);
 	double* d_density = allocDevice<double>(bodies);
-	//double* d_energy = allocDevice<double>(bodies);
+#if COMPUTE_GROUND_STATE
+	double* d_energy = allocDevice<double>(bodies);
+#else
 	double2* d_error = allocDevice<double2>(bodies);
+#endif
 
 	// Calculate pointers to the start of the real computational domain (jumping over the zero buffer at the edges)
 	size_t offset = d_cudaEvenPsiHyper.pitch * dysize + d_cudaEvenPsiHyper.pitch + sizeof(BlockPsis);
@@ -326,12 +334,16 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	PitchedPtr d_oddPsiHyper = { (char*)d_cudaOddPsiHyper.ptr + offset, d_cudaOddPsiHyper.pitch, d_cudaOddPsiHyper.pitch * dysize };
 	PitchedPtr d_oddQHyper = { (char*)d_cudaOddQHyper.ptr + edgeOffset, d_cudaOddQHyper.pitch, d_cudaOddQHyper.pitch * dysize };
 
+#if !COMPUTE_GROUND_STATE
 	PitchedPtr d_evenPsiPara = { (char*)d_cudaEvenPsiPara.ptr + offset, d_cudaEvenPsiPara.pitch, d_cudaEvenPsiPara.pitch * dysize };
 	PitchedPtr d_evenQPara = { (char*)d_cudaEvenQPara.ptr + edgeOffset, d_cudaEvenQPara.pitch, d_cudaEvenQPara.pitch * dysize };
 	PitchedPtr d_oddPsiPara = { (char*)d_cudaOddPsiPara.ptr + offset, d_cudaOddPsiPara.pitch, d_cudaOddPsiPara.pitch * dysize };
 	PitchedPtr d_oddQPara = { (char*)d_cudaOddQPara.ptr + edgeOffset, d_cudaOddQPara.pitch, d_cudaOddQPara.pitch * dysize };
+#endif
 
-	//PitchedPtr d_HPsi = { (char*)d_cudaHPsi.ptr + offset, d_cudaHPsi.pitch, d_cudaHPsi.pitch * dysize };
+#if COMPUTE_GROUND_STATE
+	PitchedPtr d_HPsi = { (char*)d_cudaHPsi.ptr + offset, d_cudaHPsi.pitch, d_cudaHPsi.pitch * dysize };
+#endif
 
 	// find terms for laplacian
 	Buffer<int3> d0;
@@ -437,12 +449,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaPitchedPtr h_cudaOddPsiHyper = copyHostToDevice3D(h_oddPsiHyper, d_cudaOddPsiHyper, psiExtent);
 	cudaPitchedPtr h_cudaEvenQHyper = copyHostToDevice3D(h_evenQHyper, d_cudaEvenQHyper, edgeExtent);
 	cudaPitchedPtr h_cudaOddQHyper = copyHostToDevice3D(h_oddQHyper, d_cudaOddQHyper, edgeExtent);
-
+#if !COMPUTE_GROUND_STATE
 	cudaPitchedPtr h_cudaEvenPsiPara = copyHostToDevice3D(h_evenPsiPara, d_cudaEvenPsiPara, psiExtent);
 	cudaPitchedPtr h_cudaOddPsiPara = copyHostToDevice3D(h_oddPsiPara, d_cudaOddPsiPara, psiExtent);
 	cudaPitchedPtr h_cudaEvenQPara = copyHostToDevice3D(h_evenQPara, d_cudaEvenQPara, edgeExtent);
 	cudaPitchedPtr h_cudaOddQPara = copyHostToDevice3D(h_oddQPara, d_cudaOddQPara, edgeExtent);
-
+#endif
 	checkCudaErrors(cudaMemcpy(d_d0, &d0[0], d0.size() * sizeof(int3), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_d1, &d1[0], d1.size() * sizeof(int2), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_hodges, &hodges[0], hodges.size() * sizeof(double), cudaMemcpyHostToDevice));
@@ -460,12 +472,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaMemcpy3DParms oddPsiBackParamsHyper = createDeviceToHostParams(d_cudaOddPsiHyper, h_cudaOddPsiHyper, psiExtent);
 	cudaMemcpy3DParms evenQBackParamsHyper = createDeviceToHostParams(d_cudaEvenQHyper, h_cudaEvenQHyper, edgeExtent);
 	cudaMemcpy3DParms oddQBackParamsHyper = createDeviceToHostParams(d_cudaOddQHyper, h_cudaOddQHyper, edgeExtent);
-
+#if !COMPUTE_GROUND_STATE
 	cudaMemcpy3DParms evenPsiBackParamsPara = createDeviceToHostParams(d_cudaEvenPsiPara, h_cudaEvenPsiPara, psiExtent);
 	cudaMemcpy3DParms oddPsiBackParamsPara = createDeviceToHostParams(d_cudaOddPsiPara, h_cudaOddPsiPara, psiExtent);
 	cudaMemcpy3DParms evenQBackParamsPara = createDeviceToHostParams(d_cudaEvenQPara, h_cudaEvenQPara, edgeExtent);
 	cudaMemcpy3DParms oddQBackParamsPara = createDeviceToHostParams(d_cudaOddQPara, h_cudaOddQPara, edgeExtent);
-
+#endif
 	// Integrate in time
 	uint3 dimensions = make_uint3(xsize, ysize, zsize);
 	dim3 psiDimBlock(THREAD_BLOCK_X * VALUES_IN_BLOCK, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
@@ -486,12 +498,16 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		case Phase::Polar:
 			std::cout << "Transform ground state to polar phase" << std::endl;
 			polarState << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, dimensions);
+#if !COMPUTE_GROUND_STATE
 			polarState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions);
+#endif
 			break;
 		case Phase::Ferromagnetic:
 			std::cout << "Transform ground state to ferromagnetic phase" << std::endl;
 			ferromagneticState << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, dimensions);
+#if !COMPUTE_GROUND_STATE
 			ferromagneticState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions);
+#endif
 			break;
 		default:
 			break;
@@ -526,7 +542,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	}
 
 #if COMPUTE_GROUND_STATE
-	std::string folder = "gs_dens_profiles";
+	std::string folder = "gs_dens_profiles_" + EXTRA_INFORMATION;
 	std::string createResultsDirCommand = "mkdir " + folder;
 	system(createResultsDirCommand.c_str());
 
@@ -536,8 +552,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	{
 		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
 		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume);
-		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
-		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_q_hyper << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
 	}
 
 	while (true)
@@ -547,7 +563,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		if ((iter % 1000) == 0)
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParamsHyper));
-			drawDensity(h_evenPsiHyper, dxsize, dysize, dzsize, iter, folder);
+			drawDensity("hyper", h_evenPsiHyper, dxsize, dysize, dzsize, iter, folder);
 			std::cout << "Total density: " << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume) << std::endl;
 
 			// Compute energy/chemical potential
@@ -582,19 +598,18 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 			return 0;
 		}
-#if RELATIVISTIC
+
 		// Take an imaginary time step
-		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
-		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
+		itp_q_hyper << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume);
 
 		// Take an imaginary time step
-		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
-		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
+		itp_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
-#endif
 
 		iter++;
 	}
@@ -767,7 +782,7 @@ int main(int argc, char** argv)
 	std::cout << "Hyperbolic time step size is " << hyper_dt << "." << std::endl;
 	std::cout << "Parabolic time step size is " << para_dt << "." << std::endl;
 	std::cout << "The simulation will end at " << END_TIME << " ms." << std::endl;
-	//std::cout << "Block scale = " << blockScale << std::endl;
+	std::cout << "Block scale = " << blockScale << std::endl;
 	//std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
 	std::cout << "Relativistic sigma = " << sigma << std::endl;
 
