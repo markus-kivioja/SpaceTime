@@ -370,12 +370,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	BlockPsis* h_oddPsiHyper = allocHost<BlockPsis>(hostSize);
 	BlockEdges* h_evenQHyper = allocHost<BlockEdges>(hostSize);
 	BlockEdges* h_oddQHyper = allocHost<BlockEdges>(hostSize);
-
+#if !COMPUTE_GROUND_STATE
 	BlockPsis* h_evenPsiPara = allocHost<BlockPsis>(hostSize);
 	BlockPsis* h_oddPsiPara = allocHost<BlockPsis>(hostSize);
 	BlockEdges* h_evenQPara = allocHost<BlockEdges>(hostSize);
 	BlockEdges* h_oddQPara = allocHost<BlockEdges>(hostSize);
-
+#endif
 	double* h_density = allocHost<double>(bodies);
 
 #if COMPUTE_GROUND_STATE
