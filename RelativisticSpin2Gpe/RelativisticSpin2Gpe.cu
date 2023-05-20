@@ -60,7 +60,7 @@ std::string getProjectionString()
 
 #define RELATIVISTIC 1
 
-#define COMPUTE_GROUND_STATE 0
+#define COMPUTE_GROUND_STATE 1
 
 #define USE_QUADRATIC_ZEEMAN 0
 #define USE_QUADRUPOLE_OFFSET 0
@@ -121,7 +121,6 @@ const double BzQuadScale = sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (tra
 constexpr double SQRT_2 = 1.41421356237309;
 //constexpr double INV_SQRT_2 = 0.70710678118655;
 
-const std::string GROUND_STATE_FILENAME = "ground_state.dat";
 constexpr double NOISE_AMPLITUDE = 0; //0.1;
 
 //constexpr double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
@@ -139,6 +138,18 @@ constexpr double END_TIME = 0.8; // End time in ms
 double sigma = 0.01;
 double dt_per_sigma = dt / sigma;
 #endif
+
+std::string toStringShort(const double value)
+{
+	std::ostringstream out;
+	out.precision(2);
+	out << std::fixed << value;
+	return out.str();
+};
+
+const std::string EXTRA_INFORMATION = toStringShort(sigma) + "_" + toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X);
+const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + EXTRA_INFORMATION + ".dat";
+const std::string GROUND_STATE_Q_FILENAME = "ground_state_q_" + EXTRA_INFORMATION + ".dat";
 
 __device__ __inline__ double trap(double3 p)
 {
@@ -1035,6 +1046,72 @@ SpinMagDens integrateSpinAndDensity(dim3 dimGrid, dim3 dimBlock, double* spinNor
 	return { hSpinNorm, hMagnetization, hDensity };
 }
 
+template<typename T>
+T* allocDevice(size_t count)
+{
+	T* ptr;
+	checkCudaErrors(cudaMalloc(&ptr, count * sizeof(T)));
+	return ptr;
+}
+
+cudaPitchedPtr allocDevice3D(cudaExtent extent)
+{
+	cudaPitchedPtr ptr;
+	checkCudaErrors(cudaMalloc3D(&ptr, extent));
+	return ptr;
+}
+
+template<typename T>
+T* allocHost(size_t count)
+{
+	T* ptr;
+	checkCudaErrors(cudaMallocHost(&ptr, count * sizeof(T)));
+	memset(ptr, 0, count * sizeof(T));
+	return ptr;
+}
+
+cudaPitchedPtr copyHostToDevice3D(void* src, cudaPitchedPtr dst, cudaExtent extent)
+{
+	cudaPitchedPtr cuda_src = { src, extent.width, dst.xsize, dst.ysize };
+
+	cudaMemcpy3DParms params = { 0 };
+	params.srcPtr = cuda_src;
+	params.dstPtr = dst;
+	params.extent = extent;
+	params.kind = cudaMemcpyHostToDevice;
+
+	checkCudaErrors(cudaMemcpy3D(&params));
+
+	return cuda_src;
+}
+
+cudaMemcpy3DParms createDeviceToHostParams(cudaPitchedPtr src, cudaPitchedPtr dst, cudaExtent extent)
+{
+	cudaMemcpy3DParms params = { 0 };
+	params.srcPtr = src;
+	params.dstPtr = dst;
+	params.extent = extent;
+	params.kind = cudaMemcpyDeviceToHost;
+
+	return params;
+}
+
+void loadFromFile(const std::string& filename, char* dst, size_t size)
+{
+	std::ifstream psi_fs(filename, std::ios::binary | std::ios::in);
+	if (psi_fs.fail() != 0)
+	{
+		std::cout << "Failed to open file " << filename << std::endl;
+		exit(1);
+	}
+	else
+	{
+		std::cout << "Loading data from " << filename << "..." << std::endl;
+	}
+	psi_fs.read(dst, size);
+	psi_fs.close();
+}
+
 uint integrateInTime(const double block_scale, const Vector3& minp, const Vector3& maxp)
 {
 	// find dimensions
@@ -1118,26 +1195,38 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	// Initialize host memory
 	size_t hostSize = dxsize * dysize * dzsize;
-	BlockPsis* h_evenPsi;
-	BlockPsis* h_oddPsi;
-	checkCudaErrors(cudaMallocHost(&h_evenPsi, hostSize * sizeof(BlockPsis)));
-	checkCudaErrors(cudaMallocHost(&h_oddPsi, hostSize * sizeof(BlockPsis)));
-	memset(h_evenPsi, 0, hostSize * sizeof(BlockPsis));
-	memset(h_oddPsi, 0, hostSize * sizeof(BlockPsis));
+	BlockPsis* h_evenPsi = allocHost<BlockPsis>(hostSize);
+	BlockPsis* h_oddPsi = allocHost<BlockPsis>(hostSize);
+	BlockEdges* h_evenQ = allocHost<BlockEdges>(hostSize);
+	BlockEdges* h_oddQ = allocHost<BlockEdges>(hostSize);
 
-	double* h_density;
-	double3* h_u;
-	double* h_theta;
-	double3* h_localAvgSpin;
-	checkCudaErrors(cudaMallocHost(&h_density, bodies * sizeof(double)));
-	checkCudaErrors(cudaMallocHost(&h_u, bodies * sizeof(double3)));
-	checkCudaErrors(cudaMallocHost(&h_theta, bodies * sizeof(double)));
-	checkCudaErrors(cudaMallocHost(&h_localAvgSpin, bodies * sizeof(double3)));
+	double* h_density = allocHost<double>(bodies);
 
 #if COMPUTE_GROUND_STATE
 	// Initialize discrete field
-	std::ifstream fs(GROUND_STATE_FILENAME, std::ios::binary | std::ios::in);
-	if (fs.fail() != 0)
+	std::ifstream fs(GROUND_STATE_PSI_FILENAME, std::ios::binary | std::ios::in);
+	bool continueFromEarlier = (fs.fail() == 0);
+	if (continueFromEarlier)
+	{
+		std::cout << "Initialized ground state psi from file." << std::endl;
+
+		fs.read((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+		fs.close();
+
+		std::ifstream fs_q(GROUND_STATE_Q_FILENAME, std::ios::binary | std::ios::in);
+		if (fs.fail() == 0)
+		{
+			std::cout << "Initialized ground state q from file." << std::endl;
+
+			fs.read((char*)&h_evenQ[0], hostSize * sizeof(BlockEdges));
+			fs.close();
+		}
+		else
+		{
+			std::cout << "Failed to open the ground state q file." << std::endl;
+		}
+	}
+	else
 	{
 		std::cout << "Initialized ground state with random noise." << std::endl;
 
@@ -1167,117 +1256,25 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			}
 		}
 	}
-	else
-	{
-		std::cout << "Initialized ground state from file." << std::endl;
-
-		fs.read((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
-		fs.close();
-	}
 
 	bool loadGroundState = false;
 	bool doForward = false;
 #else
 	bool loadGroundState = (t == 0);
-	std::string filename = loadGroundState ? GROUND_STATE_FILENAME : toString(t) + ".dat";
-	std::ifstream fs(filename, std::ios::binary | std::ios::in);
-	if (fs.fail() != 0)
-	{
-		std::cout << "Failed to open file " << filename << std::endl;
-		return 1;
-	}
-	fs.read((char*)&h_oddPsi[0], hostSize * sizeof(BlockPsis));
-	fs.close();
+	std::string psi_filename = loadGroundState ? GROUND_STATE_PSI_FILENAME : toString(t) + ".dat";
+	loadFromFile(psi_filename, (char*)&h_oddPsi[0], hostSize * sizeof(BlockPsis));
 
-#if USE_INITIAL_NOISE
-	if (loadGroundState && (NOISE_AMPLITUDE > 0))
-	{
-		std::default_random_engine generator;
-		std::normal_distribution<double> distribution(0.0, 1.0);
-
-		for (uint k = 0; k < zsize; k++)
-		{
-			for (uint j = 0; j < ysize; j++)
-			{
-				for (uint i = 0; i < xsize; i++)
-				{
-					for (uint l = 0; l < bsize; l++)
-					{
-						// Add noise
-						const uint dstI = (k + 1) * dxsize * dysize + (j + 1) * dxsize + (i + 1);
-						const double2 rand = { distribution(generator), distribution(generator) };
-						const double dens = (conj(h_oddPsi[dstI].values[l].s0) * h_oddPsi[dstI].values[l].s0).x;
-						h_oddPsi[dstI].values[l].s0 += sqrt(dens) * NOISE_AMPLITUDE * rand;
-
-						// Normalize
-						const double newDens = (conj(h_oddPsi[dstI].values[l].s0) * h_oddPsi[dstI].values[l].s0).x;
-						h_oddPsi[dstI].values[l].s0 = sqrt(dens / newDens) * h_oddPsi[dstI].values[l].s0;
-					}
-				}
-			}
-		}
-	}
-	std::cout << "Initial noise applied." << std::endl;
-#else
-	std::cout << "No initial noise." << std::endl;
-#endif
+	std::string q_filename = loadGroundState ? GROUND_STATE_Q_FILENAME : toString(t) + ".dat";
+	loadFromFile(q_filename, (char*)&h_oddQ[0], hostSize * sizeof(BlockEdges));
 
 	bool doForward = true;
-	std::string evenFilename = "even_" + toString(t) + ".dat";
-	std::ifstream evenFs(evenFilename, std::ios::binary | std::ios::in);
-	if (evenFs.fail() == 0)
-	{
-		evenFs.read((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
-		evenFs.close();
-		doForward = false;
-		std::cout << "Loaded even time step from file" << std::endl;
-	}
-
 #endif
 
-	cudaPitchedPtr h_cudaEvenPsi = { 0 };
-	cudaPitchedPtr h_cudaOddPsi = { 0 };
+	cudaPitchedPtr h_cudaEvenPsi = copyHostToDevice3D(h_evenPsi, d_cudaEvenPsi, psiExtent);
+	cudaPitchedPtr h_cudaOddPsi = copyHostToDevice3D(h_oddPsi, d_cudaOddPsi, psiExtent);
+	cudaPitchedPtr h_cudaEvenQ = copyHostToDevice3D(h_evenQ, d_cudaEvenQ, edgeExtent);
+	cudaPitchedPtr h_cudaOddQ = copyHostToDevice3D(h_oddQ, d_cudaOddQ, edgeExtent);
 
-	h_cudaEvenPsi.ptr = h_evenPsi;
-	h_cudaEvenPsi.pitch = dxsize * sizeof(BlockPsis);
-	h_cudaEvenPsi.xsize = d_cudaEvenPsi.xsize;
-	h_cudaEvenPsi.ysize = d_cudaEvenPsi.ysize;
-
-	h_cudaOddPsi.ptr = h_oddPsi;
-	h_cudaOddPsi.pitch = dxsize * sizeof(BlockPsis);
-	h_cudaOddPsi.xsize = d_cudaOddPsi.xsize;
-	h_cudaOddPsi.ysize = d_cudaOddPsi.ysize;
-
-	// Copy from host memory to device memory
-	cudaMemcpy3DParms evenPsiParams = { 0 };
-	cudaMemcpy3DParms oddPsiParams = { 0 };
-
-	evenPsiParams.srcPtr = h_cudaEvenPsi;
-	evenPsiParams.dstPtr = d_cudaEvenPsi;
-	evenPsiParams.extent = psiExtent;
-	evenPsiParams.kind = cudaMemcpyHostToDevice;
-
-	oddPsiParams.srcPtr = h_cudaOddPsi;
-	oddPsiParams.dstPtr = d_cudaOddPsi;
-	oddPsiParams.extent = psiExtent;
-	oddPsiParams.kind = cudaMemcpyHostToDevice;
-
-	// TODO: Implement a possibility to save and load q states.
-	//cudaMemcpy3DParms evenQParams = { 0 };
-	//cudaMemcpy3DParms oddQParams = { 0 };
-	//
-	//evenQParams.srcPtr = h_cudaEvenQ;
-	//evenQParams.dstPtr = d_cudaEvenQ;
-	//evenQParams.extent = psiExtent;
-	//evenQParams.kind = cudaMemcpyHostToDevice;
-	//
-	//oddQParams.srcPtr = h_cudaOddPsi;
-	//oddQParams.dstPtr = d_cudaOddPsi;
-	//oddQParams.extent = psiExtent;
-	//oddQParams.kind = cudaMemcpyHostToDevice;
-
-	checkCudaErrors(cudaMemcpy3D(&evenPsiParams));
-	checkCudaErrors(cudaMemcpy3D(&oddPsiParams));
 	checkCudaErrors(cudaMemcpy(d_d0, &d0[0], d0.size() * sizeof(int3), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_d1, &d1[0], d1.size() * sizeof(int2), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_hodges, &hodges[0], hodges.size() * sizeof(double), cudaMemcpyHostToDevice));
@@ -1291,17 +1288,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaFreeHost(h_evenPsi);
 	cudaFreeHost(h_oddPsi);
 #endif
-	cudaMemcpy3DParms evenPsiBackParams = { 0 };
-	evenPsiBackParams.srcPtr = d_cudaEvenPsi;
-	evenPsiBackParams.dstPtr = h_cudaEvenPsi;
-	evenPsiBackParams.extent = psiExtent;
-	evenPsiBackParams.kind = cudaMemcpyDeviceToHost;
-
-	cudaMemcpy3DParms oddPsiBackParams = { 0 };
-	oddPsiBackParams.srcPtr = d_cudaOddPsi;
-	oddPsiBackParams.dstPtr = h_cudaOddPsi;
-	oddPsiBackParams.extent = psiExtent;
-	oddPsiBackParams.kind = cudaMemcpyDeviceToHost;
+	cudaMemcpy3DParms evenPsiBackParams = createDeviceToHostParams(d_cudaEvenPsi, h_cudaEvenPsi, psiExtent);
+	cudaMemcpy3DParms oddPsiBackParams = createDeviceToHostParams(d_cudaOddPsi, h_cudaOddPsi, psiExtent);
+	cudaMemcpy3DParms evenQBackParams = createDeviceToHostParams(d_cudaEvenQ, h_cudaEvenQ, edgeExtent);
+	cudaMemcpy3DParms oddQBackParams = createDeviceToHostParams(d_cudaOddQ, h_cudaOddQ, edgeExtent);
 
 	// Integrate in time
 	uint3 dimensions = make_uint3(xsize, ysize, zsize);
@@ -1346,6 +1336,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		printDensity(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 	}
 
+#if !COMPUTE_GROUND_STATE
 	// Take one forward Euler step if starting from the ground state or time step changed
 	if (doForward)
 	{
@@ -1356,18 +1347,29 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.Bb = BzScale * signal.Bb;
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
-		update_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
-		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, alpha);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, extraPot);
+		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
 	}
 	else
+#endif
 	{
 		std::cout << "Skipping the forward step." << std::endl;
 	}
 
 #if COMPUTE_GROUND_STATE
+	std::string folder = "gs_dens_profiles_" + EXTRA_INFORMATION;
+	std::string createResultsDirCommand = "mkdir " + folder;
+	system(createResultsDirCommand.c_str());
+
 	uint iter = 0;
 
-	normalize_h(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+	if (!continueFromEarlier)
+	{
+		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
+	}
 
 	while (true)
 	{
@@ -1380,46 +1382,42 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.Bq = BqScale * signal.Bq;
 			Bs.Bb = BzScale * signal.Bb;
 			drawIandR("GS", h_evenPsi, dxsize, dysize, dzsize, iter, Bs, d_p0, block_scale);
-			printDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+			printDensity(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 
 			double3 com = centerOfMass(h_evenPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
 			std::cout << "Center of mass: " << com.x << ", " << com.y << ", " << com.z << std::endl;
 		}
 #endif
-		if (iter == 10000)
+		if (iter == 500000)
 		{
+			// Psi
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-			std::ofstream fs(GROUND_STATE_FILENAME, std::ios::binary | std::ios_base::trunc);
-			if (fs.fail() != 0) return 1;
-			fs.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
-			fs.close();
+			std::ofstream fs_psi(GROUND_STATE_PSI_FILENAME, std::ios::binary | std::ios_base::trunc);
+			if (fs_psi.fail() != 0) return 1;
+			fs_psi.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+			fs_psi.close();
+
+			// Q
+			checkCudaErrors(cudaMemcpy3D(&evenQBackParams));
+			std::ofstream fs_q(GROUND_STATE_Q_FILENAME, std::ios::binary | std::ios_base::trunc);
+			if (fs_q.fail() != 0) return 1;
+			fs_q.write((char*)&h_evenQ[0], hostSize * sizeof(BlockEdges));
+			fs_q.close();
+
 			return 0;
 		}
-		// Take an imaginary time step
-		itp << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, { 0 }, dimensions, block_scale, d_p0, c0, c2, c4);
-		// Normalize
-		normalize_h(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 
 		// Take an imaginary time step
-		itp << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, { 0 }, dimensions, block_scale, d_p0, c0, c2, c4);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
+		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
-		normalize_h(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 
-		//energy_h(dimGrid, dimBlock, d_energy, d_evenPsi, d_pot, d_lapind, d_hodges, g, dimensions, volume, bodies);
-		//double hDensity = 0;
-		//double hEnergy = 0;
-		//checkCudaErrors(cudaMemcpy(&hDensity, d_density, sizeof(double), cudaMemcpyDeviceToHost));
-		//checkCudaErrors(cudaMemcpy(&hEnergy, d_energy, sizeof(double), cudaMemcpyDeviceToHost));
-
-		//double newMu = hEnergy / hDensity;
-		//double newE = hEnergy;
-		//
-		//std::cout << "Total density: " << hDensity << ", Total energy: " << hEnergy << ", mu: " << newMu << std::endl;
-
-		//if (std::abs(mu - newMu) < 1e-4) break;
-
-		//mu = newMu;
-		//E = newE;
+		// Take an imaginary time step
+		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
+		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
+		// Normalize
+		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 
 		iter++;
 	}
