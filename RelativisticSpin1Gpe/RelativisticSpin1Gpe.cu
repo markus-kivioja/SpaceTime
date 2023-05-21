@@ -30,7 +30,7 @@ std::string getProjectionString()
 
 #include "mesh.h"
 
-#define COMPUTE_GROUND_STATE 1
+#define COMPUTE_GROUND_STATE 0
 
 #define SAVE_STATES 0
 #define SAVE_PICTURE 1
@@ -95,9 +95,9 @@ uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / hyp
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 0.6; // End time in ms
+double END_TIME = 3.0; // End time in ms
 
-double sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
+double sigma = 1.0; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
 double dt_per_sigma = hyper_dt / sigma;
 
 enum class Phase
@@ -116,7 +116,7 @@ std::string toStringShort(const double value)
 	return out.str();
 };
 
-const std::string EXTRA_INFORMATION = toStringShort(sigma) + "_" + toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X);
+const std::string EXTRA_INFORMATION = toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X);
 const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + EXTRA_INFORMATION + ".dat";
 const std::string GROUND_STATE_Q_FILENAME = "ground_state_q_" + EXTRA_INFORMATION + ".dat";
 
