@@ -30,7 +30,7 @@ std::string getProjectionString()
 
 #include "mesh.h"
 
-#define COMPUTE_GROUND_STATE 0
+#define COMPUTE_GROUND_STATE 1
 
 #define SAVE_STATES 0
 #define SAVE_PICTURE 1
@@ -97,14 +97,20 @@ const uint STATE_SAVE_INTERVAL = 10.0; // ms
 double t = 0; // Start time in ms
 double END_TIME = 3.0; // End time in ms
 
+#if COMPUTE_GROUND_STATE
+double sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
+#else
 double sigma = 1.0; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
+#endif
 double dt_per_sigma = hyper_dt / sigma;
 
 enum class Phase
 {
 	Polar = 0,
-	Ferromagnetic
+	Ferromagnetic,
+	None
 };
+//constexpr Phase initPhase = Phase::None;
 constexpr Phase initPhase = Phase::Polar;
 //constexpr Phase initPhase = Phase::Ferromagnetic;
 
@@ -115,6 +121,19 @@ std::string toStringShort(const double value)
 	out << std::fixed << value;
 	return out.str();
 };
+
+std::string phaseToString(Phase phase)
+{
+	switch (phase)
+	{
+	case Phase::Polar:
+		return "polar";
+	case Phase::Ferromagnetic:
+		return "ferromagnetic";
+	case Phase::None:
+		return "none";
+	}
+}
 
 const std::string EXTRA_INFORMATION = toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X);
 const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + EXTRA_INFORMATION + ".dat";
@@ -489,6 +508,25 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	const double volume = block_scale * block_scale * block_scale * VOLUME;
 
+#if COMPUTE_GROUND_STATE
+	if (continueFromEarlier)
+	{
+		switch (initPhase)
+		{
+		case Phase::Polar:
+			std::cout << "Transform ground state to polar phase" << std::endl;
+			polarState << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, dimensions);
+			break;
+		case Phase::Ferromagnetic:
+			std::cout << "Transform ground state to ferromagnetic phase" << std::endl;
+			ferromagneticState << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, dimensions);
+			break;
+		default:
+			break;
+		}
+		std::cout << "Total density: " << getDensity(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume) << std::endl;
+	}
+#else
 	if (loadGroundState)
 	{
 		switch (initPhase)
@@ -496,23 +534,19 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		case Phase::Polar:
 			std::cout << "Transform ground state to polar phase" << std::endl;
 			polarState << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, dimensions);
-#if !COMPUTE_GROUND_STATE
 			polarState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions);
-#endif
 			break;
 		case Phase::Ferromagnetic:
 			std::cout << "Transform ground state to ferromagnetic phase" << std::endl;
 			ferromagneticState << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, dimensions);
-#if !COMPUTE_GROUND_STATE
 			ferromagneticState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions);
-#endif
 			break;
 		default:
 			break;
 		}
-
 		std::cout << "Total density: " << getDensity(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume) << std::endl;
 	}
+#endif
 	double extraPot = -75.0;
 
 #if !COMPUTE_GROUND_STATE
@@ -542,7 +576,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	}
 
 #if COMPUTE_GROUND_STATE
-	std::string folder = "gs_dens_profiles_" + EXTRA_INFORMATION;
+	std::string folder = "gs_dens_profiles_" + EXTRA_INFORMATION + "_" + phaseToString(initPhase);
 	std::string createResultsDirCommand = "mkdir " + folder;
 	system(createResultsDirCommand.c_str());
 
@@ -584,14 +618,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		{
 			// Psi
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParamsHyper));
-			std::ofstream fs_psi(GROUND_STATE_PSI_FILENAME, std::ios::binary | std::ios_base::trunc);
+			std::ofstream fs_psi(GROUND_STATE_PSI_FILENAME + "_" + phaseToString(initPhase), std::ios::binary | std::ios_base::trunc);
 			if (fs_psi.fail() != 0) return 1;
 			fs_psi.write((char*)&h_evenPsiHyper[0], hostSize * sizeof(BlockPsis));
 			fs_psi.close();
 
 			// Q
 			checkCudaErrors(cudaMemcpy3D(&evenQBackParamsHyper));
-			std::ofstream fs_q(GROUND_STATE_Q_FILENAME, std::ios::binary | std::ios_base::trunc);
+			std::ofstream fs_q(GROUND_STATE_Q_FILENAME + "_" + phaseToString(initPhase), std::ios::binary | std::ios_base::trunc);
 			if (fs_q.fail() != 0) return 1;
 			fs_q.write((char*)&h_evenQHyper[0], hostSize * sizeof(BlockEdges));
 			fs_q.close();
