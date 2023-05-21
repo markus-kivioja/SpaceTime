@@ -132,6 +132,8 @@ std::string phaseToString(Phase phase)
 		return "ferromagnetic";
 	case Phase::None:
 		return "none";
+	default:
+		return "";
 	}
 }
 
