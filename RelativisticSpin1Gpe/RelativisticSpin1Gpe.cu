@@ -526,7 +526,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		default:
 			break;
 		}
-		std::cout << "Total density: " << getDensity(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume) << std::endl;
+		std::cout << "Total density: " << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume) << std::endl;
 	}
 #endif
 	double extraPot = -75.0;
