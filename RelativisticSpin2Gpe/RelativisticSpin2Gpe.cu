@@ -13,7 +13,7 @@ enum class Phase {
 	BN_HORI,
 	CYCLIC
 };
-constexpr Phase initPhase = Phase::BN_HORI;
+constexpr Phase initPhase = Phase::UN;
 
 std::string phaseToString(Phase phase)
 {
@@ -190,100 +190,6 @@ __global__ void density(double* density, PitchedPtr prevStep, uint3 dimensions)
 
 	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
 	density[idx] = (psi.s2 * conj(psi.s2)).x + (psi.s1 * conj(psi.s1)).x + (psi.s0 * conj(psi.s0)).x + (psi.s_1 * conj(psi.s_1)).x + (psi.s_2 * conj(psi.s_2)).x;
-}
-
-__global__ void localAvgSpinAndDensity(double* pSpinNorm, double3* pLocalAvgSpin, double* pDensity, PitchedPtr prevStep, uint3 dimensions)
-{
-	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
-	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
-	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
-	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
-
-	// Exit leftover threads
-	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
-	{
-		return;
-	}
-
-	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
-
-	char* pPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
-	Complex5Vec psi = ((BlockPsis*)pPsi)->values[dualNodeId];
-
-	double normSq_s2 = psi.s2.x * psi.s2.x + psi.s2.y * psi.s2.y;
-	double normSq_s1 = psi.s1.x * psi.s1.x + psi.s1.y * psi.s1.y;
-	double normSq_s0 = psi.s0.x * psi.s0.x + psi.s0.y * psi.s0.y;
-	double normSq_s_1 = psi.s_1.x * psi.s_1.x + psi.s_1.y * psi.s_1.y;
-	double normSq_s_2 = psi.s_2.x * psi.s_2.x + psi.s_2.y * psi.s_2.y;
-
-	double density = normSq_s2 + normSq_s1 + normSq_s0 + normSq_s_1 + normSq_s_2;
-
-	psi.s2 = psi.s2 / sqrt(density);
-	psi.s1 = psi.s1 / sqrt(density);
-	psi.s0 = psi.s0 / sqrt(density);
-	psi.s_1 = psi.s_1 / sqrt(density);
-	psi.s_2 = psi.s_2 / sqrt(density);
-
-	double2 temp = SQRT_2 * (conj(psi.s1) * psi.s0 + conj(psi.s0) * psi.s_1);
-	double3 localAvgSpin = { temp.x, temp.y, normSq_s1 - normSq_s_1 };
-
-	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
-
-	pSpinNorm[idx] = density * sqrt(localAvgSpin.x * localAvgSpin.x + localAvgSpin.y * localAvgSpin.y + localAvgSpin.z * localAvgSpin.z);
-	pLocalAvgSpin[idx] = localAvgSpin;
-	pDensity[idx] = density;
-}
-
-__global__ void uvTheta(double3* out_u, double3* out_v, double* outTheta, PitchedPtr psiPtr, uint3 dimensions)
-{
-	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
-	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
-	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
-	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
-
-	// Exit leftover threads
-	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
-	{
-		return;
-	}
-
-	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
-
-	char* pPsi = psiPtr.ptr + psiPtr.slicePitch * zid + psiPtr.pitch * yid + sizeof(BlockPsis) * dataXid;
-	Complex5Vec psi = ((BlockPsis*)pPsi)->values[dualNodeId];
-
-	// a = m + in
-	double2 ax = (psi.s_1 - psi.s1) / SQRT_2;
-	double2 ay = double2{ 0, -1 } *(psi.s_1 + psi.s1) / SQRT_2;
-	double2 az = psi.s0;
-	double3 m = double3{ ax.x, ay.x, az.x };
-	double3 n = double3{ ax.y, ay.y, az.y };
-
-	double m_dot_n = m.x * n.x + m.y * n.y + m.z * n.z;
-	double mNormSqr = m.x * m.x + m.y * m.y + m.z * m.z;
-	double nNormSqr = n.x * n.x + n.y * n.y + n.z * n.z;
-
-	double theta = atan2(-2 * m_dot_n, mNormSqr - nNormSqr) / 2;
-
-	double sinTheta = sin(theta);
-	double cosTheta = cos(theta);
-	double3 u = double3{ m.x * cosTheta - sinTheta * n.x, m.y * cosTheta - sinTheta * n.y, m.z * cosTheta - sinTheta * n.z };
-	double3 v = double3{ m.x * sinTheta + cosTheta * n.x, m.y * sinTheta + cosTheta * n.y, m.z * sinTheta + cosTheta * n.z };
-	double uNorm = sqrt(u.x * u.x + u.y * u.y + u.z * u.z);
-	double vNorm = sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-
-	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
-	if (uNorm >= vNorm)
-	{
-		out_u[idx] = u;
-		out_v[idx] = v;
-	}
-	else
-	{
-		out_u[idx] = v;
-		out_v[idx] = u;
-	}
-	outTheta[idx] = theta;
 }
 
 __global__ void integrate(double* dataVec, size_t stride, bool addLast, double dv)
@@ -1316,7 +1222,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	const double volume = block_scale * block_scale * block_scale * VOLUME;
 
-	if (loadGroundState)
+#if COMPUTE_GROUND_STATE
+	if (continueFromEarlier)
 	{
 		const double PHASE = 0;// PI / 2;
 
@@ -1324,19 +1231,19 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		{
 		case Phase::UN:
 			std::cout << "Transform ground state to uniaxial nematic phase." << std::endl;
-			unState << <dimGrid, psiDimBlock >> > (d_oddPsi, dimensions);
+			unState << <dimGrid, psiDimBlock >> > (d_evenPsi, dimensions);
 			break;
 		case Phase::BN_VERT:
 			std::cout << "Transform ground state to vertically oriented biaxial nematic phase with a phase of " << PHASE << "." << std::endl;
-			verticalBnState << <dimGrid, psiDimBlock >> > (d_oddPsi, dimensions, PHASE);
+			verticalBnState << <dimGrid, psiDimBlock >> > (d_evenPsi, dimensions, PHASE);
 			break;
 		case Phase::BN_HORI:
 			std::cout << "Transform ground state to horizontally oriented biaxial nematic phase with a phase of " << PHASE << "." << std::endl;
-			horizontalBnState << <dimGrid, psiDimBlock >> > (d_oddPsi, dimensions, PHASE);
+			horizontalBnState << <dimGrid, psiDimBlock >> > (d_evenPsi, dimensions, PHASE);
 			break;
 		case Phase::CYCLIC:
 			std::cout << "Transform ground state to cyclic phase with a phase of " << PHASE << "." << std::endl;
-			cyclicState << <dimGrid, psiDimBlock >> > (d_oddPsi, dimensions, PHASE);
+			cyclicState << <dimGrid, psiDimBlock >> > (d_evenPsi, dimensions, PHASE);
 			break;
 		default:
 			std::cout << "Initial phase " << (int)initPhase << " is not supported!";
@@ -1345,6 +1252,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 		printDensity(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 	}
+#endif
 
 #if !COMPUTE_GROUND_STATE
 	// Take one forward Euler step if starting from the ground state or time step changed
@@ -1367,7 +1275,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	}
 
 #if COMPUTE_GROUND_STATE
-	std::string folder = "gs_dens_profiles_" + EXTRA_INFORMATION;
+	std::string folder = "gs_dens_profiles_" + EXTRA_INFORMATION + "_" + phaseToString(initPhase);
 	std::string createResultsDirCommand = "mkdir " + folder;
 	system(createResultsDirCommand.c_str());
 
@@ -1383,9 +1291,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	while (true)
 	{
-		if ((iter % 5000) == 0) std::cout << "Iteration " << iter << std::endl;
+		if ((iter % 1000) == 0) std::cout << "Iteration " << iter << std::endl;
 #if SAVE_PICTURE
-		if ((iter % 5000) == 0)
+		if ((iter % 1000) == 0)
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
 			signal = getSignal(0);
@@ -1398,18 +1306,18 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			std::cout << "Center of mass: " << com.x << ", " << com.y << ", " << com.z << std::endl;
 		}
 #endif
-		if (iter == 500000)
+		if (iter == 100000)
 		{
 			// Psi
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
-			std::ofstream fs_psi(GROUND_STATE_PSI_FILENAME, std::ios::binary | std::ios_base::trunc);
+			std::ofstream fs_psi(GROUND_STATE_PSI_FILENAME + "_" + phaseToString(initPhase), std::ios::binary | std::ios_base::trunc);
 			if (fs_psi.fail() != 0) return 1;
 			fs_psi.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
 			fs_psi.close();
 
 			// Q
 			checkCudaErrors(cudaMemcpy3D(&evenQBackParams));
-			std::ofstream fs_q(GROUND_STATE_Q_FILENAME, std::ios::binary | std::ios_base::trunc);
+			std::ofstream fs_q(GROUND_STATE_Q_FILENAME + "_" + phaseToString(initPhase), std::ios::binary | std::ios_base::trunc);
 			if (fs_q.fail() != 0) return 1;
 			fs_q.write((char*)&h_evenQ[0], hostSize * sizeof(BlockEdges));
 			fs_q.close();
