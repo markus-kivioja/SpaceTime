@@ -69,9 +69,6 @@ const double a_r = sqrt(hbar / (atomMass * omega_r)); //[m]
 const double c0 = 4 * PI * N * (a_0 + 2 * a_2) * a_bohr / (3 * a_r);
 const double c2 = 4 * PI * N * (a_2 - a_0) * a_bohr / (3 * a_r);
 
-constexpr double myGamma = 2.9e-30;
-const double alpha = N * N * myGamma * 1e-12 / (a_r * a_r * a_r * a_r * a_r * a_r * 2 * PI * trapFreq_r);
-
 constexpr double muB = 9.27400968e-24; // [m^2 kg / s^2 T^-1] Bohr magneton
 
 const double BqScale = -(0.5 * muB / (hbar * omega_r) * a_r) / 100.; // [cm/Gauss]

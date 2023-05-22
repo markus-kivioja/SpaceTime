@@ -13,7 +13,7 @@ enum class Phase {
 	BN_HORI,
 	CYCLIC
 };
-constexpr Phase initPhase = Phase::UN;
+constexpr Phase initPhase = Phase::BN_HORI;
 
 std::string phaseToString(Phase phase)
 {
@@ -60,7 +60,7 @@ std::string getProjectionString()
 
 #define RELATIVISTIC 1
 
-#define COMPUTE_GROUND_STATE 1
+#define COMPUTE_GROUND_STATE 0
 
 #define USE_QUADRATIC_ZEEMAN 0
 #define USE_QUADRUPOLE_OFFSET 0
@@ -105,10 +105,6 @@ const double c0 = 4 * PI * N * (4 * a_2 + 3 * a_4) * a_bohr / (7 * a_r);
 const double c2 = 4 * PI * N * (a_4 - a_2) * a_bohr / (7 * a_r);
 const double c4 = 4 * PI * N * (7 * a_0 - 10 * a_2 + 3 * a_4) * a_bohr / (7 * a_r);
 
-constexpr double myGamma = 2.9e-30;
-//const double alpha = N * N * myGamma * 1e-12 / (a_r * a_r * a_r * a_r * a_r * a_r * 2 * PI * trapFreq_r);
-const double alpha = 0;
-
 constexpr double muB = 9.27400968e-24; // [m^2 kg / s^2 T^-1] Bohr magneton
 
 const double BqScale = (0.5 * muB / (hbar * omega_r) * a_r) / 100.; // [cm/Gauss]
@@ -121,12 +117,11 @@ const double BzQuadScale = sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (tra
 constexpr double SQRT_2 = 1.41421356237309;
 //constexpr double INV_SQRT_2 = 0.70710678118655;
 
-constexpr double NOISE_AMPLITUDE = 0; //0.1;
+constexpr double NOISE_AMPLITUDE = 0;
 
-//constexpr double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
-constexpr double dt = 5e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
+constexpr double dt = 5e-5;
 
-const double IMAGE_SAVE_INTERVAL = 0.02; // ms
+const double IMAGE_SAVE_INTERVAL = 0.1; // ms
 const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
@@ -637,7 +632,7 @@ __global__ void forwardEuler_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr 
 	next->values[dualEdgeId].s_2 = prev->values[dualEdgeId].s_2 + make_double2(q.s_2.y, -q.s_2.x);
 }
 
-__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4)
+__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4, double extraPot)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -695,7 +690,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 
-	double2 ab = { trap(globalPos) + c0 * normSq, 0 };
+	double2 ab = { trap(globalPos) + c0 * normSq + extraPot, 0 };
 
 	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bb);
 
@@ -783,7 +778,7 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 	next->values[dualEdgeId].s_2 += make_double2(q.s_2.y, -q.s_2.x);
 }
 
-__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4)
+__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4, double extraPot)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -841,7 +836,7 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 
-	double2 ab = { trap(globalPos) + c0 * normSq, 0 };
+	double2 ab = { trap(globalPos) + c0 * normSq + extraPot, 0 };
 
 	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bb);
 
@@ -1255,6 +1250,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		printDensity(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 	}
 #endif
+	double extraPot = 0.0;
 
 #if !COMPUTE_GROUND_STATE
 	// Take one forward Euler step if starting from the ground state or time step changed
@@ -1389,7 +1385,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		signal = getSignal(0);
 		Bs.Bq = BqScale * signal.Bq;
 		Bs.Bb = BzScale * signal.Bb;
-		drawDensity(densDir, h_oddPsi, dxsize, dysize, dzsize, t - 0.1, Bs, d_p0, block_scale);
+		drawDensity(densDir, h_oddPsi, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
 #endif
 
 		// integrate one iteration
@@ -1402,7 +1398,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.Bb = BzScale * signal.Bb;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
-			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, alpha);
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, extraPot);
 			update_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
 
 			// update even values
@@ -1412,7 +1408,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.Bb = BzScale * signal.Bb;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
-			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, alpha);
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, extraPot);
 			update_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
 		}
 
@@ -1420,9 +1416,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		// Copy back from device memory to host memory
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
-		if (t - 0.1 > 0.2)
-			saveVolume(vtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - 0.1);
-		//saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - 0.1);
+		if (t> 0.2)
+			saveVolume(vtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t);
+		//saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t);
 
 		if (t > END_TIME)
 		{
@@ -1451,7 +1447,6 @@ int main(int argc, char** argv)
 	std::cout << "Block scale = " << blockScale << std::endl;
 	std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
 	std::cout << "c0: " << c0 << ", c2: " << c2 << ", c4: " << c4 << std::endl;
-	std::cout << "Three-body loss magnitude: " << alpha << std::endl;
 #if USE_QUADRATIC_ZEEMAN
 	std::cout << "Taking the quadratic Zeeman term into account" << std::endl;
 #else
