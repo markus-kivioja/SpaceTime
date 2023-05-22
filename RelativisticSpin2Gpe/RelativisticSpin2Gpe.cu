@@ -1250,7 +1250,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			break;
 		}
 
-		printDensity(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
+		printDensity(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
 	}
 #endif
 
