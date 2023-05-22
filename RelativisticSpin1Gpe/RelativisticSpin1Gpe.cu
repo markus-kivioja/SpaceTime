@@ -137,7 +137,7 @@ std::string phaseToString(Phase phase)
 	}
 }
 
-const std::string EXTRA_INFORMATION = toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X);
+const std::string EXTRA_INFORMATION = toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X) + "_" + phaseToString(initPhase);
 const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + EXTRA_INFORMATION + ".dat";
 const std::string GROUND_STATE_Q_FILENAME = "ground_state_q_" + EXTRA_INFORMATION + ".dat";
 
@@ -528,26 +528,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		}
 		std::cout << "Total density: " << getDensity(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume) << std::endl;
 	}
-#else
-	if (loadGroundState)
-	{
-		switch (initPhase)
-		{
-		case Phase::Polar:
-			std::cout << "Transform ground state to polar phase" << std::endl;
-			polarState << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, dimensions);
-			polarState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions);
-			break;
-		case Phase::Ferromagnetic:
-			std::cout << "Transform ground state to ferromagnetic phase" << std::endl;
-			ferromagneticState << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, dimensions);
-			ferromagneticState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions);
-			break;
-		default:
-			break;
-		}
-		std::cout << "Total density: " << getDensity(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume) << std::endl;
-	}
 #endif
 	double extraPot = -75.0;
 
@@ -578,7 +558,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	}
 
 #if COMPUTE_GROUND_STATE
-	std::string folder = "gs_dens_profiles_" + EXTRA_INFORMATION + "_" + phaseToString(initPhase);
+	std::string folder = "gs_dens_profiles_" + EXTRA_INFORMATION;
 	std::string createResultsDirCommand = "mkdir " + folder;
 	system(createResultsDirCommand.c_str());
 
@@ -620,14 +600,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		{
 			// Psi
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParamsHyper));
-			std::ofstream fs_psi(GROUND_STATE_PSI_FILENAME + "_" + phaseToString(initPhase), std::ios::binary | std::ios_base::trunc);
+			std::ofstream fs_psi(GROUND_STATE_PSI_FILENAME, std::ios::binary | std::ios_base::trunc);
 			if (fs_psi.fail() != 0) return 1;
 			fs_psi.write((char*)&h_evenPsiHyper[0], hostSize * sizeof(BlockPsis));
 			fs_psi.close();
 
 			// Q
 			checkCudaErrors(cudaMemcpy3D(&evenQBackParamsHyper));
-			std::ofstream fs_q(GROUND_STATE_Q_FILENAME + "_" + phaseToString(initPhase), std::ios::binary | std::ios_base::trunc);
+			std::ofstream fs_q(GROUND_STATE_Q_FILENAME, std::ios::binary | std::ios_base::trunc);
 			if (fs_q.fail() != 0) return 1;
 			fs_q.write((char*)&h_evenQHyper[0], hostSize * sizeof(BlockEdges));
 			fs_q.close();
