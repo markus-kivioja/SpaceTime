@@ -13,7 +13,7 @@ enum class Phase {
 	BN_HORI,
 	CYCLIC
 };
-constexpr Phase initPhase = Phase::BN_HORI;
+constexpr Phase initPhase = Phase::CYCLIC;
 
 std::string phaseToString(Phase phase)
 {
@@ -127,7 +127,7 @@ const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-constexpr double END_TIME = 0.8; // End time in ms
+constexpr double END_TIME = 0.6; // End time in ms
 
 #if COMPUTE_GROUND_STATE
 double sigma = 0.1;
@@ -677,6 +677,13 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 		H.s_1 += hodge * d0psi.s_1;
 		H.s_2 += hodge * d0psi.s_2;
 	}
+#if RELATIVISTIC
+	H.s2 = -H.s2;
+	H.s1 = -H.s1;
+	H.s0 = -H.s0;
+	H.s_1 = -H.s_1;
+	H.s_2 = -H.s_2;
+#endif
 
 	const double normSq_s2 = prev.s2.x * prev.s2.x + prev.s2.y * prev.s2.y;
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
@@ -823,6 +830,13 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 		H.s_1 += hodge * d0psi.s_1;
 		H.s_2 += hodge * d0psi.s_2;
 	}
+#if RELATIVISTIC
+	H.s2 = -H.s2;
+	H.s1 = -H.s1;
+	H.s0 = -H.s0;
+	H.s_1 = -H.s_1;
+	H.s_2 = -H.s_2;
+#endif
 
 	const double normSq_s2 = prev.s2.x * prev.s2.x + prev.s2.y * prev.s2.y;
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
@@ -1416,9 +1430,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		// Copy back from device memory to host memory
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
-		if (t> 0.2)
+		if (t > 0.5)
+		{
 			saveVolume(vtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t);
-		//saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t);
+			saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t);
+		}
 
 		if (t > END_TIME)
 		{

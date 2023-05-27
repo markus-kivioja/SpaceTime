@@ -1,9 +1,6 @@
 #include <cuda_runtime.h>
 #include "helper_cuda.h"
 
-constexpr double CREATION_RAMP_START = 0.1;
-constexpr double EXPANSION_START = CREATION_RAMP_START + 100.5; // When the expansion starts in ms
-
 //#include "AliceRingRamps.h"
 #include "KnotRamps.h"
 
@@ -30,7 +27,7 @@ std::string getProjectionString()
 
 #include "mesh.h"
 
-#define COMPUTE_GROUND_STATE 1
+#define COMPUTE_GROUND_STATE 0
 
 #define SAVE_STATES 0
 #define SAVE_PICTURE 1
@@ -92,7 +89,7 @@ uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / hyp
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 3.0; // End time in ms
+double END_TIME = 0.6; // End time in ms
 
 #if COMPUTE_GROUND_STATE
 double sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
@@ -339,7 +336,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #if COMPUTE_GROUND_STATE
 	double* d_energy = allocDevice<double>(bodies);
 #else
-	double2* d_error = allocDevice<double2>(bodies);
+	//double2* d_error = allocDevice<double2>(bodies);
+	double* d_error = allocDevice<double>(bodies);
 #endif
 
 	// Calculate pointers to the start of the real computational domain (jumping over the zero buffer at the edges)
@@ -526,7 +524,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		std::cout << "Total density: " << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume) << std::endl;
 	}
 #endif
-	double extraPot = -75.0;
 
 #if !COMPUTE_GROUND_STATE
 	// Take one forward Euler step if starting from the ground state or time step changed
@@ -540,12 +537,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
 		// Hyperbolic
-		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt, extraPot);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt, true);
 		forwardEuler_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
 
 		// Parabolic
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions);
-		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, para_dt, 0);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, para_dt, false);
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions);
 	}
 	else
@@ -670,11 +667,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 
 			// Hyperbolic
-			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt, extraPot);
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt, true);
 			update_q_hyper << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
 
 			// Parabolic
-			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiPara, d_evenPsiPara, d_evenQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, para_dt, 0);
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiPara, d_evenPsiPara, d_evenQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, para_dt, false);
 			update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions);
 
 			// update even values (real terms)
@@ -687,15 +684,16 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 			
 			// Hyperbolic
-			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt, extraPot);
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt, true);
 			update_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
 		
 			// Parabolic
-			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, para_dt, 0);
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, para_dt, false);
 			update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions);
 		}
 		// Compute error
-		innerProduct << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiHyper, dimensions);
+		//innerProduct << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiHyper, dimensions);
+		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiPara, dimensions);
 		int prevStride = bodies;
 		while (prevStride > 1)
 		{
@@ -703,9 +701,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_error, newStride, ((newStride * 2) != prevStride), volume);
 			prevStride = newStride;
 		}
-		double2 hError = { 0 };
+		//double2 hError = { 0 };
+		double hError = { 0 };
 		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(double2), cudaMemcpyDeviceToHost));
-		std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - sqrt((conj(hError) * hError).x) << ", ";
+		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - sqrt((conj(hError) * hError).x) << ", ";
+		std::cout << hError << ", ";
+		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - hError.x << ", ";
 
 #if COMPUTE_GROUND_STATE
 		// Copy back from device memory to host memory

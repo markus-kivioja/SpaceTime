@@ -4,6 +4,41 @@
 #include <vector>
 #include <filesystem>
 
+void splitImages(const std::string& path) {
+	static constexpr int BORDER_WIDTH = 10;
+	static constexpr int ROWS = 2;
+	static constexpr int COLS = 3;
+	static const std::string COL_NAMES[COLS] = { "p1", "0", "m1" };
+	static const std::string ROW_NAMES[ROWS] = { "side", "top" };
+
+	for (const auto& entry : std::filesystem::directory_iterator(path)) {
+		std::string inFile = entry.path().string();
+		std::cout << inFile << std::endl;
+		if (inFile.substr(inFile.length() - 4, 4) == ".bmp") {
+			Picture inImage;
+			inImage.load(inFile, false);
+			int width = inImage.getWidth() / COLS;
+			int height = inImage.getHeight() / ROWS;
+			Picture outImage(width, height);
+			for (int row = 0; row < ROWS; ++row) {
+				for (int col = 0; col < COLS; ++col) {
+					for (int x = BORDER_WIDTH; x < width - BORDER_WIDTH; ++x) {
+						for (int y = BORDER_WIDTH; y < height - BORDER_WIDTH; ++y) {
+							bool in_borders = 1 < y && 1 < x && y < height - 1 && x < width - 1;
+							int src_x = col * width + x;
+							int src_y = row * height + y;
+							outImage.setColor(x, y, inImage.getColor(src_x, src_y));
+						}
+					}
+					std::string outFile = "results/" + inFile.substr(0, inFile.length() - 4) + "_" + ROW_NAMES[row] + "_" + COL_NAMES[col] + ".bmp";
+					outImage.save(outFile, false);
+					std::cout << "Done flipping: " << outFile << std::endl;
+				}
+			}
+		}
+	}
+}
+
 void flipImages(const std::string& path) {
 	for (const auto& entry : std::filesystem::directory_iterator(path)) {
 		std::string filename = entry.path().string();
@@ -44,7 +79,8 @@ void flipImages(const std::string& path) {
 
 int main( int argc, char** argv )
 {
-	std::string directory = "results_0.500000";
-	flipImages(directory);
+	std::string directory = "splitting";
+	//flipImages(directory);
+	splitImages(directory);
 	return 0;
 }

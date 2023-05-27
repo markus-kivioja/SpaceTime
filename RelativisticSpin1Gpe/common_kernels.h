@@ -92,7 +92,7 @@ __global__ void itp_psi(PitchedPtr HPsiPtr, PitchedPtr nextStep, PitchedPtr prev
 	nextPsi->values[dualNodeId].s_1 = prev.s_1 - dt * H.s_1;
 };
 
-__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double dt, double extraPot)
+__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double dt, bool hyperb)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -133,6 +133,12 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 		H.s0 += hodge * d0psi.s0;
 		H.s_1 += hodge * d0psi.s_1;
 	}
+	if (hyperb)
+	{
+		H.s1 = -H.s1;
+		H.s0 = -H.s0;
+		H.s_1 = -H.s_1;
+	}
 
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
 	const double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
@@ -143,7 +149,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 
-	double2 totalPot = { trap(globalPos) + c0 * normSq + extraPot, 0 };
+	double2 totalPot = { trap(globalPos) + c0 * normSq, 0 };
 
 	H.s1 += totalPot * prev.s1;
 	H.s0 += totalPot * prev.s0;
@@ -165,7 +171,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 	nextPsi->values[dualNodeId].s_1 = prev.s_1 + dt * double2{ H.s_1.y, -H.s_1.x };
 };
 
-__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double dt, double extraPot)
+__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double dt, bool hyperb)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -206,6 +212,12 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 		H.s0 += hodge * d0psi.s0;
 		H.s_1 += hodge * d0psi.s_1;
 	}
+	if (hyperb)
+	{
+		H.s1 = -H.s1;
+		H.s0 = -H.s0;
+		H.s_1 = -H.s_1;
+	}
 
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
 	const double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
@@ -216,7 +228,7 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 
-	double2 totalPot = { trap(globalPos) + c0 * normSq + extraPot, 0 };
+	double2 totalPot = { trap(globalPos) + c0 * normSq, 0 };
 
 	H.s1 += totalPot * prev.s1;
 	H.s0 += totalPot * prev.s0;
@@ -411,7 +423,7 @@ __global__ void innerProduct(double2* result, PitchedPtr pLeft, PitchedPtr pRigh
 	result[idx] = conj(left.s1) * right.s1 + conj(left.s0) * right.s0 + conj(left.s_1) * right.s_1;
 }
 
-__global__ void diff(double* result, PitchedPtr pLeft, PitchedPtr pRight, uint3 dimensions)
+__global__ void weightedDiff(double* result, PitchedPtr pLeft, PitchedPtr pRight, uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -431,8 +443,11 @@ __global__ void diff(double* result, PitchedPtr pLeft, PitchedPtr pRight, uint3 
 
 	Complex3Vec diff = { right.s1 - left.s1, right.s0 - left.s0, right.s_1 - left.s_1 };
 
+	double leftSqr = (conj(left.s1) * left.s1).x + (conj(left.s0) * left.s0).x + (conj(left.s_1) * left.s_1).x;
+	double diffSqr = (conj(diff.s1) * diff.s1).x + (conj(diff.s0) * diff.s0).x + (conj(diff.s_1) * diff.s_1).x;
+
 	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
-	result[idx] = (conj(diff.s1) * diff.s1).x + (conj(diff.s0) * diff.s0).x + (conj(diff.s_1) * diff.s_1).x;
+	result[idx] = leftSqr * diffSqr;
 }
 
 __global__ void localAvgSpinAndDensity(double* pSpinNorm, double3* pLocalAvgSpin, double* pDensity, PitchedPtr prevStep, uint3 dimensions)
