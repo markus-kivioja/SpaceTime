@@ -61,10 +61,7 @@ std::string getProjectionString()
 #define RELATIVISTIC 1
 
 #define COMPUTE_GROUND_STATE 0
-
-#define USE_QUADRATIC_ZEEMAN 0
-#define USE_QUADRUPOLE_OFFSET 0
-#define USE_INITIAL_NOISE 0
+#define COMPUTE_ERROR 0
 
 #define SAVE_STATES 1
 #define SAVE_PICTURE 1
@@ -156,10 +153,6 @@ __device__ __inline__ double trap(double3 p)
 	return 0.5 * (x * x + y * y + z * z) + 100.0;
 }
 
-__constant__ double quadrupoleCenterX = -0.20590789;
-__constant__ double quadrupoleCenterY = -0.48902826;
-__constant__ double quadrupoleCenterZ = -0.27353409;
-
 __device__ __inline__ double3 magneticField(double3 p, double Bq, double3 Bb)
 {
 	return { Bq * p.x + Bb.x, Bq * p.y + Bb.y, -2 * Bq * p.z + Bb.z };
@@ -187,6 +180,33 @@ __global__ void density(double* density, PitchedPtr prevStep, uint3 dimensions)
 
 	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
 	density[idx] = (psi.s2 * conj(psi.s2)).x + (psi.s1 * conj(psi.s1)).x + (psi.s0 * conj(psi.s0)).x + (psi.s_1 * conj(psi.s_1)).x + (psi.s_2 * conj(psi.s_2)).x;
+}
+
+__global__ void weightedDiff(double* result, PitchedPtr pLeft, PitchedPtr pRight, uint3 dimensions)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	Complex5Vec left = ((BlockPsis*)(pLeft.ptr + pLeft.slicePitch * zid + pLeft.pitch * yid) + dataXid)->values[dualNodeId];
+	Complex5Vec right = ((BlockPsis*)(pRight.ptr + pRight.slicePitch * zid + pRight.pitch * yid) + dataXid)->values[dualNodeId];
+
+	Complex5Vec diff = { right.s2 - left.s2, right.s1 - left.s1, right.s0 - left.s0, right.s_1 - left.s_1, right.s_2 - left.s_2 };
+
+	double leftSqr = (conj(left.s2) * left.s2).x + (conj(left.s1) * left.s1).x + (conj(left.s0) * left.s0).x + (conj(left.s_1) * left.s_1).x + (conj(left.s_2) * left.s_2).x;
+	double diffSqr = (conj(diff.s2) * diff.s2).x + (conj(diff.s1) * diff.s1).x + (conj(diff.s0) * diff.s0).x + (conj(diff.s_1) * diff.s_1).x + (conj(diff.s_2) * diff.s_2).x;
+
+	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
+	result[idx] = leftSqr * diffSqr;
 }
 
 __global__ void integrate(double* dataVec, size_t stride, bool addLast, double dv)
@@ -588,7 +608,7 @@ __global__ void itp_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs,
 	nextPsi->values[dualNodeId].s_2 = prev.s_2 - dt * H.s_2;
 };
 #else
-__global__ void forwardEuler_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, double dt_per_sigma)
+__global__ void forwardEuler_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, double dt_per_sigma, bool hyperb)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -616,23 +636,30 @@ __global__ void forwardEuler_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr 
 
 	BlockEdges* next = (BlockEdges*)(next_q.ptr + next_q.slicePitch * zid + next_q.pitch * yid) + dataXid;
 
-	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
+	if (hyperb)
+	{
+		BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
-	Complex5Vec q;
-	q.s2 = dt_per_sigma * (d0psi.s2 - prev->values[dualEdgeId].s2);
-	q.s1 = dt_per_sigma * (d0psi.s1 - prev->values[dualEdgeId].s1);
-	q.s0 = dt_per_sigma * (d0psi.s0 - prev->values[dualEdgeId].s0);
-	q.s_1 = dt_per_sigma * (d0psi.s_1 - prev->values[dualEdgeId].s_1);
-	q.s_2 = dt_per_sigma * (d0psi.s_2 - prev->values[dualEdgeId].s_2);
+		Complex5Vec q;
+		q.s2 = dt_per_sigma * (d0psi.s2 - prev->values[dualEdgeId].s2);
+		q.s1 = dt_per_sigma * (d0psi.s1 - prev->values[dualEdgeId].s1);
+		q.s0 = dt_per_sigma * (d0psi.s0 - prev->values[dualEdgeId].s0);
+		q.s_1 = dt_per_sigma * (d0psi.s_1 - prev->values[dualEdgeId].s_1);
+		q.s_2 = dt_per_sigma * (d0psi.s_2 - prev->values[dualEdgeId].s_2);
 
-	next->values[dualEdgeId].s2 = prev->values[dualEdgeId].s2 + make_double2(q.s2.y, -q.s2.x);
-	next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1 + make_double2(q.s1.y, -q.s1.x);
-	next->values[dualEdgeId].s0 = prev->values[dualEdgeId].s0 + make_double2(q.s0.y, -q.s0.x);
-	next->values[dualEdgeId].s_1 = prev->values[dualEdgeId].s_1 + make_double2(q.s_1.y, -q.s_1.x);
-	next->values[dualEdgeId].s_2 = prev->values[dualEdgeId].s_2 + make_double2(q.s_2.y, -q.s_2.x);
+		next->values[dualEdgeId].s2 = prev->values[dualEdgeId].s2 + make_double2(q.s2.y, -q.s2.x);
+		next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1 + make_double2(q.s1.y, -q.s1.x);
+		next->values[dualEdgeId].s0 = prev->values[dualEdgeId].s0 + make_double2(q.s0.y, -q.s0.x);
+		next->values[dualEdgeId].s_1 = prev->values[dualEdgeId].s_1 + make_double2(q.s_1.y, -q.s_1.x);
+		next->values[dualEdgeId].s_2 = prev->values[dualEdgeId].s_2 + make_double2(q.s_2.y, -q.s_2.x);
+	}
+	else
+	{
+		next->values[dualEdgeId] = d0psi;
+	}
 }
 
-__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4, double extraPot)
+__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4, bool hyperb)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -677,13 +704,14 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 		H.s_1 += hodge * d0psi.s_1;
 		H.s_2 += hodge * d0psi.s_2;
 	}
-#if RELATIVISTIC
-	H.s2 = -H.s2;
-	H.s1 = -H.s1;
-	H.s0 = -H.s0;
-	H.s_1 = -H.s_1;
-	H.s_2 = -H.s_2;
-#endif
+	if (hyperb)
+	{
+		H.s2 = -H.s2;
+		H.s1 = -H.s1;
+		H.s0 = -H.s0;
+		H.s_1 = -H.s_1;
+		H.s_2 = -H.s_2;
+	}
 
 	const double normSq_s2 = prev.s2.x * prev.s2.x + prev.s2.y * prev.s2.y;
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
@@ -697,7 +725,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 
-	double2 ab = { trap(globalPos) + c0 * normSq + extraPot, 0 };
+	double2 ab = { trap(globalPos) + c0 * normSq, 0 };
 
 	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bb);
 
@@ -741,7 +769,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 	nextPsi->values[dualNodeId].s_2 = prev.s_2 + dt * double2{ H.s_2.y, -H.s_2.x };
 };
 
-__global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, double dt_per_sigma)
+__global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, double dt_per_sigma, bool hyperb)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -769,23 +797,30 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 
 	BlockEdges* next = (BlockEdges*)(next_q.ptr + next_q.slicePitch * zid + next_q.pitch * yid) + dataXid;
 
-	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
+	if (hyperb)
+	{
+		BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
-	Complex5Vec q;
-	q.s2 = 2 * dt_per_sigma * (d0psi.s2 - prev->values[dualEdgeId].s2);
-	q.s1 = 2 * dt_per_sigma * (d0psi.s1 - prev->values[dualEdgeId].s1);
-	q.s0 = 2 * dt_per_sigma * (d0psi.s0 - prev->values[dualEdgeId].s0);
-	q.s_1 = 2 * dt_per_sigma * (d0psi.s_1 - prev->values[dualEdgeId].s_1);
-	q.s_2 = 2 * dt_per_sigma * (d0psi.s_2 - prev->values[dualEdgeId].s_2);
+		Complex5Vec q;
+		q.s2 = 2 * dt_per_sigma * (d0psi.s2 - prev->values[dualEdgeId].s2);
+		q.s1 = 2 * dt_per_sigma * (d0psi.s1 - prev->values[dualEdgeId].s1);
+		q.s0 = 2 * dt_per_sigma * (d0psi.s0 - prev->values[dualEdgeId].s0);
+		q.s_1 = 2 * dt_per_sigma * (d0psi.s_1 - prev->values[dualEdgeId].s_1);
+		q.s_2 = 2 * dt_per_sigma * (d0psi.s_2 - prev->values[dualEdgeId].s_2);
 
-	next->values[dualEdgeId].s2 += make_double2(q.s2.y, -q.s2.x);
-	next->values[dualEdgeId].s1 += make_double2(q.s1.y, -q.s1.x);
-	next->values[dualEdgeId].s0 += make_double2(q.s0.y, -q.s0.x);
-	next->values[dualEdgeId].s_1 += make_double2(q.s_1.y, -q.s_1.x);
-	next->values[dualEdgeId].s_2 += make_double2(q.s_2.y, -q.s_2.x);
+		next->values[dualEdgeId].s2 += make_double2(q.s2.y, -q.s2.x);
+		next->values[dualEdgeId].s1 += make_double2(q.s1.y, -q.s1.x);
+		next->values[dualEdgeId].s0 += make_double2(q.s0.y, -q.s0.x);
+		next->values[dualEdgeId].s_1 += make_double2(q.s_1.y, -q.s_1.x);
+		next->values[dualEdgeId].s_2 += make_double2(q.s_2.y, -q.s_2.x);
+	}
+	else
+	{
+		next->values[dualEdgeId] = d0psi;
+	}
 }
 
-__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4, double extraPot)
+__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4, bool hyperb)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -830,13 +865,14 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 		H.s_1 += hodge * d0psi.s_1;
 		H.s_2 += hodge * d0psi.s_2;
 	}
-#if RELATIVISTIC
-	H.s2 = -H.s2;
-	H.s1 = -H.s1;
-	H.s0 = -H.s0;
-	H.s_1 = -H.s_1;
-	H.s_2 = -H.s_2;
-#endif
+	if (hyperb)
+	{
+		H.s2 = -H.s2;
+		H.s1 = -H.s1;
+		H.s0 = -H.s0;
+		H.s_1 = -H.s_1;
+		H.s_2 = -H.s_2;
+	}
 
 	const double normSq_s2 = prev.s2.x * prev.s2.x + prev.s2.y * prev.s2.y;
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
@@ -850,7 +886,7 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 
-	double2 ab = { trap(globalPos) + c0 * normSq + extraPot, 0 };
+	double2 ab = { trap(globalPos) + c0 * normSq, 0 };
 
 	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bb);
 
@@ -1064,69 +1100,66 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaExtent psiExtent = make_cudaExtent(dxsize * sizeof(BlockPsis), dysize, dzsize);
 	cudaExtent edgeExtent = make_cudaExtent(dxsize * sizeof(BlockEdges), dysize, dzsize);
 
-	cudaPitchedPtr d_cudaEvenPsi;
-	cudaPitchedPtr d_cudaEvenQ;
-	cudaPitchedPtr d_cudaOddPsi;
-	cudaPitchedPtr d_cudaOddQ;
-	checkCudaErrors(cudaMalloc3D(&d_cudaEvenPsi, psiExtent));
-	checkCudaErrors(cudaMalloc3D(&d_cudaEvenQ, edgeExtent));
-	checkCudaErrors(cudaMalloc3D(&d_cudaOddPsi, psiExtent));
-	checkCudaErrors(cudaMalloc3D(&d_cudaOddQ, edgeExtent));
+	cudaPitchedPtr d_cudaEvenPsiHyper = allocDevice3D(psiExtent);
+	cudaPitchedPtr d_cudaEvenQHyper = allocDevice3D(edgeExtent);
+	cudaPitchedPtr d_cudaOddPsiHyper = allocDevice3D(psiExtent);
+	cudaPitchedPtr d_cudaOddQHyper = allocDevice3D(edgeExtent);
 
-	//double* d_energy;
-	double* d_spinNorm;
-	double* d_density;
-	double3* d_localAvgSpin;
-	double3* d_u;
-	double3* d_v;
-	double* d_theta;
-	//checkCudaErrors(cudaMalloc(&d_energy, bodies * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_spinNorm, bodies * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_density, bodies * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_localAvgSpin, bodies * sizeof(double3)));
-	checkCudaErrors(cudaMalloc(&d_u, bodies * sizeof(double3)));
-	checkCudaErrors(cudaMalloc(&d_v, bodies * sizeof(double3)));
-	checkCudaErrors(cudaMalloc(&d_theta, bodies * sizeof(double)));
+#if COMPUTE_ERROR
+	cudaPitchedPtr d_cudaEvenPsiPara = allocDevice3D(psiExtent);
+	cudaPitchedPtr d_cudaEvenQPara = allocDevice3D(edgeExtent);
+	cudaPitchedPtr d_cudaOddPsiPara = allocDevice3D(psiExtent);
+	cudaPitchedPtr d_cudaOddQPara = allocDevice3D(edgeExtent);
+#endif
 
-	size_t offset = d_cudaEvenPsi.pitch * dysize + d_cudaEvenPsi.pitch + sizeof(BlockPsis);
-	size_t edgeOffset = d_cudaEvenQ.pitch * dysize + d_cudaEvenQ.pitch + sizeof(BlockEdges);
-	PitchedPtr d_evenPsi = { (char*)d_cudaEvenPsi.ptr + offset, d_cudaEvenPsi.pitch, d_cudaEvenPsi.pitch * dysize };
-	PitchedPtr d_evenQ = { (char*)d_cudaEvenQ.ptr + edgeOffset, d_cudaEvenQ.pitch, d_cudaEvenQ.pitch * dysize };
-	PitchedPtr d_oddPsi = { (char*)d_cudaOddPsi.ptr + offset, d_cudaOddPsi.pitch, d_cudaOddPsi.pitch * dysize };
-	PitchedPtr d_oddQ = { (char*)d_cudaOddQ.ptr + edgeOffset, d_cudaOddQ.pitch, d_cudaOddQ.pitch * dysize };
+	//double* d_energy = allocDevice<double>(bodies);
+	double* d_density = allocDevice<double>(bodies);
+#if COMPUTE_ERROR
+	double* d_error = allocDevice<double>(bodies);
+#endif
+
+	// Calculate pointers to the start of the real computational domain (jumping over the zero buffer at the edges)
+	size_t offset = d_cudaEvenPsiHyper.pitch * dysize + d_cudaEvenPsiHyper.pitch + sizeof(BlockPsis);
+	size_t edgeOffset = d_cudaEvenQHyper.pitch * dysize + d_cudaEvenQHyper.pitch + sizeof(BlockEdges);
+
+	PitchedPtr d_evenPsiHyper = { (char*)d_cudaEvenPsiHyper.ptr + offset, d_cudaEvenPsiHyper.pitch, d_cudaEvenPsiHyper.pitch * dysize };
+	PitchedPtr d_evenQHyper = { (char*)d_cudaEvenQHyper.ptr + edgeOffset, d_cudaEvenQHyper.pitch, d_cudaEvenQHyper.pitch * dysize };
+	PitchedPtr d_oddPsiHyper = { (char*)d_cudaOddPsiHyper.ptr + offset, d_cudaOddPsiHyper.pitch, d_cudaOddPsiHyper.pitch * dysize };
+	PitchedPtr d_oddQHyper = { (char*)d_cudaOddQHyper.ptr + edgeOffset, d_cudaOddQHyper.pitch, d_cudaOddQHyper.pitch * dysize };
+
+#if COMPUTE_ERROR
+	PitchedPtr d_evenPsiPara = { (char*)d_cudaEvenPsiPara.ptr + offset, d_cudaEvenPsiPara.pitch, d_cudaEvenPsiPara.pitch * dysize };
+	PitchedPtr d_evenQPara = { (char*)d_cudaEvenQPara.ptr + edgeOffset, d_cudaEvenQPara.pitch, d_cudaEvenQPara.pitch * dysize };
+	PitchedPtr d_oddPsiPara = { (char*)d_cudaOddPsiPara.ptr + offset, d_cudaOddPsiPara.pitch, d_cudaOddPsiPara.pitch * dysize };
+	PitchedPtr d_oddQPara = { (char*)d_cudaOddQPara.ptr + edgeOffset, d_cudaOddQPara.pitch, d_cudaOddQPara.pitch * dysize };
+#endif
 
 	// find terms for laplacian
 	Buffer<int3> d0;
 	Buffer<int2> d1;
 	Buffer<double> hodges;
-	getLaplacian(hodges, d0, d1, sizeof(BlockPsis), d_evenPsi.pitch, d_evenPsi.slicePitch, sizeof(BlockEdges), d_evenQ.pitch, d_evenQ.slicePitch);
+	getLaplacian(hodges, d0, d1, sizeof(BlockPsis), d_evenPsiHyper.pitch, d_evenPsiHyper.slicePitch, sizeof(BlockEdges), d_evenQHyper.pitch, d_evenQHyper.slicePitch);
 
 	//std::cout << "lapsize = " << lapsize << ", lapfac = " << lapfac << ", lapfac0 = " << lapfac0 << std::endl;
 
-#if USE_QUADRUPOLE_OFFSET
-	std::cout << "Quadrupole field offset is in use." << std::endl;
-#else
-	std::cout << "Not using quadrupole field offset." << std::endl;
-#endif
-
 	for (int i = 0; i < hodges.size(); ++i) hodges[i] = -0.5 * hodges[i] / (block_scale * block_scale);
 
-	int3* d_d0;
-	checkCudaErrors(cudaMalloc(&d_d0, d0.size() * sizeof(int3)));
-
-	int2* d_d1;
-	checkCudaErrors(cudaMalloc(&d_d1, d1.size() * sizeof(int2)));
-
-	double* d_hodges;
-	checkCudaErrors(cudaMalloc(&d_hodges, hodges.size() * sizeof(double)));
+	int3* d_d0 = allocDevice<int3>(d0.size());
+	int2* d_d1 = allocDevice<int2>(d1.size());
+	double* d_hodges = allocDevice<double>(hodges.size());
 
 	// Initialize host memory
 	size_t hostSize = dxsize * dysize * dzsize;
-	BlockPsis* h_evenPsi = allocHost<BlockPsis>(hostSize);
-	BlockPsis* h_oddPsi = allocHost<BlockPsis>(hostSize);
-	BlockEdges* h_evenQ = allocHost<BlockEdges>(hostSize);
-	BlockEdges* h_oddQ = allocHost<BlockEdges>(hostSize);
-
+	BlockPsis* h_evenPsiHyper = allocHost<BlockPsis>(hostSize);
+	BlockPsis* h_oddPsiHyper = allocHost<BlockPsis>(hostSize);
+	BlockEdges* h_evenQHyper = allocHost<BlockEdges>(hostSize);
+	BlockEdges* h_oddQHyper = allocHost<BlockEdges>(hostSize);
+#if COMPUTE_ERROR
+	BlockPsis* h_evenPsiPara = allocHost<BlockPsis>(hostSize);
+	BlockPsis* h_oddPsiPara = allocHost<BlockPsis>(hostSize);
+	BlockEdges* h_evenQPara = allocHost<BlockEdges>(hostSize);
+	BlockEdges* h_oddQPara = allocHost<BlockEdges>(hostSize);
+#endif
 	double* h_density = allocHost<double>(bodies);
 
 #if COMPUTE_GROUND_STATE
@@ -1137,7 +1170,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	{
 		std::cout << "Initialized ground state psi from file." << std::endl;
 
-		fs.read((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+		fs.read((char*)&h_evenPsiHyper[0], hostSize * sizeof(BlockPsis));
 		fs.close();
 
 		std::ifstream fs_q(GROUND_STATE_Q_FILENAME, std::ios::binary | std::ios::in);
@@ -1145,7 +1178,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		{
 			std::cout << "Initialized ground state q from file." << std::endl;
 
-			fs.read((char*)&h_evenQ[0], hostSize * sizeof(BlockEdges));
+			fs.read((char*)&h_evenQHyper[0], hostSize * sizeof(BlockEdges));
 			fs.close();
 		}
 		else
@@ -1173,11 +1206,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 						const double2 s0{ distribution(generator), distribution(generator) };
 						const double2 s_1{ distribution(generator), distribution(generator) };
 						const double2 s_2{ distribution(generator), distribution(generator) };
-						h_evenPsi[dstI].values[l].s2 = s2;
-						h_evenPsi[dstI].values[l].s1 = s1;
-						h_evenPsi[dstI].values[l].s0 = s0;
-						h_evenPsi[dstI].values[l].s_1 = s_1;
-						h_evenPsi[dstI].values[l].s_2 = s_2;
+						h_evenPsiHyper[dstI].values[l].s2 = s2;
+						h_evenPsiHyper[dstI].values[l].s1 = s1;
+						h_evenPsiHyper[dstI].values[l].s0 = s0;
+						h_evenPsiHyper[dstI].values[l].s_1 = s_1;
+						h_evenPsiHyper[dstI].values[l].s_2 = s_2;
 					}
 				}
 			}
@@ -1189,19 +1222,26 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #else
 	bool loadGroundState = (t == 0);
 	std::string psi_filename = loadGroundState ? GROUND_STATE_PSI_FILENAME : toString(t) + ".dat";
-	loadFromFile(psi_filename, (char*)&h_oddPsi[0], hostSize * sizeof(BlockPsis));
-
+	loadFromFile(psi_filename, (char*)&h_oddPsiHyper[0], hostSize * sizeof(BlockPsis));
+#if COMPUTE_ERROR
+	memcpy((char*)&h_oddPsiPara[0], (char*)&h_oddPsiHyper[0], hostSize * sizeof(BlockPsis));
+#endif
 	std::string q_filename = loadGroundState ? GROUND_STATE_Q_FILENAME : toString(t) + ".dat";
-	loadFromFile(q_filename, (char*)&h_oddQ[0], hostSize * sizeof(BlockEdges));
+	loadFromFile(q_filename, (char*)&h_oddQHyper[0], hostSize * sizeof(BlockEdges));
 
 	bool doForward = true;
 #endif
 
-	cudaPitchedPtr h_cudaEvenPsi = copyHostToDevice3D(h_evenPsi, d_cudaEvenPsi, psiExtent);
-	cudaPitchedPtr h_cudaOddPsi = copyHostToDevice3D(h_oddPsi, d_cudaOddPsi, psiExtent);
-	cudaPitchedPtr h_cudaEvenQ = copyHostToDevice3D(h_evenQ, d_cudaEvenQ, edgeExtent);
-	cudaPitchedPtr h_cudaOddQ = copyHostToDevice3D(h_oddQ, d_cudaOddQ, edgeExtent);
-
+	cudaPitchedPtr h_cudaEvenPsiHyper = copyHostToDevice3D(h_evenPsiHyper, d_cudaEvenPsiHyper, psiExtent);
+	cudaPitchedPtr h_cudaOddPsiHyper = copyHostToDevice3D(h_oddPsiHyper, d_cudaOddPsiHyper, psiExtent);
+	cudaPitchedPtr h_cudaEvenQHyper = copyHostToDevice3D(h_evenQHyper, d_cudaEvenQHyper, edgeExtent);
+	cudaPitchedPtr h_cudaOddQHyper = copyHostToDevice3D(h_oddQHyper, d_cudaOddQHyper, edgeExtent);
+#if COMPUTE_ERROR
+	cudaPitchedPtr h_cudaEvenPsiPara = copyHostToDevice3D(h_evenPsiPara, d_cudaEvenPsiPara, psiExtent);
+	cudaPitchedPtr h_cudaOddPsiPara = copyHostToDevice3D(h_oddPsiPara, d_cudaOddPsiPara, psiExtent);
+	cudaPitchedPtr h_cudaEvenQPara = copyHostToDevice3D(h_evenQPara, d_cudaEvenQPara, edgeExtent);
+	cudaPitchedPtr h_cudaOddQPara = copyHostToDevice3D(h_oddQPara, d_cudaOddQPara, edgeExtent);
+#endif
 	checkCudaErrors(cudaMemcpy(d_d0, &d0[0], d0.size() * sizeof(int3), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_d1, &d1[0], d1.size() * sizeof(int2), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_hodges, &hodges[0], hodges.size() * sizeof(double), cudaMemcpyHostToDevice));
@@ -1215,10 +1255,16 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaFreeHost(h_evenPsi);
 	cudaFreeHost(h_oddPsi);
 #endif
-	cudaMemcpy3DParms evenPsiBackParams = createDeviceToHostParams(d_cudaEvenPsi, h_cudaEvenPsi, psiExtent);
-	cudaMemcpy3DParms oddPsiBackParams = createDeviceToHostParams(d_cudaOddPsi, h_cudaOddPsi, psiExtent);
-	cudaMemcpy3DParms evenQBackParams = createDeviceToHostParams(d_cudaEvenQ, h_cudaEvenQ, edgeExtent);
-	cudaMemcpy3DParms oddQBackParams = createDeviceToHostParams(d_cudaOddQ, h_cudaOddQ, edgeExtent);
+	cudaMemcpy3DParms evenPsiBackParamsHyper = createDeviceToHostParams(d_cudaEvenPsiHyper, h_cudaEvenPsiHyper, psiExtent);
+	cudaMemcpy3DParms oddPsiBackParamsHyper = createDeviceToHostParams(d_cudaOddPsiHyper, h_cudaOddPsiHyper, psiExtent);
+	cudaMemcpy3DParms evenQBackParamsHyper = createDeviceToHostParams(d_cudaEvenQHyper, h_cudaEvenQHyper, edgeExtent);
+	cudaMemcpy3DParms oddQBackParamsHyper = createDeviceToHostParams(d_cudaOddQHyper, h_cudaOddQHyper, edgeExtent);
+#if COMPUTE_ERROR
+	cudaMemcpy3DParms evenPsiBackParamsPara = createDeviceToHostParams(d_cudaEvenPsiPara, h_cudaEvenPsiPara, psiExtent);
+	cudaMemcpy3DParms oddPsiBackParamsPara = createDeviceToHostParams(d_cudaOddPsiPara, h_cudaOddPsiPara, psiExtent);
+	cudaMemcpy3DParms evenQBackParamsPara = createDeviceToHostParams(d_cudaEvenQPara, h_cudaEvenQPara, edgeExtent);
+	cudaMemcpy3DParms oddQBackParamsPara = createDeviceToHostParams(d_cudaOddQPara, h_cudaOddQPara, edgeExtent);
+#endif
 
 	// Integrate in time
 	uint3 dimensions = make_uint3(xsize, ysize, zsize);
@@ -1242,26 +1288,26 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		{
 		case Phase::UN:
 			std::cout << "Transform ground state to uniaxial nematic phase." << std::endl;
-			unState << <dimGrid, psiDimBlock >> > (d_evenPsi, dimensions);
+			unState << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, dimensions);
 			break;
 		case Phase::BN_VERT:
 			std::cout << "Transform ground state to vertically oriented biaxial nematic phase with a phase of " << PHASE << "." << std::endl;
-			verticalBnState << <dimGrid, psiDimBlock >> > (d_evenPsi, dimensions, PHASE);
+			verticalBnState << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, dimensions, PHASE);
 			break;
 		case Phase::BN_HORI:
 			std::cout << "Transform ground state to horizontally oriented biaxial nematic phase with a phase of " << PHASE << "." << std::endl;
-			horizontalBnState << <dimGrid, psiDimBlock >> > (d_evenPsi, dimensions, PHASE);
+			horizontalBnState << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, dimensions, PHASE);
 			break;
 		case Phase::CYCLIC:
 			std::cout << "Transform ground state to cyclic phase with a phase of " << PHASE << "." << std::endl;
-			cyclicState << <dimGrid, psiDimBlock >> > (d_evenPsi, dimensions, PHASE);
+			cyclicState << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, dimensions, PHASE);
 			break;
 		default:
 			std::cout << "Initial phase " << (int)initPhase << " is not supported!";
 			break;
 		}
 
-		printDensity(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+		printDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
 	}
 #endif
 	double extraPot = 0.0;
@@ -1277,8 +1323,16 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.Bb = BzScale * signal.Bb;
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
-		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, extraPot);
-		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
+		// Hyperbolic
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true);
+		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma, true);
+
+#if COMPUTE_ERROR
+		// Parabolic
+		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions, dt_per_sigma, false);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false);
+		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions, dt_per_sigma, false);
+#endif
 	}
 	else
 #endif
@@ -1295,10 +1349,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	if (!continueFromEarlier)
 	{
-		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
-		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
-		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
-		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
+		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
+		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
 	}
 
 	while (true)
@@ -1307,47 +1361,47 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #if SAVE_PICTURE
 		if ((iter % 1000) == 0)
 		{
-			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
+			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParamsHyper));
 			signal = getSignal(0);
 			Bs.Bq = BqScale * signal.Bq;
 			Bs.Bb = BzScale * signal.Bb;
-			drawIandR(folder, h_evenPsi, dxsize, dysize, dzsize, iter, Bs, d_p0, block_scale);
-			printDensity(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+			drawIandR(folder, h_evenPsiHyper, dxsize, dysize, dzsize, iter, Bs, d_p0, block_scale);
+			printDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
 
-			double3 com = centerOfMass(h_evenPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
+			double3 com = centerOfMass(h_evenPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
 			std::cout << "Center of mass: " << com.x << ", " << com.y << ", " << com.z << std::endl;
 		}
 #endif
 		if (iter == 100000)
 		{
 			// Psi
-			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
+			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParamsHyper));
 			std::ofstream fs_psi(GROUND_STATE_PSI_FILENAME, std::ios::binary | std::ios_base::trunc);
 			if (fs_psi.fail() != 0) return 1;
-			fs_psi.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
+			fs_psi.write((char*)&h_evenPsiHyper[0], hostSize * sizeof(BlockPsis));
 			fs_psi.close();
 
 			// Q
-			checkCudaErrors(cudaMemcpy3D(&evenQBackParams));
+			checkCudaErrors(cudaMemcpy3D(&evenQBackParamsHyper));
 			std::ofstream fs_q(GROUND_STATE_Q_FILENAME, std::ios::binary | std::ios_base::trunc);
 			if (fs_q.fail() != 0) return 1;
-			fs_q.write((char*)&h_evenQ[0], hostSize * sizeof(BlockEdges));
+			fs_q.write((char*)&h_evenQHyper[0], hostSize * sizeof(BlockEdges));
 			fs_q.close();
 
 			return 0;
 		}
 
 		// Take an imaginary time step
-		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
-		itp_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, dimensions, block_scale, d_p0, c0, c2, dt);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
-		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
+		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume);
 
 		// Take an imaginary time step
-		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
-		itp_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, dimensions, block_scale, d_p0, c0, c2, dt);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
-		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
 
 		iter++;
 	}
@@ -1388,7 +1442,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	{
 #if SAVE_PICTURE
 		// Copy back from device memory to host memory
-		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
+#if COMPUTE_ERROR
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsPara));
+#endif
 
 		// Measure wall clock time
 		static auto prevTime = std::chrono::high_resolution_clock::now();
@@ -1399,7 +1456,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		signal = getSignal(0);
 		Bs.Bq = BqScale * signal.Bq;
 		Bs.Bb = BzScale * signal.Bb;
-		drawDensity(densDir, h_oddPsi, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
+		drawDensity(densDir, h_oddPsiHyper, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
+#if COMPUTE_ERROR
+		drawDensity(densDir, h_oddPsiPara, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
+#endif
 #endif
 
 		// integrate one iteration
@@ -1412,8 +1472,15 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.Bb = BzScale * signal.Bb;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
-			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsi, d_evenPsi, d_evenQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, extraPot);
-			update_q << <dimGrid, edgeDimBlock >> > (d_oddQ, d_evenQ, d_evenPsi, d_d0, dimensions, dt_per_sigma);
+
+			// Hyperbolic
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, true);
+			update_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma, true);
+#if COMPUTE_ERROR
+			// Parabolic
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiPara, d_evenPsiPara, d_evenQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false);
+			update_q << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions, dt_per_sigma, false);
+#endif
 
 			// update even values
 			t += dt / omega_r * 1e3; // [ms]
@@ -1422,18 +1489,40 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.Bb = BzScale * signal.Bb;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
-			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsi, d_oddPsi, d_oddQ, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, extraPot);
-			update_q << <dimGrid, edgeDimBlock >> > (d_evenQ, d_oddQ, d_oddPsi, d_d0, dimensions, dt_per_sigma);
+
+			// Hyperbolic
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, true);
+			update_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma, true);
+#if COMPUTE_ERROR
+			// Parabolic
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false);
+			update_q << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions, dt_per_sigma, false);
+#endif
 		}
+#if COMPUTE_ERROR
+		// Compute error
+		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiHyper, dimensions);
+		int prevStride = bodies;
+		while (prevStride > 1)
+		{
+			int newStride = prevStride / 2;
+			integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_error, newStride, ((newStride * 2) != prevStride), volume);
+			prevStride = newStride;
+		}
+		//double2 hError = { 0 };
+		double hError = { 0 };
+		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(double2), cudaMemcpyDeviceToHost));
+		std::cout << hError << ", ";
+#endif
 
 #if SAVE_STATES
 		// Copy back from device memory to host memory
-		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
 
 		if (t > 0.5)
 		{
-			saveVolume(vtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t);
-			saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t);
+			saveVolume(vtksDir, h_oddPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t);
+			saveSpinor(spinorVtksDir, h_oddPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t);
 		}
 
 		if (t > END_TIME)

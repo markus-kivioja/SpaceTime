@@ -40,7 +40,7 @@ constexpr double DOMAIN_SIZE_X = 16.0;
 constexpr double DOMAIN_SIZE_Y = 16.0;
 constexpr double DOMAIN_SIZE_Z = 16.0;
 
-constexpr double REPLICABLE_STRUCTURE_COUNT_X = 74.0;
+constexpr double REPLICABLE_STRUCTURE_COUNT_X = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
 
@@ -370,14 +370,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	for (int i = 0; i < hodges.size(); ++i) hodges[i] = -0.5 * hodges[i] / (block_scale * block_scale);
 
-	int3* d_d0;
-	checkCudaErrors(cudaMalloc(&d_d0, d0.size() * sizeof(int3)));
-
-	int2* d_d1;
-	checkCudaErrors(cudaMalloc(&d_d1, d1.size() * sizeof(int2)));
-
-	double* d_hodges;
-	checkCudaErrors(cudaMalloc(&d_hodges, hodges.size() * sizeof(double)));
+	int3* d_d0 = allocDevice<int3>(d0.size());
+	int2* d_d1 = allocDevice<int2>(d1.size());
+	double* d_hodges = allocDevice<double>(hodges.size());
 
 	// Initialize host memory
 	size_t hostSize = dxsize * dysize * dzsize;
@@ -450,9 +445,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	bool loadGroundState = (t == 0);
 	std::string psi_filename_hyper = loadGroundState ? GROUND_STATE_PSI_FILENAME : toString(t) + ".dat";
 	loadFromFile(psi_filename_hyper, (char*)&h_oddPsiHyper[0], hostSize * sizeof(BlockPsis));
-
+#if !COMPUTE_GROUND_STATE
 	memcpy((char*)&h_oddPsiPara[0], (char*)&h_oddPsiHyper[0], hostSize * sizeof(BlockPsis));
-
+#endif
 	std::string q_filename = loadGroundState ? GROUND_STATE_Q_FILENAME : toString(t) + ".dat";
 	loadFromFile(q_filename, (char*)&h_oddQHyper[0], hostSize * sizeof(BlockEdges));
 
@@ -693,7 +688,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		}
 		// Compute error
 		//innerProduct << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiHyper, dimensions);
-		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiPara, dimensions);
+		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiHyper, dimensions);
 		int prevStride = bodies;
 		while (prevStride > 1)
 		{
