@@ -3,6 +3,8 @@
 #include <array>
 #include <iostream>
 
+#define DISABLE 1
+
 #define Z_QUANTIZED 0
 #define Y_QUANTIZED 1
 #define X_QUANTIZED 2
@@ -61,6 +63,9 @@ void printBasis()
 
 Signal getSignal(double t)
 {
+#if DISABLE
+	return {};
+#else
 	Signal signal;
 
 	double tOrig = t;
@@ -126,4 +131,5 @@ Signal getSignal(double t)
 	}
 
 	return signal;
+#endif
 }

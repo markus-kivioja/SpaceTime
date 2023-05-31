@@ -28,7 +28,10 @@ std::string getProjectionString()
 #include "mesh.h"
 
 #define COMPUTE_GROUND_STATE 0
-#define COMPUTE_ERROR 0
+
+#define HYPERBOLIC 0
+#define PARABOLIC 1
+#define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
 
 #define SAVE_STATES 0
 #define SAVE_PICTURE 1
@@ -41,7 +44,7 @@ constexpr double DOMAIN_SIZE_X = 16.0;
 constexpr double DOMAIN_SIZE_Y = 16.0;
 constexpr double DOMAIN_SIZE_Z = 16.0;
 
-constexpr double REPLICABLE_STRUCTURE_COUNT_X = 112.0;
+constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 9 * 6.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
 
@@ -81,12 +84,11 @@ constexpr double INV_SQRT_2 = 0.70710678118655;
 
 constexpr double NOISE_AMPLITUDE = 0.1;
 
-double para_dt = 1e-4; // Max parabolic: 7e-4
-double hyper_dt = 3e-3; //3e-3; // Max hyperbolic: 3e-3
-double dt_increse = 1e-3;
+double dt = 3.9e-4;
+double dt_increse = 1e-5;
 
 const float IMAGE_SAVE_INTERVAL = 0.05; // ms
-uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / hyper_dt) + 1;
+uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
@@ -98,7 +100,7 @@ double sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for 
 #else
 double sigma = 1.0; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
 #endif
-double dt_per_sigma = hyper_dt / sigma;
+double dt_per_sigma = dt / sigma;
 
 enum class Phase
 {
@@ -316,17 +318,20 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaExtent psiExtent = make_cudaExtent(dxsize * sizeof(BlockPsis), dysize, dzsize);
 	cudaExtent edgeExtent = make_cudaExtent(dxsize * sizeof(BlockEdges), dysize, dzsize);
 
+#if HYPERBOLIC
 	cudaPitchedPtr d_cudaEvenPsiHyper = allocDevice3D(psiExtent);
 	cudaPitchedPtr d_cudaEvenQHyper = allocDevice3D(edgeExtent);
 	cudaPitchedPtr d_cudaOddPsiHyper = allocDevice3D(psiExtent);
 	cudaPitchedPtr d_cudaOddQHyper = allocDevice3D(edgeExtent);
-
-#if COMPUTE_ERROR
+#endif
+#if PARABOLIC
 	cudaPitchedPtr d_cudaEvenPsiPara = allocDevice3D(psiExtent);
 	cudaPitchedPtr d_cudaEvenQPara = allocDevice3D(edgeExtent);
 	cudaPitchedPtr d_cudaOddPsiPara = allocDevice3D(psiExtent);
 	cudaPitchedPtr d_cudaOddQPara = allocDevice3D(edgeExtent);
+#endif
 
+#if COMPUTE_ERROR
 	//double2* d_error = allocDevice<double2>(bodies);
 	double* d_error = allocDevice<double>(bodies);
 #endif
@@ -343,19 +348,21 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 
 	// Calculate pointers to the start of the real computational domain (jumping over the zero buffer at the edges)
-	size_t offset = d_cudaEvenPsiHyper.pitch * dysize + d_cudaEvenPsiHyper.pitch + sizeof(BlockPsis);
-	size_t edgeOffset = d_cudaEvenQHyper.pitch * dysize + d_cudaEvenQHyper.pitch + sizeof(BlockEdges);
-	
-	PitchedPtr d_evenPsiHyper = { (char*)d_cudaEvenPsiHyper.ptr + offset, d_cudaEvenPsiHyper.pitch, d_cudaEvenPsiHyper.pitch * dysize };
-	PitchedPtr d_evenQHyper = { (char*)d_cudaEvenQHyper.ptr + edgeOffset, d_cudaEvenQHyper.pitch, d_cudaEvenQHyper.pitch * dysize };
-	PitchedPtr d_oddPsiHyper = { (char*)d_cudaOddPsiHyper.ptr + offset, d_cudaOddPsiHyper.pitch, d_cudaOddPsiHyper.pitch * dysize };
-	PitchedPtr d_oddQHyper = { (char*)d_cudaOddQHyper.ptr + edgeOffset, d_cudaOddQHyper.pitch, d_cudaOddQHyper.pitch * dysize };
-
-#if COMPUTE_ERROR
-	PitchedPtr d_evenPsiPara = { (char*)d_cudaEvenPsiPara.ptr + offset, d_cudaEvenPsiPara.pitch, d_cudaEvenPsiPara.pitch * dysize };
-	PitchedPtr d_evenQPara = { (char*)d_cudaEvenQPara.ptr + edgeOffset, d_cudaEvenQPara.pitch, d_cudaEvenQPara.pitch * dysize };
-	PitchedPtr d_oddPsiPara = { (char*)d_cudaOddPsiPara.ptr + offset, d_cudaOddPsiPara.pitch, d_cudaOddPsiPara.pitch * dysize };
-	PitchedPtr d_oddQPara = { (char*)d_cudaOddQPara.ptr + edgeOffset, d_cudaOddQPara.pitch, d_cudaOddQPara.pitch * dysize };
+#if HYPERBOLIC
+	size_t offsetHyper = d_cudaEvenPsiHyper.pitch * dysize + d_cudaEvenPsiHyper.pitch + sizeof(BlockPsis);
+	size_t edgeOffsetHyper = d_cudaEvenQHyper.pitch * dysize + d_cudaEvenQHyper.pitch + sizeof(BlockEdges);
+	PitchedPtr d_evenPsiHyper = { (char*)d_cudaEvenPsiHyper.ptr + offsetHyper, d_cudaEvenPsiHyper.pitch, d_cudaEvenPsiHyper.pitch * dysize };
+	PitchedPtr d_evenQHyper = { (char*)d_cudaEvenQHyper.ptr + edgeOffsetHyper, d_cudaEvenQHyper.pitch, d_cudaEvenQHyper.pitch * dysize };
+	PitchedPtr d_oddPsiHyper = { (char*)d_cudaOddPsiHyper.ptr + offsetHyper, d_cudaOddPsiHyper.pitch, d_cudaOddPsiHyper.pitch * dysize };
+	PitchedPtr d_oddQHyper = { (char*)d_cudaOddQHyper.ptr + edgeOffsetHyper, d_cudaOddQHyper.pitch, d_cudaOddQHyper.pitch * dysize };
+#endif
+#if PARABOLIC
+	size_t offsetPara = d_cudaEvenPsiPara.pitch * dysize + d_cudaEvenPsiPara.pitch + sizeof(BlockPsis);
+	size_t edgeOffsetPara = d_cudaEvenQPara.pitch * dysize + d_cudaEvenQPara.pitch + sizeof(BlockEdges);
+	PitchedPtr d_evenPsiPara = { (char*)d_cudaEvenPsiPara.ptr + offsetPara, d_cudaEvenPsiPara.pitch, d_cudaEvenPsiPara.pitch * dysize };
+	PitchedPtr d_evenQPara = { (char*)d_cudaEvenQPara.ptr + edgeOffsetPara, d_cudaEvenQPara.pitch, d_cudaEvenQPara.pitch * dysize };
+	PitchedPtr d_oddPsiPara = { (char*)d_cudaOddPsiPara.ptr + offsetPara, d_cudaOddPsiPara.pitch, d_cudaOddPsiPara.pitch * dysize };
+	PitchedPtr d_oddQPara = { (char*)d_cudaOddQPara.ptr + edgeOffsetPara, d_cudaOddQPara.pitch, d_cudaOddQPara.pitch * dysize };
 #endif
 
 #if COMPUTE_GROUND_STATE
@@ -366,7 +373,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	Buffer<int3> d0;
 	Buffer<int2> d1;
 	Buffer<double> hodges;
+#if HYPERBOLIC
 	getLaplacian(hodges, d0, d1, sizeof(BlockPsis), d_evenPsiHyper.pitch, d_evenPsiHyper.slicePitch, sizeof(BlockEdges), d_evenQHyper.pitch, d_evenQHyper.slicePitch);
+#endif
+#if PARABOLIC
+	getLaplacian(hodges, d0, d1, sizeof(BlockPsis), d_evenPsiPara.pitch, d_evenPsiPara.slicePitch, sizeof(BlockEdges), d_evenQPara.pitch, d_evenQPara.slicePitch);
+#endif
 
 	//std::cout << "lapsize = " << lapsize << ", lapfac = " << lapfac << ", lapfac0 = " << lapfac0 << std::endl;
 
@@ -378,11 +390,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	// Initialize host memory
 	size_t hostSize = dxsize * dysize * dzsize;
+#if HYPERBOLIC
 	BlockPsis* h_evenPsiHyper = allocHost<BlockPsis>(hostSize);
 	BlockPsis* h_oddPsiHyper = allocHost<BlockPsis>(hostSize);
 	BlockEdges* h_evenQHyper = allocHost<BlockEdges>(hostSize);
 	BlockEdges* h_oddQHyper = allocHost<BlockEdges>(hostSize);
-#if COMPUTE_ERROR
+#endif
+#if PARABOLIC
 	BlockPsis* h_evenPsiPara = allocHost<BlockPsis>(hostSize);
 	BlockPsis* h_oddPsiPara = allocHost<BlockPsis>(hostSize);
 	BlockEdges* h_evenQPara = allocHost<BlockEdges>(hostSize);
@@ -445,22 +459,25 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	bool doForward = false;
 #else
 	bool loadGroundState = (t == 0);
-	std::string psi_filename_hyper = loadGroundState ? GROUND_STATE_PSI_FILENAME : toString(t) + ".dat";
-	loadFromFile(psi_filename_hyper, (char*)&h_oddPsiHyper[0], hostSize * sizeof(BlockPsis));
-#if COMPUTE_ERROR
-	memcpy((char*)&h_oddPsiPara[0], (char*)&h_oddPsiHyper[0], hostSize * sizeof(BlockPsis));
-#endif
+	std::string psi_filename = loadGroundState ? GROUND_STATE_PSI_FILENAME : toString(t) + ".dat";
+#if HYPERBOLIC
+	loadFromFile(psi_filename, (char*)&h_oddPsiHyper[0], hostSize * sizeof(BlockPsis));
 	std::string q_filename = loadGroundState ? GROUND_STATE_Q_FILENAME : toString(t) + ".dat";
 	loadFromFile(q_filename, (char*)&h_oddQHyper[0], hostSize * sizeof(BlockEdges));
+#endif
+#if PARABOLIC
+	loadFromFile(psi_filename, (char*)&h_oddPsiPara[0], hostSize * sizeof(BlockPsis));
+#endif
 
 	bool doForward = true;
 #endif
-
+#if HYPERBOLIC
 	cudaPitchedPtr h_cudaEvenPsiHyper = copyHostToDevice3D(h_evenPsiHyper, d_cudaEvenPsiHyper, psiExtent);
 	cudaPitchedPtr h_cudaOddPsiHyper = copyHostToDevice3D(h_oddPsiHyper, d_cudaOddPsiHyper, psiExtent);
 	cudaPitchedPtr h_cudaEvenQHyper = copyHostToDevice3D(h_evenQHyper, d_cudaEvenQHyper, edgeExtent);
 	cudaPitchedPtr h_cudaOddQHyper = copyHostToDevice3D(h_oddQHyper, d_cudaOddQHyper, edgeExtent);
-#if COMPUTE_ERROR
+#endif
+#if PARABOLIC
 	cudaPitchedPtr h_cudaEvenPsiPara = copyHostToDevice3D(h_evenPsiPara, d_cudaEvenPsiPara, psiExtent);
 	cudaPitchedPtr h_cudaOddPsiPara = copyHostToDevice3D(h_oddPsiPara, d_cudaOddPsiPara, psiExtent);
 	cudaPitchedPtr h_cudaEvenQPara = copyHostToDevice3D(h_evenQPara, d_cudaEvenQPara, edgeExtent);
@@ -479,11 +496,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaFreeHost(h_evenPsiHyper);
 	cudaFreeHost(h_oddPsiHyper);
 #endif
+#if HYPERBOLIC
 	cudaMemcpy3DParms evenPsiBackParamsHyper = createDeviceToHostParams(d_cudaEvenPsiHyper, h_cudaEvenPsiHyper, psiExtent);
 	cudaMemcpy3DParms oddPsiBackParamsHyper = createDeviceToHostParams(d_cudaOddPsiHyper, h_cudaOddPsiHyper, psiExtent);
 	cudaMemcpy3DParms evenQBackParamsHyper = createDeviceToHostParams(d_cudaEvenQHyper, h_cudaEvenQHyper, edgeExtent);
 	cudaMemcpy3DParms oddQBackParamsHyper = createDeviceToHostParams(d_cudaOddQHyper, h_cudaOddQHyper, edgeExtent);
-#if COMPUTE_ERROR
+#endif
+#if PARABOLIC
 	cudaMemcpy3DParms evenPsiBackParamsPara = createDeviceToHostParams(d_cudaEvenPsiPara, h_cudaEvenPsiPara, psiExtent);
 	cudaMemcpy3DParms oddPsiBackParamsPara = createDeviceToHostParams(d_cudaOddPsiPara, h_cudaOddPsiPara, psiExtent);
 	cudaMemcpy3DParms evenQBackParamsPara = createDeviceToHostParams(d_cudaEvenQPara, h_cudaEvenQPara, edgeExtent);
@@ -533,13 +552,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.Bb = BzScale * signal.Bb;
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
-		// Hyperbolic
-		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt, true);
+#if HYPERBOLIC
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true);
 		forwardEuler_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
-#if COMPUTE_ERROR
-		// Parabolic
+#endif
+#if PARABOLIC
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions);
-		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, para_dt, false);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false);
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions);
 #endif
 	}
@@ -609,13 +628,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 		// Take an imaginary time step
 		itp_q_hyper << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
-		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt);
+		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume);
 
 		// Take an imaginary time step
 		itp_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
-		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt);
+		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
 
@@ -634,8 +653,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	{
 #if SAVE_PICTURE
 		// Copy back from device memory to host memory
+#if HYPERBOLIC
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
-#if COMPUTE_ERROR
+#endif
+#if PARABOLIC
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsPara));
 #endif
 
@@ -645,63 +666,64 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		//std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 		prevTime = std::chrono::high_resolution_clock::now();
 
+#if !COMPUTE_ERROR
+#if HYPERBOLIC
 		double dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
+#endif
+#if PARABOLIC
+		double dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume);
+#endif
 		static double prevDens = dens;
 		std::cout << "At " << t << " ms density is " << dens << std::endl;
-		constexpr double MARGIN = 0.02;
-		if (t > 0 && (dens - prevDens) > MARGIN)
+		constexpr double MARGIN = 1.0; // 0.02;
+		if (t > 0 && (abs(dens - prevDens) > MARGIN || isnan(dens)))
 		{
-			std::cout << "The time step size of " << hyper_dt << " ms was not numerically stable!";
+			std::cout << "The final numerically stable time step size was " << dt - dt_increse << " ms!";
 			return 1;
 		}
 		prevDens = dens;
-
+#endif
+#if HYPERBOLIC
 		drawDensity("hyper", h_oddPsiHyper, dxsize, dysize, dzsize, t, dens_folder);
-#if COMPUTE_ERROR
+#endif
+#if PARABOLIC
 		drawDensity("para", h_oddPsiPara, dxsize, dysize, dzsize, t, dens_folder); 
 #endif
 
 #endif
-		const uint centerIdx = 57 * dxsize * dysize + 57 * dxsize + 57;
-		double2 temp = h_oddPsiHyper[centerIdx].values[5].s0;
-		double startPhase = atan2(temp.y, temp.x);
-		double phaseTime = 0;
-
 		// integrate one iteration
 		for (uint step = 0; step < IMAGE_SAVE_FREQUENCY; step++)
 		{
 			// update odd values (imaginary terms)
-			phaseTime += hyper_dt;
-			t += hyper_dt / omega_r * 1e3; // [ms]
+			t += dt / omega_r * 1e3; // [ms]
 			signal = getSignal(t);
 			Bs.Bq = BqScale * signal.Bq;
 			Bs.Bb = BzScale * signal.Bb;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 
-			// Hyperbolic
-			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt, true);
+#if HYPERBOLIC
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true);
 			update_q_hyper << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
-#if COMPUTE_ERROR
-			// Parabolic
-			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiPara, d_evenPsiPara, d_evenQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, para_dt, false);
+#endif
+#if PARABOLIC
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiPara, d_evenPsiPara, d_evenQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false);
 			update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions);
 #endif
 			// update even values (real terms)
-			phaseTime += hyper_dt;
-			t += hyper_dt / omega_r * 1e3; // [ms]
+			t += dt / omega_r * 1e3; // [ms]
 			signal = getSignal(t);
 			Bs.Bq = BqScale * signal.Bq;
 			Bs.Bb = BzScale * signal.Bb;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 			
-			// Hyperbolic
-			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, hyper_dt, true);
+#if HYPERBOLIC
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true);
 			update_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
-#if COMPUTE_ERROR
-			// Parabolic
-			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, para_dt, false);
+#endif
+#if PARABOLIC
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false);
 			update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions);
 #endif
 		}
@@ -759,22 +781,30 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 	}
 #endif
+#if HYPERBOLIC
 	checkCudaErrors(cudaFree(d_cudaEvenPsiHyper.ptr));
 	checkCudaErrors(cudaFree(d_cudaEvenQHyper.ptr));
 	checkCudaErrors(cudaFree(d_cudaOddPsiHyper.ptr));
 	checkCudaErrors(cudaFree(d_cudaOddQHyper.ptr));
-#if COMPUTE_ERROR
+
+	checkCudaErrors(cudaFreeHost(h_evenPsiHyper));
+	checkCudaErrors(cudaFreeHost(h_oddPsiHyper));
+	checkCudaErrors(cudaFreeHost(h_evenQHyper));
+	checkCudaErrors(cudaFreeHost(h_oddQHyper));
+#endif
+#if PARABOLIC
 	checkCudaErrors(cudaFree(d_cudaEvenPsiPara.ptr));
 	checkCudaErrors(cudaFree(d_cudaEvenQPara.ptr));
 	checkCudaErrors(cudaFree(d_cudaOddPsiPara.ptr));
 	checkCudaErrors(cudaFree(d_cudaOddQPara.ptr));
 
+	checkCudaErrors(cudaFreeHost(h_evenPsiPara));
+	checkCudaErrors(cudaFreeHost(h_oddPsiPara));
+	checkCudaErrors(cudaFreeHost(h_evenQPara));
+	checkCudaErrors(cudaFreeHost(h_oddQPara));
+#endif
+#if COMPUTE_ERROR
 	checkCudaErrors(cudaFree(d_error));
-
-	checkCudaErrors(cudaFree(h_evenPsiPara));
-	checkCudaErrors(cudaFree(h_oddPsiPara));
-	checkCudaErrors(cudaFree(h_evenQPara));
-	checkCudaErrors(cudaFree(h_oddQPara));
 #endif
 #if COMPUTE_GROUND_STATE
 	checkCudaErrors(cudaFree(d_cudaHPsi.ptr));
@@ -786,10 +816,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	checkCudaErrors(cudaFree(d_d1));
 	checkCudaErrors(cudaFree(d_hodges));
 
-	checkCudaErrors(cudaFreeHost(h_evenPsiHyper));
-	checkCudaErrors(cudaFreeHost(h_oddPsiHyper));
-	checkCudaErrors(cudaFreeHost(h_evenQHyper));
-	checkCudaErrors(cudaFreeHost(h_oddQHyper));
 	checkCudaErrors(cudaFreeHost(h_density));
 
 	cudaError_t err = cudaGetLastError();
@@ -821,14 +847,14 @@ void readConfFile()
 			}
 			else if (size_t pos = line.find("dt") != std::string::npos)
 			{
-				hyper_dt = std::stod(line.substr(pos + 2));
-				IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / hyper_dt) + 1;
-				dt_per_sigma = hyper_dt / sigma;
+				dt = std::stod(line.substr(pos + 2));
+				IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
+				dt_per_sigma = dt / sigma;
 			}
 			else if (size_t pos = line.find("sigma") != std::string::npos)
 			{
 				sigma = std::stod(line.substr(pos + 5));
-				dt_per_sigma = hyper_dt / sigma;
+				dt_per_sigma = dt / sigma;
 			}
 		}
 	}
@@ -841,8 +867,6 @@ int main(int argc, char** argv)
 	const double blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
 
 	std::cout << "Start simulating from t = " << t << " ms." << std::endl;
-	std::cout << "Hyperbolic time step size is " << hyper_dt << "." << std::endl;
-	std::cout << "Parabolic time step size is " << para_dt << "." << std::endl;
 	std::cout << "The simulation will end at " << END_TIME << " ms." << std::endl;
 	std::cout << "Block scale = " << blockScale << std::endl;
 	std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
@@ -854,9 +878,10 @@ int main(int argc, char** argv)
 
 	while (!integrateInTime(blockScale, domainMin, domainMax))
 	{
-		hyper_dt += dt_increse;
-		dt_per_sigma = hyper_dt / sigma;
-		IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / hyper_dt) + 1;
+		std::cout << "Time step was: " << dt << std::endl;
+		dt += dt_increse;
+		dt_per_sigma = dt / sigma;
+		IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 		t = 0;
 	}
