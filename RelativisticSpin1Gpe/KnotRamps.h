@@ -3,8 +3,6 @@
 #include <array>
 #include <iostream>
 
-#define DISABLE 1
-
 #define Z_QUANTIZED 0
 #define Y_QUANTIZED 1
 #define X_QUANTIZED 2
@@ -12,6 +10,8 @@
 #define BASIS Z_QUANTIZED
 
 #include "utils.h"
+
+#define DISABLE 1
 
 struct Signal
 {

@@ -5,6 +5,8 @@
 
 #include "utils.h"
 
+#define DISABLE 1
+
 struct Signal
 {
 	double Bq = 0;
@@ -43,6 +45,9 @@ std::array<RampType, 1> BbTypes = { RampType::CONSTANT };
 
 Signal getSignal(double t)
 {
+#if DISABLE
+	return {};
+#else
 	Signal signal;
 
 	double tOrig = t;
@@ -108,4 +113,5 @@ Signal getSignal(double t)
 	}
 
 	return signal;
+#endif
 }

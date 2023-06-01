@@ -87,7 +87,7 @@ constexpr double NOISE_AMPLITUDE = 0.1;
 double dt = 3.9e-4;
 double dt_increse = 1e-5;
 
-const float IMAGE_SAVE_INTERVAL = 0.05; // ms
+const double IMAGE_SAVE_INTERVAL = 0.05; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
@@ -210,7 +210,7 @@ SpinMagDens integrateSpinAndDensity(dim3 dimGrid, dim3 dimBlock, double* spinNor
 	return { hSpinNorm, hMagnetization, hDensity };
 }
 
-float getMaxHamilton(dim3 dimGrid, dim3 dimBlock, double* maxHamlPtr, PitchedPtr psi, MagFields Bs, uint3 dimensions, size_t bodies, double block_scale, double3 p0)
+double getMaxHamilton(dim3 dimGrid, dim3 dimBlock, double* maxHamlPtr, PitchedPtr psi, MagFields Bs, uint3 dimensions, size_t bodies, double block_scale, double3 p0)
 {
 	maxHamilton << <dimGrid, dimBlock >> > (maxHamlPtr, psi, Bs, dimensions, block_scale, p0, c0, c2);
 	int prevStride = bodies;
@@ -666,6 +666,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		//std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 		prevTime = std::chrono::high_resolution_clock::now();
 
+		// For checking the numerical stability
 #if !COMPUTE_ERROR
 #if HYPERBOLIC
 		double dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
