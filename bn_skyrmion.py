@@ -3,7 +3,7 @@ from mayavi.mlab import *
 from tvtk.api import tvtk
 from scipy.special import sph_harm
 
-filename = '0.502515.vtk'
+filename = '0.250141.vtk'
 #filename = '0.241425.vtk'
 
 use_spherical_harmonics = True
@@ -364,8 +364,8 @@ def draw_preimage(vec):
                     else:
                         draw_majorana(psi, location, False)
 
-#draw_on_axis()
-draw_preimage(np.array([0, 0, 1]))
+draw_on_axis()
+#draw_preimage(np.array([0, 0, 1]))
 
 if not use_spherical_harmonics:
     mesh = triangular_mesh(

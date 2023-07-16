@@ -13,7 +13,7 @@ enum class Phase {
 	BN_HORI,
 	CYCLIC
 };
-constexpr Phase initPhase = Phase::CYCLIC;
+constexpr Phase initPhase = Phase::UN;
 
 std::string phaseToString(Phase phase)
 {
@@ -55,6 +55,7 @@ std::string getProjectionString()
 #include <sstream>
 #include <chrono>
 #include <random>
+#include <iomanip>
 
 #include "mesh.h"
 
@@ -62,10 +63,11 @@ std::string getProjectionString()
 
 #define HYPERBOLIC 1
 #define PARABOLIC 0
+#define ANALYTIC 1
 #define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
 
 #define SAVE_STATES 0
-#define SAVE_PICTURE 0
+#define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
 #define THREAD_BLOCK_Y 2
@@ -75,7 +77,7 @@ constexpr double DOMAIN_SIZE_X = 20.0;
 constexpr double DOMAIN_SIZE_Y = 20.0;
 constexpr double DOMAIN_SIZE_Z = 20.0;
 
-constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 8 * 6.0;
+constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 9 * 6.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
 
@@ -117,7 +119,7 @@ constexpr double SQRT_2 = 1.41421356237309;
 
 constexpr double NOISE_AMPLITUDE = 0;
 
-double dt = 47e-4;
+double dt = 5e-5;
 double dt_increse = 1e-5;
 
 const double IMAGE_SAVE_INTERVAL = 0.05; // ms
@@ -208,7 +210,56 @@ __global__ void weightedDiff(double* result, PitchedPtr pLeft, PitchedPtr pRight
 	double diffSqr = (conj(diff.s2) * diff.s2).x + (conj(diff.s1) * diff.s1).x + (conj(diff.s0) * diff.s0).x + (conj(diff.s_1) * diff.s_1).x + (conj(diff.s_2) * diff.s_2).x;
 
 	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
-	result[idx] = leftSqr * diffSqr;
+	//result[idx] = leftSqr * diffSqr;
+	result[idx] = diffSqr;
+}
+
+__global__ void analyticStep(PitchedPtr nextStep, PitchedPtr prevStep, uint3 dimensions, const double2 phaseShift)
+{
+	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	const size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	const size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+	const size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid > dimensions.x || yid > dimensions.y || zid > dimensions.z)
+	{
+		return;
+	}
+
+	// Calculate the pointers for this block
+	char* prevPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
+	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + dataXid;
+
+	const Complex5Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
+	nextPsi->values[dualNodeId].s2 = prev.s2 * phaseShift;
+	nextPsi->values[dualNodeId].s1 = prev.s1 * phaseShift;
+	nextPsi->values[dualNodeId].s0 = prev.s0 * phaseShift;
+	nextPsi->values[dualNodeId].s_1 = prev.s_1 * phaseShift;
+	nextPsi->values[dualNodeId].s_2 = prev.s_2 * phaseShift;
+};
+
+__global__ void innerProductReal(double* result, PitchedPtr pLeft, PitchedPtr pRight, uint3 dimensions)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	Complex5Vec left = ((BlockPsis*)(pLeft.ptr + pLeft.slicePitch * zid + pLeft.pitch * yid) + dataXid)->values[dualNodeId];
+	Complex5Vec right = ((BlockPsis*)(pRight.ptr + pRight.slicePitch * zid + pRight.pitch * yid) + dataXid)->values[dualNodeId];
+
+	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
+	result[idx] = (conj(left.s2) * right.s2).x + (conj(left.s1) * right.s1).x + (conj(left.s0) * right.s0).x + (conj(left.s_1) * right.s_1).x + (conj(left.s_2) * right.s_2).x;
 }
 
 __global__ void integrate(double* dataVec, size_t stride, bool addLast, double dv)
@@ -506,6 +557,110 @@ __global__ void itp_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3
 	next->values[dualEdgeId].s0 = prev->values[dualEdgeId].s0 - q.s0;
 	next->values[dualEdgeId].s_1 = prev->values[dualEdgeId].s_1 - q.s_1;
 	next->values[dualEdgeId].s_2 = prev->values[dualEdgeId].s_2 - q.s_2;
+}
+
+__global__ void get_Hpsi(PitchedPtr HPsiPtr, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4)
+{
+	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	const size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	const size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+	const size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	// Calculate the pointers for this block
+	char* prevPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
+	char* qPtr = qs.ptr + qs.slicePitch * zid + qs.pitch * yid + sizeof(BlockEdges) * dataXid;
+
+	// For computing the energy/chemical potential
+	BlockPsis* HPsi = (BlockPsis*)(HPsiPtr.ptr + HPsiPtr.slicePitch * zid + HPsiPtr.pitch * yid) + dataXid;
+
+	// Update psi
+	const Complex5Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
+
+	Complex5Vec H;
+	H.s2 = { 0, 0 };
+	H.s1 = { 0, 0 };
+	H.s0 = { 0, 0 };
+	H.s_1 = { 0, 0 };
+	H.s_2 = { 0, 0 };
+
+	// Add the the second exterior derivative (d1 of d0) to the Hamiltonian
+	uint startEdgeId = dualNodeId * FACE_COUNT;
+#pragma unroll
+	for (int edgeIdOffset = 0; edgeIdOffset < FACE_COUNT; ++edgeIdOffset)
+	{
+		int edgeId = startEdgeId + edgeIdOffset;
+		int2 d1 = d1Ptr[edgeId];
+		Complex5Vec d0psi = ((BlockEdges*)(qPtr + d1.x))->values[d1.y];
+		const double hodge = hodges[edgeId];
+
+		H.s2 += hodge * d0psi.s2;
+		H.s1 += hodge * d0psi.s1;
+		H.s0 += hodge * d0psi.s0;
+		H.s_1 += hodge * d0psi.s_1;
+		H.s_2 += hodge * d0psi.s_2;
+	}
+
+	const double normSq_s2 = prev.s2.x * prev.s2.x + prev.s2.y * prev.s2.y;
+	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
+	const double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
+	const double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
+	const double normSq_s_2 = prev.s_2.x * prev.s_2.x + prev.s_2.y * prev.s_2.y;
+	const double normSq = normSq_s2 + normSq_s1 + normSq_s0 + normSq_s_1 + normSq_s_2;
+
+	const double3 localPos = d_localPos[dualNodeId];
+	const double3 globalPos = { p0.x + block_scale * (dataXid * BLOCK_WIDTH_X + localPos.x),
+		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
+		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
+
+	double2 ab = { trap(globalPos) + c0 * normSq, 0 };
+
+	double3 B = { 0 };
+
+	const double Fz = c2 * (2.0 * normSq_s2 + normSq_s1 - normSq_s_1 - 2.0 * normSq_s_2);
+
+	Complex5Vec diagonalTerm;
+	diagonalTerm.s2 = double2{ 2.0 * Fz + 0.4 * c4 * normSq_s_2 - 2.0 * B.z, 0 } + ab;
+	diagonalTerm.s1 = double2{ Fz + 0.4 * c4 * normSq_s_1 - B.z, 0 } + ab;
+	diagonalTerm.s0 = double2{ 0.2 * c4 * normSq_s0             , 0 } + ab;
+	diagonalTerm.s_1 = double2{ -Fz + 0.4 * c4 * normSq_s1 + B.z, 0 } + ab;
+	diagonalTerm.s_2 = double2{ -2.0 * Fz + 0.4 * c4 * normSq_s2 + 2.0 * B.z, 0 } + ab;
+
+	H.s2 += diagonalTerm.s2 * prev.s2;    // psi1
+	H.s1 += diagonalTerm.s1 * prev.s1;    // psi2
+	H.s0 += diagonalTerm.s0 * prev.s0;    // psi3
+	H.s_1 += diagonalTerm.s_1 * prev.s_1; // psi4
+	H.s_2 += diagonalTerm.s_2 * prev.s_2; // psi5
+
+	double2 denominator = c2 * (2.0 * (prev.s2 * conj(prev.s1) +
+		prev.s_1 * conj(prev.s_2)) +
+		sqrt(6.0) * (prev.s1 * conj(prev.s0) +
+			prev.s0 * conj(prev.s_1))) - double2{ B.x, -B.y };
+
+	double2 c12 = denominator - 0.4 * c4 * prev.s_1 * conj(prev.s_2);
+	double2 c45 = denominator - 0.4 * c4 * prev.s2 * conj(prev.s1);
+	double2 c13 = 0.2 * c4 * prev.s0 * conj(prev.s_2);
+	double2 c35 = 0.2 * c4 * prev.s2 * conj(prev.s0);
+	double2 c23 = sqrt(1.5) * denominator - 0.2 * c4 * prev.s0 * conj(prev.s_1);
+	double2 c34 = sqrt(1.5) * denominator - 0.2 * c4 * prev.s1 * conj(prev.s0);
+
+	H.s2 += (c12 * prev.s1 + c13 * prev.s0);
+	H.s1 += (conj(c12) * prev.s2 + c23 * prev.s0);
+	H.s0 += (conj(c13) * prev.s2 + c35 * prev.s_2 + c34 * prev.s_1 + conj(c23) * prev.s1);
+	H.s_1 += (conj(c34) * prev.s0 + c45 * prev.s_2);
+	H.s_2 += (conj(c35) * prev.s0 + conj(c45) * prev.s_1);
+
+	HPsi->values[dualNodeId].s2 = H.s2;
+	HPsi->values[dualNodeId].s1 = H.s1;
+	HPsi->values[dualNodeId].s0 = H.s0;
+	HPsi->values[dualNodeId].s_1 = H.s_1;
+	HPsi->values[dualNodeId].s_2 = H.s_2;
 }
 
 __global__ void itp_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4, const double dt)
@@ -1113,11 +1268,25 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaPitchedPtr d_cudaOddPsiPara = allocDevice3D(psiExtent);
 	cudaPitchedPtr d_cudaOddQPara = allocDevice3D(edgeExtent);
 #endif
+#if ANALYTIC
+	cudaPitchedPtr d_cudaGroundPsi = allocDevice3D(psiExtent);
+	cudaPitchedPtr d_cudaAnalyticPsi = allocDevice3D(psiExtent);
+#endif
 
-	//double* d_energy = allocDevice<double>(bodies);
-	double* d_density = allocDevice<double>(bodies);
-#if COMPUTE_ERROR
+#if COMPUTE_ERROR || ANALYTIC
+	//double2* d_error = allocDevice<double2>(bodies);
 	double* d_error = allocDevice<double>(bodies);
+#endif
+
+#if COMPUTE_GROUND_STATE
+	// For computing the energy/chemical potential
+	cudaPitchedPtr d_cudaHPsi = allocDevice3D(edgeExtent);
+#endif
+
+	//double* d_spinNorm = allocDevice<double>(bodies);
+	double* d_density = allocDevice<double>(bodies);
+#if COMPUTE_GROUND_STATE
+	double* d_energy = allocDevice<double>(bodies);
 #endif
 
 	// Calculate pointers to the start of the real computational domain (jumping over the zero buffer at the edges)
@@ -1136,6 +1305,15 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	PitchedPtr d_evenQPara = { (char*)d_cudaEvenQPara.ptr + edgeOffsetPara, d_cudaEvenQPara.pitch, d_cudaEvenQPara.pitch * dysize };
 	PitchedPtr d_oddPsiPara = { (char*)d_cudaOddPsiPara.ptr + offsetPara, d_cudaOddPsiPara.pitch, d_cudaOddPsiPara.pitch * dysize };
 	PitchedPtr d_oddQPara = { (char*)d_cudaOddQPara.ptr + edgeOffsetPara, d_cudaOddQPara.pitch, d_cudaOddQPara.pitch * dysize };
+#endif
+#if ANALYTIC
+	size_t offsetAnal = d_cudaAnalyticPsi.pitch * dysize + d_cudaAnalyticPsi.pitch + sizeof(BlockPsis);
+	PitchedPtr d_groundPsi = { (char*)d_cudaGroundPsi.ptr + offsetAnal, d_cudaGroundPsi.pitch, d_cudaGroundPsi.pitch * dysize };
+	PitchedPtr d_analyticPsi = { (char*)d_cudaAnalyticPsi.ptr + offsetAnal, d_cudaAnalyticPsi.pitch, d_cudaAnalyticPsi.pitch * dysize };
+#endif
+
+#if COMPUTE_GROUND_STATE
+	PitchedPtr d_HPsi = { (char*)d_cudaHPsi.ptr + offsetHyper, d_cudaHPsi.pitch, d_cudaHPsi.pitch * dysize };
 #endif
 
 	// find terms for laplacian
@@ -1170,6 +1348,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	BlockPsis* h_oddPsiPara = allocHost<BlockPsis>(hostSize);
 	BlockEdges* h_evenQPara = allocHost<BlockEdges>(hostSize);
 	BlockEdges* h_oddQPara = allocHost<BlockEdges>(hostSize);
+#endif
+#if ANALYTIC
+	BlockPsis* h_analyticPsi = allocHost<BlockPsis>(hostSize);
 #endif
 	double* h_density = allocHost<double>(bodies);
 
@@ -1293,7 +1474,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const double volume = block_scale * block_scale * block_scale * VOLUME;
 
 #if COMPUTE_GROUND_STATE
-	if (continueFromEarlier)
+	if (false) //continueFromEarlier)
 	{
 		const double PHASE = 0;// PI / 2;
 
@@ -1369,19 +1550,35 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	while (true)
 	{
-		if ((iter % 1000) == 0) std::cout << "Iteration " << iter << std::endl;
+		constexpr int ITERS_PER_IMAGE = 1000;
+		if ((iter % 100) == 0) std::cout << "Iteration " << iter << std::endl;
 #if SAVE_PICTURE
-		if ((iter % 1000) == 0)
+		if ((iter % ITERS_PER_IMAGE) == 0)
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParamsHyper));
 			signal = getSignal(0);
 			Bs.Bq = BqScale * signal.Bq;
 			Bs.Bb = BzScale * signal.Bb;
-			drawIandR(folder, h_evenPsiHyper, dxsize, dysize, dzsize, iter, Bs, d_p0, block_scale);
-			std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume) << std::endl;
+			//drawIandR(folder, h_evenPsiHyper, dxsize, dysize, dzsize, iter, Bs, d_p0, block_scale);
+			//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume) << std::endl;
 
-			double3 com = centerOfMass(h_evenPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
-			std::cout << "Center of mass: " << com.x << ", " << com.y << ", " << com.z << std::endl;
+			//double3 com = centerOfMass(h_evenPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
+			//std::cout << "Center of mass: " << com.x << ", " << com.y << ", " << com.z << std::endl;
+
+			// Compute energy/chemical potential
+			get_Hpsi << <dimGrid, psiDimBlock >> > (d_HPsi, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, dimensions, block_scale, d_p0, c0, c2, c4);
+			innerProductReal << <dimGrid, psiDimBlock >> > (d_energy, d_evenPsiHyper, d_HPsi, dimensions);
+			int prevStride = bodies;
+			while (prevStride > 1)
+			{
+				int newStride = prevStride / 2;
+				integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_energy, newStride, ((newStride * 2) != prevStride), volume);
+				prevStride = newStride;
+			}
+			double hEnergy = 0;
+			checkCudaErrors(cudaMemcpy(&hEnergy, d_energy, sizeof(double), cudaMemcpyDeviceToHost));
+			std::setprecision(15);
+			std::cout << "Energy: " << hEnergy << std::endl;
 		}
 #endif
 		if (iter == 100000)
@@ -1451,7 +1648,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	system(createVtksDirCommand.c_str());
 	system(createSpinorVtksDirCommand.c_str());
 	system(createDatsDirCommand.c_str());
-
+#if ANALYTIC
+	double phaseTime = 0;
+#endif
 	while (t < END_TIME)
 	{
 		// Copy back from device memory to host memory
@@ -1500,6 +1699,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		for (uint step = 0; step < IMAGE_SAVE_FREQUENCY; step++)
 		{
 			// update odd values
+#if ANALYTIC
+			phaseTime += dt;
+#endif
 			t += dt / omega_r * 1e3; // [ms]
 			signal = getSignal(t);
 			Bs.Bq = BqScale * signal.Bq;
@@ -1517,6 +1719,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 
 			// update even values
+#if ANALYTIC
+			phaseTime += dt;
+#endif
 			t += dt / omega_r * 1e3; // [ms]
 			signal = getSignal(t);
 			Bs.Bq = BqScale * signal.Bq;
@@ -1546,6 +1751,30 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		//double2 hError = { 0 };
 		double hError = { 0 };
 		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(double2), cudaMemcpyDeviceToHost));
+		std::cout << hError << ", ";
+#endif
+#if ANALYTIC
+		// Compute error
+		constexpr double E = 126.621; // Computed with ITP
+		double2 phaseShift = double2{ cos(-phaseTime * E), sin(-phaseTime * E) };
+		analyticStep << <dimGrid, psiDimBlock >> > (d_analyticPsi, d_groundPsi, dimensions, phaseShift);
+		//checkCudaErrors(cudaMemcpy3D(&analyticPsiBackParams));
+		//drawDensityRI("analytic_", h_analyticPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, resultsDir);
+
+#if HYPERBOLIC
+		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_analyticPsi, d_oddPsiHyper, dimensions);
+#elif PARABOLIC
+		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_analyticPsi, d_oddPsiPara, dimensions);
+#endif
+		int prevStride = bodies;
+		while (prevStride > 1)
+		{
+			int newStride = prevStride / 2;
+			integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_error, newStride, ((newStride * 2) != prevStride), volume);
+			prevStride = newStride;
+		}
+		double hError = { 0 };
+		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(double), cudaMemcpyDeviceToHost));
 		std::cout << hError << ", ";
 #endif
 
@@ -1636,16 +1865,18 @@ int main(int argc, char** argv)
 	// integrate in time using DEC
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
+	
+	integrateInTime(blockScale, domainMin, domainMax);
 
-	while (!integrateInTime(blockScale, domainMin, domainMax))
-	{
-		std::cout << "Time step was: " << dt << std::endl;
-		dt += dt_increse;
-		dt_per_sigma = dt / sigma;
-		IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
-
-		t = 0;
-	}
+	//while (!integrateInTime(blockScale, domainMin, domainMax))
+	//{
+	//	std::cout << "Time step was: " << dt << std::endl;
+	//	dt += dt_increse;
+	//	dt_per_sigma = dt / sigma;
+	//	IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
+	//
+	//	t = 0;
+	//}
 
 	return 0;
 }

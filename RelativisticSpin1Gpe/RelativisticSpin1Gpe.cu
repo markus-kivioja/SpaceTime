@@ -24,6 +24,7 @@ std::string getProjectionString()
 #include <sstream>
 #include <chrono>
 #include <random>
+#include <iomanip>
 
 #include "mesh.h"
 
@@ -31,10 +32,11 @@ std::string getProjectionString()
 
 #define HYPERBOLIC 0
 #define PARABOLIC 1
+#define ANALYTIC 1
 #define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
 
 #define SAVE_STATES 0
-#define SAVE_PICTURE 1
+#define SAVE_PICTURE 0
 
 #define THREAD_BLOCK_X 16
 #define THREAD_BLOCK_Y 2
@@ -82,18 +84,16 @@ const double BzQuadScale = sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (tra
 constexpr double SQRT_2 = 1.41421356237309;
 constexpr double INV_SQRT_2 = 0.70710678118655;
 
-constexpr double NOISE_AMPLITUDE = 0.1;
-
-double dt = 3.9e-4;
+double dt = 1e-4; //3.9e-4;
 double dt_increse = 1e-5;
 
-const double IMAGE_SAVE_INTERVAL = 0.05; // ms
+const double IMAGE_SAVE_INTERVAL = 0.01; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 0.55; // End time in ms
+double END_TIME = 0.51; // End time in ms
 
 #if COMPUTE_GROUND_STATE
 double sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
@@ -330,8 +330,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaPitchedPtr d_cudaOddPsiPara = allocDevice3D(psiExtent);
 	cudaPitchedPtr d_cudaOddQPara = allocDevice3D(edgeExtent);
 #endif
+#if ANALYTIC
+	cudaPitchedPtr d_cudaGroundPsi = allocDevice3D(psiExtent);
+	cudaPitchedPtr d_cudaAnalyticPsi = allocDevice3D(psiExtent);
+#endif
 
-#if COMPUTE_ERROR
+#if COMPUTE_ERROR || ANALYTIC
 	//double2* d_error = allocDevice<double2>(bodies);
 	double* d_error = allocDevice<double>(bodies);
 #endif
@@ -364,9 +368,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	PitchedPtr d_oddPsiPara = { (char*)d_cudaOddPsiPara.ptr + offsetPara, d_cudaOddPsiPara.pitch, d_cudaOddPsiPara.pitch * dysize };
 	PitchedPtr d_oddQPara = { (char*)d_cudaOddQPara.ptr + edgeOffsetPara, d_cudaOddQPara.pitch, d_cudaOddQPara.pitch * dysize };
 #endif
+#if ANALYTIC
+	size_t offsetAnal = d_cudaAnalyticPsi.pitch * dysize + d_cudaAnalyticPsi.pitch + sizeof(BlockPsis);
+	PitchedPtr d_groundPsi = { (char*)d_cudaGroundPsi.ptr + offsetAnal, d_cudaGroundPsi.pitch, d_cudaGroundPsi.pitch * dysize };
+	PitchedPtr d_analyticPsi = { (char*)d_cudaAnalyticPsi.ptr + offsetAnal, d_cudaAnalyticPsi.pitch, d_cudaAnalyticPsi.pitch * dysize };
+#endif
 
 #if COMPUTE_GROUND_STATE
-	PitchedPtr d_HPsi = { (char*)d_cudaHPsi.ptr + offset, d_cudaHPsi.pitch, d_cudaHPsi.pitch * dysize };
+	PitchedPtr d_HPsi = { (char*)d_cudaHPsi.ptr + offsetHyper, d_cudaHPsi.pitch, d_cudaHPsi.pitch * dysize };
 #endif
 
 	// find terms for laplacian
@@ -401,6 +410,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	BlockPsis* h_oddPsiPara = allocHost<BlockPsis>(hostSize);
 	BlockEdges* h_evenQPara = allocHost<BlockEdges>(hostSize);
 	BlockEdges* h_oddQPara = allocHost<BlockEdges>(hostSize);
+#endif
+#if ANALYTIC
+	BlockPsis* h_analyticPsi = allocHost<BlockPsis>(hostSize);
 #endif
 	double* h_density = allocHost<double>(bodies);
 
@@ -483,6 +495,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaPitchedPtr h_cudaEvenQPara = copyHostToDevice3D(h_evenQPara, d_cudaEvenQPara, edgeExtent);
 	cudaPitchedPtr h_cudaOddQPara = copyHostToDevice3D(h_oddQPara, d_cudaOddQPara, edgeExtent);
 #endif
+
 	checkCudaErrors(cudaMemcpy(d_d0, &d0[0], d0.size() * sizeof(int3), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_d1, &d1[0], d1.size() * sizeof(int2), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_hodges, &hodges[0], hodges.size() * sizeof(double), cudaMemcpyHostToDevice));
@@ -493,8 +506,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	d1.clear();
 	hodges.clear();
 #if !(SAVE_PICTURE)
+#if HYPERBOLIC
 	cudaFreeHost(h_evenPsiHyper);
 	cudaFreeHost(h_oddPsiHyper);
+#endif
+#if PARABOLIC
+	cudaFreeHost(h_evenPsiPara);
+	cudaFreeHost(h_oddPsiPara);
+#endif
 #endif
 #if HYPERBOLIC
 	cudaMemcpy3DParms evenPsiBackParamsHyper = createDeviceToHostParams(d_cudaEvenPsiHyper, h_cudaEvenPsiHyper, psiExtent);
@@ -539,6 +558,19 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		}
 		std::cout << "Total density: " << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume) << std::endl;
 	}
+#endif
+
+#if ANALYTIC
+	cudaMemcpy3DParms groundPsiParams = { 0 };
+#if HYPERBOLIC
+	groundPsiParams.srcPtr = d_cudaOddPsiHyper;
+#elif PARABOLIC
+	groundPsiParams.srcPtr = d_cudaOddPsiPara;
+#endif
+	groundPsiParams.dstPtr = d_cudaGroundPsi;
+	groundPsiParams.extent = psiExtent;
+	groundPsiParams.kind = cudaMemcpyDeviceToDevice;
+	checkCudaErrors(cudaMemcpy3D(&groundPsiParams));
 #endif
 
 #if !COMPUTE_GROUND_STATE
@@ -604,6 +636,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			}
 			double hEnergy = 0;
 			checkCudaErrors(cudaMemcpy(&hEnergy, d_energy, sizeof(double), cudaMemcpyDeviceToHost));
+			std::setprecision(15);
 			std::cout << "Energy: " << hEnergy << std::endl;
 		}
 #endif
@@ -644,11 +677,16 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #else
 	int lastSaveTime = 0;
 
-	std::string dens_folder = "dens_images_" + EXTRA_INFORMATION;
+	std::string dens_folder = "dens_images_" + EXTRA_INFORMATION + "_" + getBasisString();
+	std::string vtks_folder = "vtks_" + EXTRA_INFORMATION;
 
 	std::string createResultsDirCommand = "mkdir " + dens_folder;
+	std::string createVtksDirCommand = "mkdir " + vtks_folder;
 	system(createResultsDirCommand.c_str());
-
+	system(createVtksDirCommand.c_str());
+#if ANALYTIC
+	double phaseTime = 0;
+#endif
 	while (t < END_TIME)
 	{
 #if SAVE_PICTURE
@@ -696,6 +734,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		for (uint step = 0; step < IMAGE_SAVE_FREQUENCY; step++)
 		{
 			// update odd values (imaginary terms)
+#if ANALYTIC
+			phaseTime += dt;
+#endif
 			t += dt / omega_r * 1e3; // [ms]
 			signal = getSignal(t);
 			Bs.Bq = BqScale * signal.Bq;
@@ -712,6 +753,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions);
 #endif
 			// update even values (real terms)
+#if ANALYTIC
+			phaseTime += dt;
+#endif
 			t += dt / omega_r * 1e3; // [ms]
 			signal = getSignal(t);
 			Bs.Bq = BqScale * signal.Bq;
@@ -746,6 +790,31 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		std::cout << hError << ", ";
 		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - hError.x << ", ";
 #endif
+#if ANALYTIC
+		// Compute error
+		constexpr double E = 127.346; // Computed with ITP
+		//constexpr double E = 127.295; // With the original parabolic ITP
+		double2 phaseShift = double2{ cos(-phaseTime * E), sin(-phaseTime * E) };
+		analyticStep << <dimGrid, psiDimBlock >> > (d_analyticPsi, d_groundPsi, dimensions, phaseShift);
+		//checkCudaErrors(cudaMemcpy3D(&analyticPsiBackParams));
+		//drawDensityRI("analytic_", h_analyticPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, resultsDir);
+
+#if HYPERBOLIC
+		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_analyticPsi, d_oddPsiHyper, dimensions);
+#elif PARABOLIC
+		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_analyticPsi, d_oddPsiPara, dimensions);
+#endif
+		int prevStride = bodies;
+		while (prevStride > 1)
+		{
+			int newStride = prevStride / 2;
+			integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_error, newStride, ((newStride * 2) != prevStride), volume);
+			prevStride = newStride;
+		}
+		double hError = { 0 };
+		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(double), cudaMemcpyDeviceToHost));
+		std::cout << hError << ", ";
+#endif
 
 #if COMPUTE_GROUND_STATE
 		// Copy back from device memory to host memory
@@ -760,17 +829,17 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		// Copy back from device memory to host memory
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
 
-
+		savePreImageSpinor(vtks_folder, h_oddPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t);
 
 		if (((int(t) % STATE_SAVE_INTERVAL) == 0) && (int(t) != lastSaveTime))
 		{
-			std::ofstream oddFs(SAVE_FILE_PREFIX + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
+			std::ofstream oddFs(toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
 			if (oddFs.fail() != 0) return 1;
 			oddFs.write((char*)&h_oddPsiHyper[0], hostSize * sizeof(BlockPsis));
 			oddFs.close();
 
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParamsHyper));
-			std::ofstream evenFs(SAVE_FILE_PREFIX + "even_" + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
+			std::ofstream evenFs("even_" + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
 			if (evenFs.fail() != 0) return 1;
 			evenFs.write((char*)&h_evenPsiHyper[0], hostSize * sizeof(BlockPsis));
 			evenFs.close();
@@ -804,7 +873,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	checkCudaErrors(cudaFreeHost(h_evenQPara));
 	checkCudaErrors(cudaFreeHost(h_oddQPara));
 #endif
-#if COMPUTE_ERROR
+#if COMPUTE_ERROR || ANALYTIC
 	checkCudaErrors(cudaFree(d_error));
 #endif
 #if COMPUTE_GROUND_STATE
@@ -877,15 +946,16 @@ int main(int argc, char** argv)
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
 
-	while (!integrateInTime(blockScale, domainMin, domainMax))
-	{
-		std::cout << "Time step was: " << dt << std::endl;
-		dt += dt_increse;
-		dt_per_sigma = dt / sigma;
-		IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
-
-		t = 0;
-	}
+	integrateInTime(blockScale, domainMin, domainMax);
+	//while (!integrateInTime(blockScale, domainMin, domainMax))
+	//{
+	//	std::cout << "Time step was: " << dt << std::endl;
+	//	dt += dt_increse;
+	//	dt_per_sigma = dt / sigma;
+	//	IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
+	//
+	//	t = 0;
+	//}
 
 	return 0;
 }

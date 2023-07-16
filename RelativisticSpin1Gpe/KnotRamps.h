@@ -49,15 +49,14 @@ std::array<RampType, 1> BbTypes = {  RampType::CONSTANT };
 //std::array<double, 1> BbDurations = { 100 };
 //std::array<RampType, 1> BbTypes = { RampType::CONSTANT };
 
-void printBasis()
+std::string getBasisString()
 {
-	std::cout << "Using knot/skyrmion creation process" << std::endl;
 #if BASIS == Z_QUANTIZED
-	std::cout << "Using z-quantized basis!" << std::endl;
+	return "z";
 #elif BASIS == Y_QUANTIZED
-	std::cout << "Using y-quantized basis!" << std::endl;
+	return "y";
 #elif BASIS == X_QUANTIZED
-	std::cout << "Using x-quantized basis!" << std::endl;
+	return "x";
 #endif
 }
 

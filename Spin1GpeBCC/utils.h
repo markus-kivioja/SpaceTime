@@ -107,6 +107,47 @@ std::string toString(const double value)
 	return out.str();
 };
 
+void integrateColumns(BlockPsis* psi, size_t dxsize, size_t dysize, size_t dzsize, double dv)
+{
+	std::vector<std::vector<double>> colNs;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		colNs.push_back(std::vector<double>());
+		for (uint x = 0; x < dxsize; x++)
+		{
+			double colN = 0;
+			for (uint y = 0; y < dysize; y++)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					double2 s1 = psi[idx].values[dualNode].s1;
+					double2 s0 = psi[idx].values[dualNode].s0;
+					double2 s_1 = psi[idx].values[dualNode].s_1;
+
+					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+
+					colN += (dens_s1 + dens_s0 + dens_s_1) * dv;
+				}
+			}
+			colNs[z].push_back(colN);
+		}
+	}
+
+	double maxN = 0;
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; x++)
+		{
+			maxN = max(maxN, colNs[z][x]);
+		}
+	}
+	std::cout << maxN << std::endl; // 0.000883863
+}
+
 void drawDensity(const std::string& name, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t, const std::string& folder)
 {
 	const int SIZE = 2;
@@ -1035,6 +1076,243 @@ void saveVolume(const std::string& namePrefix, BlockPsis* pPsi, double3* pLocalA
 	file.close();
 }
 
+void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, double block_scale, double3 p0, double t)
+{
+	std::ofstream file;
+	file.open(folder + "/" + std::to_string(t) + ".vtk", std::ios::out | std::ios::binary);
+
+	file << "# vtk DataFile Version 3.0" << std::endl
+		<< "Comment if needed" << std::endl;
+
+	file << "BINARY" << std::endl;
+
+	uint64_t pointCount = dxsize * dysize * dzsize * bsize;
+
+	file << "DATASET POLYDATA" << std::endl << "POINTS " << pointCount << " float" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					double3 localPos = getLocalPos(dualNode);
+					double3 doubleGlobalPos = { p0.x + block_scale * (x * BLOCK_WIDTH_X + localPos.x),
+						p0.y + block_scale * (y * BLOCK_WIDTH_Y + localPos.y),
+						p0.z + block_scale * (z * BLOCK_WIDTH_Z + localPos.z) };
+					float3 globalPos = float3{ (float)doubleGlobalPos.x, (float)doubleGlobalPos.y, (float)doubleGlobalPos.z };
+
+					swapEnd(globalPos.x);
+					swapEnd(globalPos.y);
+					swapEnd(globalPos.z);
+
+					file.write((char*)&globalPos.x, sizeof(float));
+					file.write((char*)&globalPos.y, sizeof(float));
+					file.write((char*)&globalPos.z, sizeof(float));
+				}
+			}
+		}
+	}
+
+	file << std::endl << "POINT_DATA " << pointCount << std::endl;
+
+	file << std::endl << "SCALARS r_m=1 float 1" << std::endl;
+	file << "LOOKUP_TABLE default" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					double2 s1 = pPsi[idx].values[dualNode].s1;
+					double2 s0 = pPsi[idx].values[dualNode].s0;
+					double2 s_1 = pPsi[idx].values[dualNode].s_1;
+
+					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					double dens = dens_s1 + dens_s0 + dens_s_1;
+
+					float s1_r = 0;
+					if (DENSITY_THRESHOLD < dens)
+						s1_r = (float)(s1.x / sqrt(dens));
+					swapEnd(s1_r);
+					file.write((char*)&s1_r, sizeof(float));
+				}
+			}
+		}
+	}
+	file << std::endl << "SCALARS i_m=1 float 1" << std::endl;
+	file << "LOOKUP_TABLE default" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					double2 s1 = pPsi[idx].values[dualNode].s1;
+					double2 s0 = pPsi[idx].values[dualNode].s0;
+					double2 s_1 = pPsi[idx].values[dualNode].s_1;
+
+					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					double dens = dens_s1 + dens_s0 + dens_s_1;
+
+					float s1_i = 0;
+					if (DENSITY_THRESHOLD < dens)
+						s1_i = (float)(s1.y / sqrt(dens));
+					swapEnd(s1_i);
+					file.write((char*)&s1_i, sizeof(float));
+				}
+			}
+		}
+	}
+
+	file << std::endl << "SCALARS r_m=0 float 1" << std::endl;
+	file << "LOOKUP_TABLE default" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					double2 s1 = pPsi[idx].values[dualNode].s1;
+					double2 s0 = pPsi[idx].values[dualNode].s0;
+					double2 s_1 = pPsi[idx].values[dualNode].s_1;
+
+					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					double dens = dens_s1 + dens_s0 + dens_s_1;
+
+					float s0_r = 0;
+					if (DENSITY_THRESHOLD < dens)
+						s0_r = (float)(s0.x / sqrt(dens));
+					swapEnd(s0_r);
+					file.write((char*)&s0_r, sizeof(float));
+				}
+			}
+		}
+	}
+	file << std::endl << "SCALARS i_m=0 float 1" << std::endl;
+	file << "LOOKUP_TABLE default" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					double2 s1 = pPsi[idx].values[dualNode].s1;
+					double2 s0 = pPsi[idx].values[dualNode].s0;
+					double2 s_1 = pPsi[idx].values[dualNode].s_1;
+
+					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					double dens = dens_s1 + dens_s0 + dens_s_1;
+
+					float s0_i = 0;
+					if (DENSITY_THRESHOLD < dens)
+						s0_i = (float)(s0.y / sqrt(dens));
+					swapEnd(s0_i);
+					file.write((char*)&s0_i, sizeof(float));
+				}
+			}
+		}
+	}
+
+	file << std::endl << "SCALARS r_m=-1 float 1" << std::endl;
+	file << "LOOKUP_TABLE default" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					double2 s1 = pPsi[idx].values[dualNode].s1;
+					double2 s0 = pPsi[idx].values[dualNode].s0;
+					double2 s_1 = pPsi[idx].values[dualNode].s_1;
+
+					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					double dens = dens_s1 + dens_s0 + dens_s_1;
+
+					float s_1_r = 0;
+					if (DENSITY_THRESHOLD < dens)
+						s_1_r = (float)(s_1.x / sqrt(dens));
+					swapEnd(s_1_r);
+					file.write((char*)&s_1_r, sizeof(float));
+				}
+			}
+		}
+	}
+	file << std::endl << "SCALARS i_m=-1 float 1" << std::endl;
+	file << "LOOKUP_TABLE default" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					double2 s1 = pPsi[idx].values[dualNode].s1;
+					double2 s0 = pPsi[idx].values[dualNode].s0;
+					double2 s_1 = pPsi[idx].values[dualNode].s_1;
+
+					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					double dens = dens_s1 + dens_s0 + dens_s_1;
+
+					float s_1_i = 0;
+					if (DENSITY_THRESHOLD < dens)
+						s_1_i = (float)(s_1.y / sqrt(dens));
+					swapEnd(s_1_i);
+					file.write((char*)&s_1_i, sizeof(float));
+				}
+			}
+		}
+	}
+
+	//file << "VERTICES " << pointCount << " " << pointCount << std::endl;
+	//for (int i = 0; i < pointCount; ++i)
+	//{
+	//	int swapped = i;
+	//	swapEnd(swapped);
+	//	file.write((char*)&swapped, sizeof(int));
+	//}
+
+	file << std::endl;
+	file.close();
+}
+
 double3 centerOfMass(BlockPsis* h_evenPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, double block_scale, double3 p0)
 {
 	double3 com{};
@@ -1068,6 +1346,372 @@ double3 centerOfMass(BlockPsis* h_evenPsi, size_t bsize, size_t dxsize, size_t d
 	}
 
 	return com / totDens;
+}
+
+void savePreImageSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, double block_scale, double3 p0, double t)
+{
+	constexpr double THRESHOLD = 0.9996;
+
+	std::ofstream file;
+	file.open(folder + "/pre_image_" + std::to_string(t) + ".vtk", std::ios::out | std::ios::binary);
+
+	file << "# vtk DataFile Version 3.0" << std::endl
+		<< "Comment if needed" << std::endl;
+
+	file << "BINARY" << std::endl;
+
+	uint64_t pointCount = 0;
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					if ((z > 0) && (y > 0) && (x > 0) &&
+						(z < dzsize - 1) && (y < dysize - 1) && (x < dxsize - 1))
+					{
+						double2 s1 = pPsi[idx].values[dualNode].s1;
+						double2 s0 = pPsi[idx].values[dualNode].s0;
+						double2 s_1 = pPsi[idx].values[dualNode].s_1;
+
+						double normSq_s1 = s1.x * s1.x + s1.y * s1.y;
+						double normSq_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+
+						double2 temp = sqrt(2) * (conj(s1) * s0 + conj(s0) * s_1);
+						double3 avgLocalSpin = { temp.x, temp.y, normSq_s1 - normSq_s_1 };
+						avgLocalSpin = avgLocalSpin / sqrt(avgLocalSpin.x * avgLocalSpin.x + avgLocalSpin.y * avgLocalSpin.y + avgLocalSpin.z * avgLocalSpin.z);
+						if (abs(avgLocalSpin.y) > THRESHOLD)
+						{
+							pointCount++;
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	file << "DATASET POLYDATA" << std::endl << "POINTS " << pointCount << " float" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					if ((z > 0) && (y > 0) && (x > 0) &&
+						(z < dzsize - 1) && (y < dysize - 1) && (x < dxsize - 1))
+					{
+						double2 s1 = pPsi[idx].values[dualNode].s1;
+						double2 s0 = pPsi[idx].values[dualNode].s0;
+						double2 s_1 = pPsi[idx].values[dualNode].s_1;
+
+						double normSq_s1 = s1.x * s1.x + s1.y * s1.y;
+						double normSq_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+
+						double2 temp = sqrt(2) * (conj(s1) * s0 + conj(s0) * s_1);
+						double3 avgLocalSpin = { temp.x, temp.y, normSq_s1 - normSq_s_1 };
+						avgLocalSpin = avgLocalSpin / sqrt(avgLocalSpin.x * avgLocalSpin.x + avgLocalSpin.y * avgLocalSpin.y + avgLocalSpin.z * avgLocalSpin.z);
+						if (abs(avgLocalSpin.y) > THRESHOLD)
+						{
+							double3 localPos = getLocalPos(dualNode);
+							double3 doubleGlobalPos = { p0.x + block_scale * (x * BLOCK_WIDTH_X + localPos.x),
+								p0.y + block_scale * (y * BLOCK_WIDTH_Y + localPos.y),
+								p0.z + block_scale * (z * BLOCK_WIDTH_Z + localPos.z) };
+							float3 globalPos = float3{ (float)doubleGlobalPos.x, (float)doubleGlobalPos.y, (float)doubleGlobalPos.z };
+
+							swapEnd(globalPos.x);
+							swapEnd(globalPos.y);
+							swapEnd(globalPos.z);
+
+							file.write((char*)&globalPos.x, sizeof(float));
+							file.write((char*)&globalPos.y, sizeof(float));
+							file.write((char*)&globalPos.z, sizeof(float));
+						}
+					}
+				}
+			}
+		}
+	}
+
+	file << std::endl << "POINT_DATA " << pointCount << std::endl;
+
+	file << std::endl << "SCALARS r_m=1 float 1" << std::endl;
+	file << "LOOKUP_TABLE default" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					if ((z > 0) && (y > 0) && (x > 0) &&
+						(z < dzsize - 1) && (y < dysize - 1) && (x < dxsize - 1))
+					{
+						double2 s1 = pPsi[idx].values[dualNode].s1;
+						double2 s0 = pPsi[idx].values[dualNode].s0;
+						double2 s_1 = pPsi[idx].values[dualNode].s_1;
+
+						double normSq_s1 = s1.x * s1.x + s1.y * s1.y;
+						double normSq_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+
+						double2 temp = sqrt(2) * (conj(s1) * s0 + conj(s0) * s_1);
+						double3 avgLocalSpin = { temp.x, temp.y, normSq_s1 - normSq_s_1 };
+						avgLocalSpin = avgLocalSpin / sqrt(avgLocalSpin.x * avgLocalSpin.x + avgLocalSpin.y * avgLocalSpin.y + avgLocalSpin.z * avgLocalSpin.z);
+						if (abs(avgLocalSpin.y) > THRESHOLD)
+						{
+							double dens_s1 = s1.x * s1.x + s1.y * s1.y;
+							double dens_s0 = s0.x * s0.x + s0.y * s0.y;
+							double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+							double dens = dens_s1 + dens_s0 + dens_s_1;
+
+							float s1_r = 0;
+							if (DENSITY_THRESHOLD < dens)
+								s1_r = (float)(s1.x / sqrt(dens));
+							swapEnd(s1_r);
+							file.write((char*)&s1_r, sizeof(float));
+						}
+					}
+				}
+			}
+		}
+	}
+	file << std::endl << "SCALARS i_m=1 float 1" << std::endl;
+	file << "LOOKUP_TABLE default" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					if ((z > 0) && (y > 0) && (x > 0) &&
+						(z < dzsize - 1) && (y < dysize - 1) && (x < dxsize - 1))
+					{
+						double2 s1 = pPsi[idx].values[dualNode].s1;
+						double2 s0 = pPsi[idx].values[dualNode].s0;
+						double2 s_1 = pPsi[idx].values[dualNode].s_1;
+
+						double normSq_s1 = s1.x * s1.x + s1.y * s1.y;
+						double normSq_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+
+						double2 temp = sqrt(2) * (conj(s1) * s0 + conj(s0) * s_1);
+						double3 avgLocalSpin = { temp.x, temp.y, normSq_s1 - normSq_s_1 };
+						avgLocalSpin = avgLocalSpin / sqrt(avgLocalSpin.x * avgLocalSpin.x + avgLocalSpin.y * avgLocalSpin.y + avgLocalSpin.z * avgLocalSpin.z);
+						if (abs(avgLocalSpin.y) > THRESHOLD)
+						{
+							double dens_s1 = s1.x * s1.x + s1.y * s1.y;
+							double dens_s0 = s0.x * s0.x + s0.y * s0.y;
+							double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+							double dens = dens_s1 + dens_s0 + dens_s_1;
+
+							float s1_i = 0;
+							if (DENSITY_THRESHOLD < dens)
+								s1_i = (float)(s1.y / sqrt(dens));
+							swapEnd(s1_i);
+							file.write((char*)&s1_i, sizeof(float));
+						}
+					}
+				}
+			}
+		}
+	}
+
+	file << std::endl << "SCALARS r_m=0 float 1" << std::endl;
+	file << "LOOKUP_TABLE default" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					if ((z > 0) && (y > 0) && (x > 0) &&
+						(z < dzsize - 1) && (y < dysize - 1) && (x < dxsize - 1))
+					{
+						double2 s1 = pPsi[idx].values[dualNode].s1;
+						double2 s0 = pPsi[idx].values[dualNode].s0;
+						double2 s_1 = pPsi[idx].values[dualNode].s_1;
+
+						double normSq_s1 = s1.x * s1.x + s1.y * s1.y;
+						double normSq_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+
+						double2 temp = sqrt(2) * (conj(s1) * s0 + conj(s0) * s_1);
+						double3 avgLocalSpin = { temp.x, temp.y, normSq_s1 - normSq_s_1 };
+						avgLocalSpin = avgLocalSpin / sqrt(avgLocalSpin.x * avgLocalSpin.x + avgLocalSpin.y * avgLocalSpin.y + avgLocalSpin.z * avgLocalSpin.z);
+						if (abs(avgLocalSpin.y) > THRESHOLD)
+						{
+							double dens_s1 = s1.x * s1.x + s1.y * s1.y;
+							double dens_s0 = s0.x * s0.x + s0.y * s0.y;
+							double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+							double dens = dens_s1 + dens_s0 + dens_s_1;
+
+							float s0_r = 0;
+							if (DENSITY_THRESHOLD < dens)
+								s0_r = (float)(s0.x / sqrt(dens));
+							swapEnd(s0_r);
+							file.write((char*)&s0_r, sizeof(float));
+						}
+					}
+				}
+			}
+		}
+	}
+	file << std::endl << "SCALARS i_m=0 float 1" << std::endl;
+	file << "LOOKUP_TABLE default" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					if ((z > 0) && (y > 0) && (x > 0) &&
+						(z < dzsize - 1) && (y < dysize - 1) && (x < dxsize - 1))
+					{
+						double2 s1 = pPsi[idx].values[dualNode].s1;
+						double2 s0 = pPsi[idx].values[dualNode].s0;
+						double2 s_1 = pPsi[idx].values[dualNode].s_1;
+
+						double normSq_s1 = s1.x * s1.x + s1.y * s1.y;
+						double normSq_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+
+						double2 temp = sqrt(2) * (conj(s1) * s0 + conj(s0) * s_1);
+						double3 avgLocalSpin = { temp.x, temp.y, normSq_s1 - normSq_s_1 };
+						avgLocalSpin = avgLocalSpin / sqrt(avgLocalSpin.x * avgLocalSpin.x + avgLocalSpin.y * avgLocalSpin.y + avgLocalSpin.z * avgLocalSpin.z);
+						if (abs(avgLocalSpin.y) > THRESHOLD)
+						{
+							double dens_s1 = s1.x * s1.x + s1.y * s1.y;
+							double dens_s0 = s0.x * s0.x + s0.y * s0.y;
+							double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+							double dens = dens_s1 + dens_s0 + dens_s_1;
+
+							float s0_i = 0;
+							if (DENSITY_THRESHOLD < dens)
+								s0_i = (float)(s0.y / sqrt(dens));
+							swapEnd(s0_i);
+							file.write((char*)&s0_i, sizeof(float));
+						}
+					}
+				}
+			}
+		}
+	}
+
+	file << std::endl << "SCALARS r_m=-1 float 1" << std::endl;
+	file << "LOOKUP_TABLE default" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					if ((z > 0) && (y > 0) && (x > 0) &&
+						(z < dzsize - 1) && (y < dysize - 1) && (x < dxsize - 1))
+					{
+						double2 s1 = pPsi[idx].values[dualNode].s1;
+						double2 s0 = pPsi[idx].values[dualNode].s0;
+						double2 s_1 = pPsi[idx].values[dualNode].s_1;
+
+						double normSq_s1 = s1.x * s1.x + s1.y * s1.y;
+						double normSq_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+
+						double2 temp = sqrt(2) * (conj(s1) * s0 + conj(s0) * s_1);
+						double3 avgLocalSpin = { temp.x, temp.y, normSq_s1 - normSq_s_1 };
+						avgLocalSpin = avgLocalSpin / sqrt(avgLocalSpin.x * avgLocalSpin.x + avgLocalSpin.y * avgLocalSpin.y + avgLocalSpin.z * avgLocalSpin.z);
+						if (abs(avgLocalSpin.y) > THRESHOLD)
+						{
+							double dens_s1 = s1.x * s1.x + s1.y * s1.y;
+							double dens_s0 = s0.x * s0.x + s0.y * s0.y;
+							double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+							double dens = dens_s1 + dens_s0 + dens_s_1;
+
+							float s_1_r = 0;
+							if (DENSITY_THRESHOLD < dens)
+								s_1_r = (float)(s_1.x / sqrt(dens));
+							swapEnd(s_1_r);
+							file.write((char*)&s_1_r, sizeof(float));
+						}
+					}
+				}
+			}
+		}
+	}
+	file << std::endl << "SCALARS i_m=-1 float 1" << std::endl;
+	file << "LOOKUP_TABLE default" << std::endl;
+
+	for (uint z = 0; z < dzsize; ++z)
+	{
+		for (uint x = 0; x < dxsize; ++x)
+		{
+			for (uint y = 0; y < dysize; ++y)
+			{
+				const uint idx = z * dxsize * dysize + y * dxsize + x;
+				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
+				{
+					if ((z > 0) && (y > 0) && (x > 0) &&
+						(z < dzsize - 1) && (y < dysize - 1) && (x < dxsize - 1))
+					{
+						double2 s1 = pPsi[idx].values[dualNode].s1;
+						double2 s0 = pPsi[idx].values[dualNode].s0;
+						double2 s_1 = pPsi[idx].values[dualNode].s_1;
+
+						double normSq_s1 = s1.x * s1.x + s1.y * s1.y;
+						double normSq_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+
+						double2 temp = sqrt(2) * (conj(s1) * s0 + conj(s0) * s_1);
+						double3 avgLocalSpin = { temp.x, temp.y, normSq_s1 - normSq_s_1 };
+						avgLocalSpin = avgLocalSpin / sqrt(avgLocalSpin.x * avgLocalSpin.x + avgLocalSpin.y * avgLocalSpin.y + avgLocalSpin.z * avgLocalSpin.z);
+						if (abs(avgLocalSpin.y) > THRESHOLD)
+						{
+							double dens_s1 = s1.x * s1.x + s1.y * s1.y;
+							double dens_s0 = s0.x * s0.x + s0.y * s0.y;
+							double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+							double dens = dens_s1 + dens_s0 + dens_s_1;
+
+							float s_1_i = 0;
+							if (DENSITY_THRESHOLD < dens)
+								s_1_i = (float)(s_1.y / sqrt(dens));
+							swapEnd(s_1_i);
+							file.write((char*)&s_1_i, sizeof(float));
+						}
+					}
+				}
+			}
+		}
+	}
+
+	//file << "VERTICES " << pointCount << " " << pointCount << std::endl;
+	//for (int i = 0; i < pointCount; ++i)
+	//{
+	//	int swapped = i;
+	//	swapEnd(swapped);
+	//	file.write((char*)&swapped, sizeof(int));
+	//}
+
+	file << std::endl;
+	file.close();
 }
 
 #endif // UTILS

@@ -5,7 +5,7 @@
 #define Y_QUANTIZED 1
 #define X_QUANTIZED 2
 
-#define BASIS Y_QUANTIZED
+#define BASIS Z_QUANTIZED
 
 enum class Phase {
 	UN = 0,
@@ -13,7 +13,7 @@ enum class Phase {
 	BN_HORI,
 	CYCLIC
 };
-Phase initPhase = Phase::BN_VERT;
+Phase initPhase = Phase::BN_HORI;
 
 std::string phaseToString(Phase phase)
 {
@@ -67,16 +67,16 @@ constexpr double EXPANSION_START = CREATION_RAMP_START + 0.5; // When the expans
 #define USE_QUADRUPOLE_OFFSET 0
 #define USE_INITIAL_NOISE 0
 
-#define SAVE_STATES 0
+#define SAVE_STATES 1
 #define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
 #define THREAD_BLOCK_Y 2
 #define THREAD_BLOCK_Z 1
 
-constexpr double DOMAIN_SIZE_X = 24.0;
-constexpr double DOMAIN_SIZE_Y = 24.0;
-constexpr double DOMAIN_SIZE_Z = 24.0;
+constexpr double DOMAIN_SIZE_X = 20.0; //24.0;
+constexpr double DOMAIN_SIZE_Y = 20.0; //24.0;
+constexpr double DOMAIN_SIZE_Z = 20.0; //24.0;
 
 constexpr double REPLICABLE_STRUCTURE_COUNT_X = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
@@ -122,7 +122,16 @@ const double BzQuadScale = sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (tra
 constexpr double SQRT_2 = 1.41421356237309;
 //constexpr double INV_SQRT_2 = 0.70710678118655;
 
-const std::string GROUND_STATE_FILENAME = "ground_state.dat";
+std::string toStringShort(const double value)
+{
+	std::ostringstream out;
+	out.precision(2);
+	out << std::fixed << value;
+	return out.str();
+};
+
+const std::string EXTRA_INFORMATION = toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X) + "_" + phaseToString(initPhase);
+const std::string GROUND_STATE_FILENAME = "ground_state_psi_" + EXTRA_INFORMATION + ".dat";
 constexpr double NOISE_AMPLITUDE = 0; //0.1;
 
 //constexpr double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
@@ -134,7 +143,7 @@ const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-constexpr double END_TIME = 20.0; // End time in ms
+constexpr double END_TIME = 0.6; // End time in ms
 
 constexpr double PHASE = 5.105088062083414; // In radians
 
@@ -1290,7 +1299,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	const double volume = block_scale * block_scale * block_scale * VOLUME;
 
-	if (loadGroundState)
+	if (false) //loadGroundState)
 	{
 		switch (initPhase)
 		{

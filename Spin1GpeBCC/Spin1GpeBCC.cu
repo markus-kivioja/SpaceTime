@@ -1,7 +1,7 @@
 #include <cuda_runtime.h>
 #include "helper_cuda.h"
 
-constexpr double CREATION_RAMP_START = 0.1;
+constexpr double CREATION_RAMP_START = 0.0;
 constexpr double EXPANSION_START = CREATION_RAMP_START + 10.5; // When the expansion starts in ms
 
 //#include "AliceRingRamps.h"
@@ -33,7 +33,7 @@ std::string getProjectionString()
 
 #define COMPUTE_GROUND_STATE 0
 
-#define SAVE_STATES 0
+#define SAVE_STATES 1
 #define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
@@ -96,16 +96,16 @@ const std::string SAVE_FILE_PREFIX = "";
 
 constexpr double NOISE_AMPLITUDE = 0.1;
 
-double dt = 4.3e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
+double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 //double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-const double IMAGE_SAVE_INTERVAL = 0.1; // ms
+const double IMAGE_SAVE_INTERVAL = 0.01; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 1.0; // End time in ms
+double END_TIME = 0.6; // End time in ms
 
 double POLAR_FERRO_MIX = 0.0;
 
@@ -431,6 +431,33 @@ __global__ void normalize(double* density, PitchedPtr psiPtr, uint3 dimensions)
 	psi.s_1 = psi.s_1 / sqrtDens;
 
 	blockPsis->values[dualNodeId] = psi;
+}
+
+__global__ void weightedDiff(double* result, PitchedPtr pLeft, PitchedPtr pRight, uint3 dimensions)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	Complex3Vec left = ((BlockPsis*)(pLeft.ptr + pLeft.slicePitch * zid + pLeft.pitch * yid) + dataXid)->values[dualNodeId];
+	Complex3Vec right = ((BlockPsis*)(pRight.ptr + pRight.slicePitch * zid + pRight.pitch * yid) + dataXid)->values[dualNodeId];
+
+	Complex3Vec diff = { right.s1 - left.s1, right.s0 - left.s0, right.s_1 - left.s_1 };
+
+	double leftSqr = (conj(left.s1) * left.s1).x + (conj(left.s0) * left.s0).x + (conj(left.s_1) * left.s_1).x;
+	double diffSqr = (conj(diff.s1) * diff.s1).x + (conj(diff.s0) * diff.s0).x + (conj(diff.s_1) * diff.s_1).x;
+
+	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
+	result[idx] = leftSqr * diffSqr;
 }
 
 __global__ void polarState(PitchedPtr psi, const uint3 dimensions)
@@ -1009,6 +1036,72 @@ double getMaxHamilton(dim3 dimGrid, dim3 dimBlock, double* maxHamlPtr, PitchedPt
 	return maxHaml;
 }
 
+template<typename T>
+T* allocDevice(size_t count)
+{
+	T* ptr;
+	checkCudaErrors(cudaMalloc(&ptr, count * sizeof(T)));
+	return ptr;
+}
+
+cudaPitchedPtr allocDevice3D(cudaExtent extent)
+{
+	cudaPitchedPtr ptr;
+	checkCudaErrors(cudaMalloc3D(&ptr, extent));
+	return ptr;
+}
+
+template<typename T>
+T* allocHost(size_t count)
+{
+	T* ptr;
+	checkCudaErrors(cudaMallocHost(&ptr, count * sizeof(T)));
+	memset(ptr, 0, count * sizeof(T));
+	return ptr;
+}
+
+cudaPitchedPtr copyHostToDevice3D(void* src, cudaPitchedPtr dst, cudaExtent extent)
+{
+	cudaPitchedPtr cuda_src = { src, extent.width, dst.xsize, dst.ysize };
+
+	cudaMemcpy3DParms params = { 0 };
+	params.srcPtr = cuda_src;
+	params.dstPtr = dst;
+	params.extent = extent;
+	params.kind = cudaMemcpyHostToDevice;
+
+	checkCudaErrors(cudaMemcpy3D(&params));
+
+	return cuda_src;
+}
+
+cudaMemcpy3DParms createDeviceToHostParams(cudaPitchedPtr src, cudaPitchedPtr dst, cudaExtent extent)
+{
+	cudaMemcpy3DParms params = { 0 };
+	params.srcPtr = src;
+	params.dstPtr = dst;
+	params.extent = extent;
+	params.kind = cudaMemcpyDeviceToHost;
+
+	return params;
+}
+
+void loadFromFile(const std::string& filename, char* dst, size_t size)
+{
+	std::ifstream psi_fs(filename, std::ios::binary | std::ios::in);
+	if (psi_fs.fail() != 0)
+	{
+		std::cout << "Failed to open file " << filename << std::endl;
+		exit(1);
+	}
+	else
+	{
+		std::cout << "Loading data from " << filename << "..." << std::endl;
+	}
+	psi_fs.read(dst, size);
+	psi_fs.close();
+}
+
 uint integrateInTime(const double block_scale, const Vector3& minp, const Vector3& maxp)
 {
 	// find dimensions
@@ -1033,32 +1126,27 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	size_t dzsize = zsize + 2; // One element buffer to both ends
 	cudaExtent psiExtent = make_cudaExtent(dxsize * sizeof(BlockPsis), dysize, dzsize);
 
-	cudaPitchedPtr d_cudaEvenPsi;
-	cudaPitchedPtr d_cudaOddPsi;
-	checkCudaErrors(cudaMalloc3D(&d_cudaEvenPsi, psiExtent));
-	checkCudaErrors(cudaMalloc3D(&d_cudaOddPsi, psiExtent));
+	cudaPitchedPtr d_cudaEvenPsi = allocDevice3D(psiExtent);
+	cudaPitchedPtr d_cudaOddPsi = allocDevice3D(psiExtent);
+	cudaPitchedPtr d_cudaGroundPsi = allocDevice3D(psiExtent);
+	cudaPitchedPtr d_cudaAnalyticPsi = allocDevice3D(psiExtent);
 
-	cudaPitchedPtr d_cudaHPsi;
-	checkCudaErrors(cudaMalloc3D(&d_cudaHPsi, psiExtent));
+	cudaPitchedPtr d_cudaHPsi = allocDevice3D(psiExtent);
 
-	double* d_spinNorm;
-	double* d_density;
-	double* d_energy;
-	double3* d_localAvgSpin;
-	double3* d_u;
-	double3* d_v;
-	double* d_theta;
-	checkCudaErrors(cudaMalloc(&d_spinNorm, bodies * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_density, bodies * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_energy, bodies * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_localAvgSpin, bodies * sizeof(double3)));
-	checkCudaErrors(cudaMalloc(&d_u, bodies * sizeof(double3)));
-	checkCudaErrors(cudaMalloc(&d_v, bodies * sizeof(double3)));
-	checkCudaErrors(cudaMalloc(&d_theta, bodies * sizeof(double)));
+	double* d_spinNorm = allocDevice<double>(bodies);
+	double* d_density = allocDevice<double>(bodies);
+	double* d_energy = allocDevice<double>(bodies);
+	double3* d_localAvgSpin = allocDevice<double3>(bodies);
+	double3* d_u = allocDevice<double3>(bodies);
+	double3* d_v = allocDevice<double3>(bodies);
+	double* d_theta = allocDevice<double>(bodies);
+	double* d_error = allocDevice<double>(bodies);
 
 	size_t offset = d_cudaEvenPsi.pitch * dysize + d_cudaEvenPsi.pitch + sizeof(BlockPsis);
 	PitchedPtr d_evenPsi = { (char*)d_cudaEvenPsi.ptr + offset, d_cudaEvenPsi.pitch, d_cudaEvenPsi.pitch * dysize };
 	PitchedPtr d_oddPsi = { (char*)d_cudaOddPsi.ptr + offset, d_cudaOddPsi.pitch, d_cudaOddPsi.pitch * dysize };
+	PitchedPtr d_groundPsi = { (char*)d_cudaGroundPsi.ptr + offset, d_cudaGroundPsi.pitch, d_cudaGroundPsi.pitch * dysize };
+	PitchedPtr d_analyticPsi = { (char*)d_cudaAnalyticPsi.ptr + offset, d_cudaAnalyticPsi.pitch, d_cudaAnalyticPsi.pitch * dysize };
 
 	PitchedPtr d_HPsi = { (char*)d_cudaHPsi.ptr + offset, d_cudaHPsi.pitch, d_cudaHPsi.pitch * dysize };
 
@@ -1080,29 +1168,22 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	for (int i = 0; i < hodges.size(); ++i) hodges[i] = -0.5 * hodges[i]; // / (block_scale * block_scale);
 
-	int4* d_lapind;
-	checkCudaErrors(cudaMalloc(&d_lapind, lapind.size() * sizeof(int4)));
-
-	double* d_hodges;
-	checkCudaErrors(cudaMalloc(&d_hodges, hodges.size() * sizeof(double)));
+	int4* d_lapind = allocDevice<int4>(lapind.size());
+	double* d_hodges = allocDevice<double>(hodges.size());
 
 	// Initialize host memory
 	size_t hostSize = dxsize * dysize * dzsize;
-	BlockPsis* h_evenPsi;
-	BlockPsis* h_oddPsi;
+	BlockPsis* h_evenPsi = allocHost<BlockPsis>(hostSize);
+	BlockPsis* h_oddPsi = allocHost<BlockPsis>(hostSize);
+	BlockPsis* h_analyticPsi = allocHost<BlockPsis>(hostSize);
 	checkCudaErrors(cudaMallocHost(&h_evenPsi, hostSize * sizeof(BlockPsis)));
 	checkCudaErrors(cudaMallocHost(&h_oddPsi, hostSize * sizeof(BlockPsis)));
-	memset(h_evenPsi, 0, hostSize * sizeof(BlockPsis));
-	memset(h_oddPsi, 0, hostSize * sizeof(BlockPsis));
+	checkCudaErrors(cudaMallocHost(&h_analyticPsi, hostSize * sizeof(BlockPsis)));
 
-	double* h_density;
-	double3* h_u;
-	double* h_theta;
-	double3* h_localAvgSpin;
-	checkCudaErrors(cudaMallocHost(&h_density, bodies * sizeof(double)));
-	checkCudaErrors(cudaMallocHost(&h_u, bodies * sizeof(double3)));
-	checkCudaErrors(cudaMallocHost(&h_theta, bodies * sizeof(double)));
-	checkCudaErrors(cudaMallocHost(&h_localAvgSpin, bodies * sizeof(double3)));
+	double* h_density = allocHost<double>(bodies);
+	double3* h_u = allocHost<double3>(bodies);
+	double* h_theta = allocHost<double>(bodies);
+	double3* h_localAvgSpin = allocHost<double3>(bodies);
 
 #if COMPUTE_GROUND_STATE
 	// Initialize discrete field
@@ -1229,6 +1310,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	cudaPitchedPtr h_cudaEvenPsi = { 0 };
 	cudaPitchedPtr h_cudaOddPsi = { 0 };
+	cudaPitchedPtr h_cudaAnalyticPsi = { 0 };
 
 	h_cudaEvenPsi.ptr = h_evenPsi;
 	h_cudaEvenPsi.pitch = dxsize * sizeof(BlockPsis);
@@ -1239,6 +1321,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	h_cudaOddPsi.pitch = dxsize * sizeof(BlockPsis);
 	h_cudaOddPsi.xsize = d_cudaOddPsi.xsize;
 	h_cudaOddPsi.ysize = d_cudaOddPsi.ysize;
+
+	h_cudaAnalyticPsi.ptr = h_analyticPsi;
+	h_cudaAnalyticPsi.pitch = dxsize * sizeof(BlockPsis);
+	h_cudaAnalyticPsi.xsize = d_cudaAnalyticPsi.xsize;
+	h_cudaAnalyticPsi.ysize = d_cudaAnalyticPsi.ysize;
 
 	// Copy from host memory to device memory
 	cudaMemcpy3DParms evenPsiParams = { 0 };
@@ -1279,6 +1366,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	oddPsiBackParams.extent = psiExtent;
 	oddPsiBackParams.kind = cudaMemcpyDeviceToHost;
 
+	cudaMemcpy3DParms analyticPsiBackParams = { 0 };
+	analyticPsiBackParams.srcPtr = d_cudaAnalyticPsi;
+	analyticPsiBackParams.dstPtr = h_cudaAnalyticPsi;
+	analyticPsiBackParams.extent = psiExtent;
+	analyticPsiBackParams.kind = cudaMemcpyDeviceToHost;
+
 	// Integrate in time
 	uint3 dimensions = make_uint3(xsize, ysize, zsize);
 	dim3 dimBlock(THREAD_BLOCK_X * VALUES_IN_BLOCK, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
@@ -1318,8 +1411,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		printDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
 	}
 
-	const double E = 127.295; // Computed with ITP
-	double analytic_t = 0;
+	cudaMemcpy3DParms groundPsiParams = { 0 };
+	groundPsiParams.srcPtr = d_cudaOddPsi;
+	groundPsiParams.dstPtr = d_cudaGroundPsi;
+	groundPsiParams.extent = psiExtent;
+	groundPsiParams.kind = cudaMemcpyDeviceToDevice;
+	checkCudaErrors(cudaMemcpy3D(&groundPsiParams));
+
+	constexpr double E = 127.295; // Computed with ITP
 
 	// Take one forward Euler step if starting from the ground state or time step changed
 	if (doForward)
@@ -1332,8 +1431,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
 		forwardEuler << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, alpha, USE_THREE_BODY_LOSS, USE_QUADRATIC_ZEEMAN, USE_QUADRUPOLE_OFFSET, dt, t);
-		//analyticStep << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, dimensions, double2{ cos(-analytic_t * E), sin(-analytic_t * E) });
-		//analytic_t += dt;
 	}
 	else
 	{
@@ -1410,13 +1507,16 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	std::string resultsDir = getProjectionString() + "\\results_" + std::to_string(POLAR_FERRO_MIX);
 	std::string vtksDir = getProjectionString() + "\\vtks_" + std::to_string(POLAR_FERRO_MIX);
+	std::string spinorVtksDir = getProjectionString() + "\\spinor_vtks_" + std::to_string(POLAR_FERRO_MIX);
 	std::string datsDir = getProjectionString() + "\\dats_" + std::to_string(POLAR_FERRO_MIX);
 
 	std::string createResultsDirCommand = "mkdir " + resultsDir;
 	std::string createVtksDirCommand = "mkdir " + vtksDir;
+	std::string createSpinorVtksDirCommand = "mkdir " + spinorVtksDir;
 	std::string createDatsDirCommand = "mkdir " + datsDir;
 	system(createResultsDirCommand.c_str());
 	system(createVtksDirCommand.c_str());
+	system(createSpinorVtksDirCommand.c_str());
 	system(createDatsDirCommand.c_str());
 
 	double expansionBlockScale = block_scale;
@@ -1466,13 +1566,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	//drawFerroDom(h_ferroDom, xsize, ysize, zsize, t - 202.03);
 #endif
 
+	double phaseTime = 0;
+
 	while (t < END_TIME)
 	{
-		const uint centerIdx = 57 * dxsize * dysize + 57 * dxsize + 57;
-		double2 temp = h_oddPsi[centerIdx].values[5].s0;
-		double startPhase = atan2(temp.y, temp.x);
-		double phaseTime = 0;
-
 		// integrate one iteration
 		for (uint step = 0; step < IMAGE_SAVE_FREQUENCY; step++)
 		{
@@ -1506,20 +1603,34 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		}
 
 #if SAVE_PICTURE
-		// Copy back from device memory to host memory
-		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
-
-		temp = h_oddPsi[centerIdx].values[5].s0;
-		double endPhase = atan2(temp.y, temp.x);
-		double phaseDiff = endPhase - startPhase;
-		std::cout << "Energy was " << phaseDiff / phaseTime << std::endl;
-
 		// Measure wall clock time
 		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
-		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
+		//std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 		prevTime = std::chrono::high_resolution_clock::now();
 
-		drawDensity("", h_oddPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, resultsDir);
+		double2 phaseShift = double2{ cos(-phaseTime * E), sin(-phaseTime * E) };
+		analyticStep << <dimGrid, dimBlock >> > (d_analyticPsi, d_groundPsi, dimensions, phaseShift);
+		checkCudaErrors(cudaMemcpy3D(&analyticPsiBackParams));
+		drawDensityRI("analytic_", h_analyticPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, resultsDir);
+
+		// Copy back from device memory to host memory
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
+		drawDensityRI("", h_oddPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, resultsDir);
+
+		// Compute error
+		{
+			weightedDiff << <dimGrid, dimBlock >> > (d_error, d_analyticPsi, d_oddPsi, dimensions);
+			int prevStride = bodies;
+			while (prevStride > 1)
+			{
+				int newStride = prevStride / 2;
+				integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_error, newStride, ((newStride * 2) != prevStride), volume);
+				prevStride = newStride;
+			}
+			double hError = { 0 };
+			checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(double), cudaMemcpyDeviceToHost));
+			std::cout << hError << ", ";
+		}
 
 		//uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
 		//cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
@@ -1539,8 +1650,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		uvTheta << <dimGrid, dimBlock >> > (d_u, d_v, d_theta, d_oddPsi, dimensions);
 		cudaMemcpy(h_u, d_u, bodies * sizeof(double3), cudaMemcpyDeviceToHost);
 		cudaMemcpy(h_theta, d_theta, bodies * sizeof(double), cudaMemcpyDeviceToHost);
-		if (t > 19.9)
-			saveVolume(SAVE_FILE_PREFIX, h_oddPsi, h_localAvgSpin, h_u, h_theta, bsize, dxsize, dysize, dzsize, 0, block_scale, d_p0, t, vtksDir);
+		
+		//saveVolume(SAVE_FILE_PREFIX, h_oddPsi, h_localAvgSpin, h_u, h_theta, bsize, dxsize, dysize, dzsize, 0, block_scale, d_p0, t - CREATION_RAMP_START, vtksDir);
+		//saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - CREATION_RAMP_START);
+		savePreImageSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - CREATION_RAMP_START);
 
 		SpinMagDens spinMagDens = integrateSpinAndDensity(dimGrid, dimBlock, d_spinNorm, d_localAvgSpin, d_density, bodies, volume);
 		times += ", " + toString(t);
