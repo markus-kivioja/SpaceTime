@@ -68,13 +68,13 @@ __global__ void forwardEuler_q_hyper(PitchedPtr next_q, PitchedPtr prev_q, Pitch
 	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
 	Complex3Vec q;
-	q.s1 = dt_per_sigma * (d0psi.s1 - prev->values[dualEdgeId].s1);
-	q.s0 = dt_per_sigma * (d0psi.s0 - prev->values[dualEdgeId].s0);
-	q.s_1 = dt_per_sigma * (d0psi.s_1 - prev->values[dualEdgeId].s_1);
+	q.s1 = dt_per_sigma * (prev->values[dualEdgeId].s1 + d0psi.s1);
+	q.s0 = dt_per_sigma * (prev->values[dualEdgeId].s0 + d0psi.s0);
+	q.s_1 = dt_per_sigma * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
 
-	next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1 + make_double2(q.s1.y, -q.s1.x);
-	next->values[dualEdgeId].s0 = prev->values[dualEdgeId].s0 + make_double2(q.s0.y, -q.s0.x);
-	next->values[dualEdgeId].s_1 = prev->values[dualEdgeId].s_1 + make_double2(q.s_1.y, -q.s_1.x);
+	next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1 + make_double2(-q.s1.y, q.s1.x);
+	next->values[dualEdgeId].s0 = prev->values[dualEdgeId].s0 + make_double2(-q.s0.y, q.s0.x);
+	next->values[dualEdgeId].s_1 = prev->values[dualEdgeId].s_1 + make_double2(-q.s_1.y, q.s_1.x);
 }
 
 __global__ void update_q_hyper(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, double dt_per_sigma)
@@ -106,13 +106,13 @@ __global__ void update_q_hyper(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr 
 	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
 	Complex3Vec q;
-	q.s1 = 2 * dt_per_sigma * (d0psi.s1 - prev->values[dualEdgeId].s1);
-	q.s0 = 2 * dt_per_sigma * (d0psi.s0 - prev->values[dualEdgeId].s0);
-	q.s_1 = 2 * dt_per_sigma * (d0psi.s_1 - prev->values[dualEdgeId].s_1);
+	q.s1 = dt_per_sigma * (prev->values[dualEdgeId].s1 + d0psi.s1);
+	q.s0 = dt_per_sigma * (prev->values[dualEdgeId].s0 + d0psi.s0);
+	q.s_1 = dt_per_sigma * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
 
-	next->values[dualEdgeId].s1 += make_double2(q.s1.y, -q.s1.x);
-	next->values[dualEdgeId].s0 += make_double2(q.s0.y, -q.s0.x);
-	next->values[dualEdgeId].s_1 += make_double2(q.s_1.y, -q.s_1.x);
+	next->values[dualEdgeId].s1 += make_double2(-q.s1.y, q.s1.x);
+	next->values[dualEdgeId].s0 += make_double2(-q.s0.y, q.s0.x);
+	next->values[dualEdgeId].s_1 += make_double2(-q.s_1.y, q.s_1.x);
 }
 
 #endif // HYPER_KERNELS_H

@@ -133,11 +133,12 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 		H.s0 += hodge * d0psi.s0;
 		H.s_1 += hodge * d0psi.s_1;
 	}
+
 	if (hyperb)
 	{
-		H.s1 = -H.s1;
-		H.s0 = -H.s0;
-		H.s_1 = -H.s_1;
+		H.s1 = -1.0 * H.s1;
+		H.s0 = -1.0 * H.s0;
+		H.s_1 = -1.0 * H.s_1;
 	}
 
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
@@ -212,11 +213,12 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 		H.s0 += hodge * d0psi.s0;
 		H.s_1 += hodge * d0psi.s_1;
 	}
+
 	if (hyperb)
 	{
-		H.s1 = -H.s1;
-		H.s0 = -H.s0;
-		H.s_1 = -H.s_1;
+		H.s1 = -1.0 * H.s1;
+		H.s0 = -1.0 * H.s0;
+		H.s_1 = -1.0 * H.s_1;
 	}
 
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;

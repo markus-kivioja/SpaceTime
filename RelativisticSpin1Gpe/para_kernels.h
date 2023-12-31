@@ -1,7 +1,7 @@
 #ifndef PARA_KERNELS_H
 #define PARA_KERNELS_H
 
-__global__ void update_q_para(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions)
+__global__ void update_q_para(PitchedPtr next_q, PitchedPtr psi, int3* d0, uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;

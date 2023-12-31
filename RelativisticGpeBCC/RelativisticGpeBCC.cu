@@ -89,6 +89,31 @@ struct PitchedPtr
 	size_t slicePitch;
 };
 
+__global__ void init_q(PitchedPtr next_q, PitchedPtr psi, int3* d0, uint3 dimensions)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+
+	size_t dataZid = zid / EDGES_IN_BLOCK; // One thread per every dual edge so EDGES_IN_BLOCK threads per mesh block (on z-axis)
+
+	// Exit leftover threads
+	if (xid >= dimensions.x || yid >= dimensions.y || dataZid >= dimensions.z)
+	{
+		return;
+	}
+
+	char* pPsi = psi.ptr + psi.slicePitch * dataZid + psi.pitch * yid + sizeof(BlockPsis) * xid;
+
+	size_t dualEdgeId = zid % EDGES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+
+	BlockEdges* next = (BlockEdges*)(next_q.ptr + next_q.slicePitch * dataZid + next_q.pitch * yid) + xid;
+	double2 d0psi = ((BlockPsis*)(pPsi + d0[dualEdgeId].y))->values[d0[dualEdgeId].z] -
+		((BlockPsis*)(pPsi))->values[d0[dualEdgeId].x];
+
+	next->values[dualEdgeId] = d0psi;
+}
+
 __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, ddouble dtime_per_sigma)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -266,6 +291,10 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	const ddouble dt = iteration_period / ddouble(steps_per_iteration); // time step in time units
 	const ddouble dt_per_sigma = dt / sigma;
 
+	std::cout << "dt = " << dt << std::endl;
+	std::cout << "sigma = " << sigma << std::endl;
+	std::cout << "dt / sigma = " << dt_per_sigma << std::endl;
+
 	std::cout << "steps_per_iteration = " << steps_per_iteration << std::endl;
 
 	std::cout << "ALU operations per unit time = " << bodies * steps_per_iteration * FACE_COUNT << std::endl;
@@ -411,8 +440,8 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	const uint time0 = clock();
 	const ddouble volume = (IS_3D ? block_scale : 1.0) * block_scale * block_scale * VOLUME;
 #if RELATIVISTIC
-	update_q << <edgeDimGrid, dimBlock >> > (d_qOdd, d_qEven, d_psiEven, d_d0, dimensions, dt_per_sigma / (dt - dt_per_sigma));
-	update_q << <edgeDimGrid, dimBlock >> > (d_qEven, d_qOdd, d_psiOdd, d_d0, dimensions, dt_per_sigma / (dt - dt_per_sigma));
+	init_q << <edgeDimGrid, dimBlock >> > (d_qOdd, d_psiEven, d_d0, dimensions);
+	init_q << <edgeDimGrid, dimBlock >> > (d_qEven, d_psiOdd, d_d0, dimensions);
 #endif
 	while (true)
 	{

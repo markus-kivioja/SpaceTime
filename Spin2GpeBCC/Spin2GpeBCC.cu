@@ -13,7 +13,7 @@ enum class Phase {
 	BN_HORI,
 	CYCLIC
 };
-Phase initPhase = Phase::BN_HORI;
+Phase initPhase = Phase::BN_VERT;
 
 std::string phaseToString(Phase phase)
 {
@@ -43,8 +43,17 @@ std::string getProjectionString()
 #endif
 }
 
-constexpr double CREATION_RAMP_START = 0.1;
-constexpr double EXPANSION_START = CREATION_RAMP_START + 0.5; // When the expansion starts in ms
+// Experimental field ramps from D.S. Hall (Amherst)
+constexpr double STATE_PREP_DURATION = 0.1;
+constexpr double CREATION_RAMP_DURATION = 0.0177;
+constexpr double HOLD_TIME = 0.5;
+constexpr double HOLD_TIME_EXTRA_DELAY = 0.005;
+constexpr double TOTAL_HOLD_TIME = HOLD_TIME + HOLD_TIME_EXTRA_DELAY;
+constexpr double PROJECTION_RAMP_DURATION = 0.120;
+constexpr double OPT_TRAP_OFF_DELAY = 0.020;
+constexpr double OPT_TRAP_OFF = STATE_PREP_DURATION + CREATION_RAMP_DURATION + TOTAL_HOLD_TIME + OPT_TRAP_OFF_DELAY; // When the expansion starts in ms
+constexpr double GRADIENT_OFF_DELAY = 0.010;
+constexpr double GRADIENT_OFF_DUARATION = 0.034;
 
 //#include "AliceRingRamps.h"
 #include "KnotRamps.h"
@@ -67,7 +76,7 @@ constexpr double EXPANSION_START = CREATION_RAMP_START + 0.5; // When the expans
 #define USE_QUADRUPOLE_OFFSET 0
 #define USE_INITIAL_NOISE 0
 
-#define SAVE_STATES 1
+#define SAVE_STATES 0
 #define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
@@ -131,11 +140,11 @@ std::string toStringShort(const double value)
 };
 
 const std::string EXTRA_INFORMATION = toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X) + "_" + phaseToString(initPhase);
-const std::string GROUND_STATE_FILENAME = "ground_state_psi_" + EXTRA_INFORMATION + ".dat";
+const std::string GROUND_STATE_FILENAME = "ground_state_psi_" + toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X) + ".dat";
 constexpr double NOISE_AMPLITUDE = 0; //0.1;
 
 //constexpr double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
-constexpr double dt = 5e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
+constexpr double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
 const double IMAGE_SAVE_INTERVAL = 0.25; // ms
 const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
@@ -143,13 +152,13 @@ const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-constexpr double END_TIME = 0.6; // End time in ms
+constexpr double END_TIME = OPT_TRAP_OFF + GRADIENT_OFF_DELAY + GRADIENT_OFF_DUARATION + 5.0; // End time in ms
 
-constexpr double PHASE = 5.105088062083414; // In radians
+double PHASE = 0; // 5.105088062083414; // In radians
 
-__device__ __inline__ double trap(double3 p, double t)
+__host__ __device__ __inline__ double trap(double3 p, double t)
 {
-	if (t >= EXPANSION_START) {
+	if (t >= OPT_TRAP_OFF) {
 		return 0;
 	}
 
@@ -994,7 +1003,7 @@ void normalize_h(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr psi
 	normalize << < dimGrid, dimBlock >> > (densityPtr, psi, dimensions);
 }
 
-void printDensity(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, double volume)
+double getDensity(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, double volume)
 {
 	density << <dimGrid, dimBlock >> > (densityPtr, psi, dimensions);
 	int prevStride = bodies;
@@ -1007,7 +1016,7 @@ void printDensity(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr ps
 	double hDensity = 0;
 	checkCudaErrors(cudaMemcpy(&hDensity, densityPtr, sizeof(double), cudaMemcpyDeviceToHost));
 
-	std::cout << "Total density: " << hDensity << std::endl;
+	return hDensity;
 }
 
 struct SpinMagDens
@@ -1299,7 +1308,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	const double volume = block_scale * block_scale * block_scale * VOLUME;
 
-	if (false) //loadGroundState)
+	if (loadGroundState)
 	{
 		switch (initPhase)
 		{
@@ -1324,7 +1333,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			break;
 		}
 
-		printDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
+		std::cout << "Total density: " << getDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume) << std::endl;
 	}
 
 	// Take one forward Euler step if starting from the ground state or time step changed
@@ -1405,40 +1414,41 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	}
 
 #else
-	std::string times = std::string("times = [times");
-	std::string bqString = std::string("Bq = [Bq");
-	std::string bbString = std::string("Bz = [Bz");
+	std::string tString = std::string("t = [");
+	std::string bqString = std::string("Bq = [");
+	std::string bbString = std::string("Bz = [");
+	std::string optTrapString = std::string("opt_trap = [");
 	std::string spinString = std::string("Spin = [Spin");
 	std::string magX = std::string("mag_x = [mag_x");
 	std::string magY = std::string("mag_y = [mag_y");
 	std::string magZ = std::string("mag_z = [mag_z");
-	std::string densityStr = std::string("norm = [norm");
+	std::string densityStr = std::string("dens = [");
 
 	int lastSaveTime = 0;
 
-	std::string dirPrefix = (END_TIME > EXPANSION_START) ? "expansion\\" : "";
-	dirPrefix += phaseToString(initPhase) + "\\" + toString(PHASE / PI * 180.0, 2) + "_deg\\" + getProjectionString() + "\\";
+	std::string dirPrefix = (END_TIME > OPT_TRAP_OFF) ? "expansion\\" : "";
+	dirPrefix += phaseToString(initPhase) + "\\" + toString(PHASE / PI * 180.0, 2) + "_degrees\\" + getProjectionString() + "\\";
 
-	std::string densDir = dirPrefix + "dens";
-	std::string vtksDir = dirPrefix + "dens_vtks";
-	std::string spinorVtksDir = dirPrefix + "spinor_vtks";
-	std::string datsDir = dirPrefix + "dats";
-
+	std::string densDir = dirPrefix; // +"dens";
+	//std::string vtksDir = dirPrefix + "dens_vtks";
+	//std::string spinorVtksDir = dirPrefix + "spinor_vtks";
+	//std::string datsDir = dirPrefix + "dats";
+	//
 	std::string createResultsDirCommand = "mkdir " + densDir;
-	std::string createVtksDirCommand = "mkdir " + vtksDir;
-	std::string createSpinorVtksDirCommand = "mkdir " + spinorVtksDir;
-	std::string createDatsDirCommand = "mkdir " + datsDir;
+	//std::string createVtksDirCommand = "mkdir " + vtksDir;
+	//std::string createSpinorVtksDirCommand = "mkdir " + spinorVtksDir;
+	//std::string createDatsDirCommand = "mkdir " + datsDir;
 	system(createResultsDirCommand.c_str());
-	system(createVtksDirCommand.c_str());
-	system(createSpinorVtksDirCommand.c_str());
-	system(createDatsDirCommand.c_str());
+	//system(createVtksDirCommand.c_str());
+	//system(createSpinorVtksDirCommand.c_str());
+	//system(createDatsDirCommand.c_str());
 
 	double expansionBlockScale = block_scale;
 
 	// Measure wall clock time
 	static auto prevTime = std::chrono::high_resolution_clock::now();
 
-	while (t < CREATION_RAMP_START)
+	while (t < STATE_PREP_DURATION)
 	{
 		// update odd values
 		t += dt / omega_r * 1e3; // [ms]
@@ -1448,6 +1458,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
 		leapfrog << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
+		densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume)) + ", ";
+		tString += std::to_string(t) + ", ";
+		bqString += std::to_string(signal.Bq) + ", ";
+		bbString += std::to_string(signal.Bb.z) + ", ";
+		optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
 
 		// update even values
 		t += dt / omega_r * 1e3; // [ms]
@@ -1457,6 +1472,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
 		leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
+		densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume)) + ", ";
+		tString += std::to_string(t) + ", ";
+		bqString += std::to_string(signal.Bq) + ", ";
+		bbString += std::to_string(signal.Bb.z) + ", ";
+		optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
 	}
 
 #if SAVE_PICTURE
@@ -1471,7 +1491,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	signal = getSignal(0);
 	Bs.Bq = BqScale * signal.Bq;
 	Bs.Bb = BzScale * signal.Bb;
-	drawDensity(densDir, h_oddPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, Bs, d_p0, block_scale);
+	drawDensity(densDir, h_oddPsi, dxsize, dysize, dzsize, t - STATE_PREP_DURATION, Bs, d_p0, block_scale);
 #endif
 
 	while (t < END_TIME)
@@ -1481,7 +1501,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		{
 			// update odd values
 			t += dt / omega_r * 1e3; // [ms]
-			if (t >= EXPANSION_START) {
+			if (t >= OPT_TRAP_OFF) {
 				double k = 0.7569772335291065; // From the Aalto QCD code
 				expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
 			}
@@ -1491,10 +1511,15 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 			leapfrog << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
+			densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume)) + ", ";
+			tString += std::to_string(t) + ", ";
+			bqString += std::to_string(signal.Bq) + ", ";
+			bbString += std::to_string(signal.Bb.z) + ", ";
+			optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
 
 			// update even values
 			t += dt / omega_r * 1e3; // [ms]
-			if (t >= EXPANSION_START) {
+			if (t >= OPT_TRAP_OFF) {
 				double k = 0.7569772335291065; // From the Aalto QCD code
 				expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
 			}
@@ -1504,6 +1529,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 			leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
+			densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume)) + ", ";
+			tString += std::to_string(t) + ", ";
+			bqString += std::to_string(signal.Bq) + ", ";
+			bbString += std::to_string(signal.Bb.z) + ", ";
+			optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
 		}
 #if SAVE_PICTURE
 		// Copy back from device memory to host memory
@@ -1517,16 +1547,16 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		signal = getSignal(0);
 		Bs.Bq = BqScale * signal.Bq;
 		Bs.Bb = BzScale * signal.Bb;
-		drawDensity(densDir, h_oddPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, Bs, d_p0, block_scale);
+		drawDensity(densDir, h_oddPsi, dxsize, dysize, dzsize, t - STATE_PREP_DURATION, Bs, d_p0, block_scale);
 #endif
 #if SAVE_STATES
 		// Copy back from device memory to host memory
 		//checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
-		//if (t - CREATION_RAMP_START >= 179)
+		//if (t - STATE_PREP_DURATION >= 179)
 		{
-			saveVolume(vtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - CREATION_RAMP_START);
-			saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - CREATION_RAMP_START);
+			saveVolume(vtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - STATE_PREP_DURATION);
+			saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - STATE_PREP_DURATION);
 
 			std::ofstream oddFs(datsDir + "/" + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
 			if (oddFs.fail() != 0) return 1;
@@ -1542,6 +1572,19 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 	}
 #endif
+	densityStr += "];";
+	tString += "];";
+	bqString += "];";
+	bbString += "];";
+	optTrapString += "];";
+
+	Text textFile;
+	textFile << densityStr << std::endl;
+	textFile << tString << std::endl;
+	textFile << bqString << std::endl;
+	textFile << bbString << std::endl;
+	textFile << optTrapString << std::endl;
+	textFile.save("experimental_field_ramps.m");
 
 	cudaError_t err = cudaGetLastError();
 	if (err != cudaSuccess)
@@ -1572,7 +1615,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 int main(int argc, char** argv)
 {
-	const double blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
+	constexpr double blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
 
 	std::cout << "Start simulating from t = " << t << " ms, with a time step size of " << dt << "." << std::endl;
 	std::cout << "The simulation will end at " << END_TIME << " ms." << std::endl;
@@ -1598,6 +1641,14 @@ int main(int argc, char** argv)
 	//for (auto phase : phases)
 	//{
 	//	initPhase = phase;
+	//	t = 0;
+	//	integrateInTime(blockScale, domainMin, domainMax);
+	//}
+
+	//constexpr int TURNS = 8; // 45 degree global phase turns
+	//for (int turn = 0; turn < TURNS; ++turn)
+	//{
+	//	PHASE = turn * 45.0 / 180.0 * PI;
 	//	t = 0;
 	//	integrateInTime(blockScale, domainMin, domainMax);
 	//}

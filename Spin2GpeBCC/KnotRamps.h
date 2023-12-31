@@ -20,14 +20,14 @@ enum class RampType
 
 // Experimentally realistic ramps
 //// Quadrupole ////
-std::array<double, 2> Bqs = { 4.3, 0.0 };
-std::array<double, 2> BqDurations = { EXPANSION_START, 100 };
-std::array<RampType, 2> BqTypes = { RampType::CONSTANT, RampType::CONSTANT };
+const std::vector<double> Bqs = { 4.3, 0.0, 0.0 };
+const std::vector<double> BqDurations = { OPT_TRAP_OFF + GRADIENT_OFF_DELAY, GRADIENT_OFF_DUARATION, 100 };
+const std::vector<RampType> BqTypes = { RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT };
 
 //// Bias ////
-std::array<double3, 2> Bbs = { make_double3(0, 0, 0.205), make_double3(0, 0, 0) };
-std::array<double, 2> BbDurations = { CREATION_RAMP_START, 100 };
-std::array<RampType, 2> BbTypes = { RampType::CONSTANT, RampType::CONSTANT };
+const std::vector<double3> Bbs = { make_double3(0, 0, 0.219), make_double3(0, 0, 0), make_double3(0, 0, 0), make_double3(0, 0, 3.0) };
+const std::vector<double> BbDurations = { STATE_PREP_DURATION, CREATION_RAMP_DURATION, TOTAL_HOLD_TIME, 100};
+const std::vector<RampType> BbTypes = { RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT, RampType::FAST_EXTRACTION };
 
 // Start with the magnetic field zero being at the center of the condensate
 //// Quadrupole ////
@@ -73,7 +73,7 @@ Signal getSignal(double t)
 		signal.Bq = prevBq + t * (Bqs[BqRampIdx] - prevBq) / BqDurations[BqRampIdx];
 		break;
 	case RampType::FAST_EXTRACTION:
-		signal.Bq = prevBq + (Bqs[BqRampIdx] - prevBq) * sqrt(t / BqDurations[BqRampIdx]);
+		signal.Bq = prevBq + (Bqs[BqRampIdx] - prevBq) * (1.0 - exp(-t / PROJECTION_RAMP_DURATION));
 		break;
 	default:
 		std::cout << "Invalid magnetic ramp type: " << static_cast<int>(BqTypes[BqRampIdx]) << std::endl;
@@ -104,7 +104,7 @@ Signal getSignal(double t)
 		signal.Bb = prevBb + t * (Bbs[BbRampIdx] - prevBb) / BbDurations[BbRampIdx];
 		break;
 	case RampType::FAST_EXTRACTION:
-		signal.Bb = prevBb + (Bbs[BbRampIdx] - prevBb) * sqrt(t / BbDurations[BbRampIdx]);
+		signal.Bb = prevBb + (Bbs[BbRampIdx] - prevBb) * (1.0 - exp(-t / PROJECTION_RAMP_DURATION));
 		break;
 	default:
 		std::cout << "Invalid magnetic ramp type: " << static_cast<int>(BbTypes[BbRampIdx]) << std::endl;

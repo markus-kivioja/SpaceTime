@@ -30,21 +30,21 @@ std::string getProjectionString()
 
 #define COMPUTE_GROUND_STATE 0
 
-#define HYPERBOLIC 0
-#define PARABOLIC 1
-#define ANALYTIC 1
+#define HYPERBOLIC 1
+#define PARABOLIC 0
+#define ANALYTIC 0
 #define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
 
 #define SAVE_STATES 0
-#define SAVE_PICTURE 0
+#define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
 #define THREAD_BLOCK_Y 2
 #define THREAD_BLOCK_Z 1
 
-constexpr double DOMAIN_SIZE_X = 16.0;
-constexpr double DOMAIN_SIZE_Y = 16.0;
-constexpr double DOMAIN_SIZE_Z = 16.0;
+constexpr double DOMAIN_SIZE_X = 24.0; //16.0;
+constexpr double DOMAIN_SIZE_Y = 24.0; //16.0;
+constexpr double DOMAIN_SIZE_Z = 24.0; //16.0;
 
 constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 9 * 6.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
@@ -87,18 +87,18 @@ constexpr double INV_SQRT_2 = 0.70710678118655;
 double dt = 1e-4; //3.9e-4;
 double dt_increse = 1e-5;
 
-const double IMAGE_SAVE_INTERVAL = 0.01; // ms
+const double IMAGE_SAVE_INTERVAL = 0.2; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 0.51; // End time in ms
+double END_TIME = 25.0; // End time in ms
 
 #if COMPUTE_GROUND_STATE
 double sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
 #else
-double sigma = 1.0; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
+double sigma = 0.01; // 0.01; // Coefficient for the relativistic term
 #endif
 double dt_per_sigma = dt / sigma;
 
@@ -301,7 +301,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const uint ysize = uint(domain.y / (block_scale * BLOCK_WIDTH.y)); // + 1;
 	const uint zsize = uint(domain.z / (block_scale * BLOCK_WIDTH.z)); // + 1;
 	const Vector3 p0 = 0.5 * (minp + maxp - block_scale * Vector3(BLOCK_WIDTH.x * xsize, BLOCK_WIDTH.y * ysize, BLOCK_WIDTH.z * zsize));
-	const double3 d_p0 = { p0.x, p0.y, p0.z };
+	const double3 d_p0 = { p0.x + 0.18 * maxp.x, p0.y, p0.z };
 
 	// compute discrete dimensions
 	const uint bsize = VALUES_IN_BLOCK; // bpos.size(); // number of values inside a block
@@ -585,13 +585,17 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
 #if HYPERBOLIC
+		polarState << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, dimensions);
+		update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_oddPsiHyper, d_d0, dimensions);
 		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true);
-		forwardEuler_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
+		update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_evenPsiHyper, d_d0, dimensions);
+		//forwardEuler_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
 #endif
 #if PARABOLIC
-		update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions);
+		polarState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions);
+		update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddPsiPara, d_d0, dimensions);
 		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false);
-		update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions);
+		update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenPsiPara, d_d0, dimensions);
 #endif
 	}
 	else
@@ -687,6 +691,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #if ANALYTIC
 	double phaseTime = 0;
 #endif
+	int iterCount = 0;
 	while (t < END_TIME)
 	{
 #if SAVE_PICTURE
@@ -697,7 +702,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #if PARABOLIC
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsPara));
 #endif
-
 		// Measure wall clock time
 		static auto prevTime = std::chrono::high_resolution_clock::now();
 		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
@@ -713,21 +717,24 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		double dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume);
 #endif
 		static double prevDens = dens;
-		std::cout << "At " << t << " ms density is " << dens << std::endl;
+		//std::cout << "At " << t << " ms density is " << dens << std::endl;
 		constexpr double MARGIN = 1.0; // 0.02;
-		if (t > 0 && (abs(dens - prevDens) > MARGIN || isnan(dens)))
-		{
-			std::cout << "The final numerically stable time step size was " << dt - dt_increse << " ms!";
-			return 1;
-		}
+		//if (t > 0 && (abs(dens - prevDens) > MARGIN || isnan(dens)))
+		//{
+		//	std::cout << "The final numerically stable time step size was " << dt - dt_increse << " ms!";
+		//	return 1;
+		//}
 		prevDens = dens;
 #endif
 #if HYPERBOLIC
 		drawDensity("hyper", h_oddPsiHyper, dxsize, dysize, dzsize, t, dens_folder);
+		double3 com = centerOfMass(h_oddPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
 #endif
 #if PARABOLIC
-		drawDensity("para", h_oddPsiPara, dxsize, dysize, dzsize, t, dens_folder); 
+		drawDensity("para", h_oddPsiPara, dxsize, dysize, dzsize, t, dens_folder);
+		double3 com = centerOfMass(h_oddPsiPara, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
 #endif
+		std::cout << com.x << ", ";
 
 #endif
 		// integrate one iteration
@@ -750,7 +757,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 #if PARABOLIC
 			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiPara, d_evenPsiPara, d_evenQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false);
-			update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions);
+			update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddPsiPara, d_d0, dimensions);
 #endif
 			// update even values (real terms)
 #if ANALYTIC
@@ -769,8 +776,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 #if PARABOLIC
 			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false);
-			update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions);
+			update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenPsiPara, d_d0, dimensions);
 #endif
+			iterCount += 2;
 		}
 #if COMPUTE_ERROR
 		// Compute error
@@ -792,8 +800,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 #if ANALYTIC
 		// Compute error
-		constexpr double E = 127.346; // Computed with ITP
-		//constexpr double E = 127.295; // With the original parabolic ITP
+		//constexpr double E = 127.346; // Computed with the hyperbolic ITP
+		constexpr double E = 127.295; // Computed with the parabolic ITP
 		double2 phaseShift = double2{ cos(-phaseTime * E), sin(-phaseTime * E) };
 		analyticStep << <dimGrid, psiDimBlock >> > (d_analyticPsi, d_groundPsi, dimensions, phaseShift);
 		//checkCudaErrors(cudaMemcpy3D(&analyticPsiBackParams));
@@ -851,6 +859,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 	}
 #endif
+	std::cout << iterCount << " iterations" << std::endl;
 #if HYPERBOLIC
 	checkCudaErrors(cudaFree(d_cudaEvenPsiHyper.ptr));
 	checkCudaErrors(cudaFree(d_cudaEvenQHyper.ptr));
@@ -940,7 +949,9 @@ int main(int argc, char** argv)
 	std::cout << "The simulation will end at " << END_TIME << " ms." << std::endl;
 	std::cout << "Block scale = " << blockScale << std::endl;
 	std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
-	std::cout << "Relativistic sigma = " << sigma << std::endl;
+	std::cout << "dt = " << dt << std::endl;
+	std::cout << "sigma = " << sigma << std::endl;
+	std::cout << "dt / sigma = " << dt_per_sigma << std::endl;
 
 	// integrate in time using DEC
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);

@@ -62,12 +62,12 @@ std::string getProjectionString()
 #define COMPUTE_GROUND_STATE 0
 
 #define HYPERBOLIC 1
-#define PARABOLIC 0
-#define ANALYTIC 1
+#define PARABOLIC 1
+#define ANALYTIC 0
 #define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
 
 #define SAVE_STATES 0
-#define SAVE_PICTURE 1
+#define SAVE_PICTURE 0
 
 #define THREAD_BLOCK_X 16
 #define THREAD_BLOCK_Y 2
@@ -122,13 +122,13 @@ constexpr double NOISE_AMPLITUDE = 0;
 double dt = 5e-5;
 double dt_increse = 1e-5;
 
-const double IMAGE_SAVE_INTERVAL = 0.05; // ms
+const double IMAGE_SAVE_INTERVAL = 0.01; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-constexpr double END_TIME = 0.55; // End time in ms
+constexpr double END_TIME = 0.51; // End time in ms
 
 #if COMPUTE_GROUND_STATE
 double sigma = 0.1;
@@ -207,11 +207,13 @@ __global__ void weightedDiff(double* result, PitchedPtr pLeft, PitchedPtr pRight
 	Complex5Vec diff = { right.s2 - left.s2, right.s1 - left.s1, right.s0 - left.s0, right.s_1 - left.s_1, right.s_2 - left.s_2 };
 
 	double leftSqr = (conj(left.s2) * left.s2).x + (conj(left.s1) * left.s1).x + (conj(left.s0) * left.s0).x + (conj(left.s_1) * left.s_1).x + (conj(left.s_2) * left.s_2).x;
+	double rightSqr = (conj(right.s2) * right.s2).x + (conj(right.s1) * right.s1).x + (conj(right.s0) * right.s0).x + (conj(right.s_1) * right.s_1).x + (conj(right.s_2) * right.s_2).x;
 	double diffSqr = (conj(diff.s2) * diff.s2).x + (conj(diff.s1) * diff.s1).x + (conj(diff.s0) * diff.s0).x + (conj(diff.s_1) * diff.s_1).x + (conj(diff.s_2) * diff.s_2).x;
 
 	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
 	//result[idx] = leftSqr * diffSqr;
-	result[idx] = diffSqr;
+	//result[idx] = diffSqr;
+	result[idx] = abs(leftSqr - rightSqr);
 }
 
 __global__ void analyticStep(PitchedPtr nextStep, PitchedPtr prevStep, uint3 dimensions, const double2 phaseShift)
@@ -798,17 +800,17 @@ __global__ void forwardEuler_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr 
 		BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
 		Complex5Vec q;
-		q.s2 = dt_per_sigma * (d0psi.s2 - prev->values[dualEdgeId].s2);
-		q.s1 = dt_per_sigma * (d0psi.s1 - prev->values[dualEdgeId].s1);
-		q.s0 = dt_per_sigma * (d0psi.s0 - prev->values[dualEdgeId].s0);
-		q.s_1 = dt_per_sigma * (d0psi.s_1 - prev->values[dualEdgeId].s_1);
-		q.s_2 = dt_per_sigma * (d0psi.s_2 - prev->values[dualEdgeId].s_2);
+		q.s2 = dt_per_sigma * (prev->values[dualEdgeId].s2 + d0psi.s2);
+		q.s1 = dt_per_sigma * (prev->values[dualEdgeId].s1 + d0psi.s1);
+		q.s0 = dt_per_sigma * (prev->values[dualEdgeId].s0 + d0psi.s0);
+		q.s_1 = dt_per_sigma * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
+		q.s_2 = dt_per_sigma * (prev->values[dualEdgeId].s_2 + d0psi.s_2);
 
-		next->values[dualEdgeId].s2 = prev->values[dualEdgeId].s2 + make_double2(q.s2.y, -q.s2.x);
-		next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1 + make_double2(q.s1.y, -q.s1.x);
-		next->values[dualEdgeId].s0 = prev->values[dualEdgeId].s0 + make_double2(q.s0.y, -q.s0.x);
-		next->values[dualEdgeId].s_1 = prev->values[dualEdgeId].s_1 + make_double2(q.s_1.y, -q.s_1.x);
-		next->values[dualEdgeId].s_2 = prev->values[dualEdgeId].s_2 + make_double2(q.s_2.y, -q.s_2.x);
+		next->values[dualEdgeId].s2 = prev->values[dualEdgeId].s2 + make_double2(-q.s2.y, q.s2.x);
+		next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1 + make_double2(-q.s1.y, q.s1.x);
+		next->values[dualEdgeId].s0 = prev->values[dualEdgeId].s0 + make_double2(-q.s0.y, q.s0.x);
+		next->values[dualEdgeId].s_1 = prev->values[dualEdgeId].s_1 + make_double2(-q.s_1.y, q.s_1.x);
+		next->values[dualEdgeId].s_2 = prev->values[dualEdgeId].s_2 + make_double2(-q.s_2.y, q.s_2.x);
 	}
 	else
 	{
@@ -863,11 +865,11 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 	}
 	if (hyperb)
 	{
-		H.s2 = -H.s2;
-		H.s1 = -H.s1;
-		H.s0 = -H.s0;
-		H.s_1 = -H.s_1;
-		H.s_2 = -H.s_2;
+		H.s2 =  -1.0 * H.s2;
+		H.s1 =  -1.0 * H.s1;
+		H.s0 =  -1.0 * H.s0;
+		H.s_1 = -1.0 * H.s_1;
+		H.s_2 = -1.0 * H.s_2;
 	}
 
 	const double normSq_s2 = prev.s2.x * prev.s2.x + prev.s2.y * prev.s2.y;
@@ -959,17 +961,17 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 		BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
 		Complex5Vec q;
-		q.s2 = 2 * dt_per_sigma * (d0psi.s2 - prev->values[dualEdgeId].s2);
-		q.s1 = 2 * dt_per_sigma * (d0psi.s1 - prev->values[dualEdgeId].s1);
-		q.s0 = 2 * dt_per_sigma * (d0psi.s0 - prev->values[dualEdgeId].s0);
-		q.s_1 = 2 * dt_per_sigma * (d0psi.s_1 - prev->values[dualEdgeId].s_1);
-		q.s_2 = 2 * dt_per_sigma * (d0psi.s_2 - prev->values[dualEdgeId].s_2);
+		q.s2 = 2 * dt_per_sigma * (prev->values[dualEdgeId].s2 + d0psi.s2);
+		q.s1 = 2 * dt_per_sigma * (prev->values[dualEdgeId].s1 + d0psi.s1);
+		q.s0 = 2 * dt_per_sigma * (prev->values[dualEdgeId].s0 + d0psi.s0);
+		q.s_1 = 2 * dt_per_sigma * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
+		q.s_2 = 2 * dt_per_sigma * (prev->values[dualEdgeId].s_2 + d0psi.s_2);
 
-		next->values[dualEdgeId].s2 += make_double2(q.s2.y, -q.s2.x);
-		next->values[dualEdgeId].s1 += make_double2(q.s1.y, -q.s1.x);
-		next->values[dualEdgeId].s0 += make_double2(q.s0.y, -q.s0.x);
-		next->values[dualEdgeId].s_1 += make_double2(q.s_1.y, -q.s_1.x);
-		next->values[dualEdgeId].s_2 += make_double2(q.s_2.y, -q.s_2.x);
+		next->values[dualEdgeId].s2 += make_double2(-q.s2.y, q.s2.x);
+		next->values[dualEdgeId].s1 += make_double2(-q.s1.y, q.s1.x);
+		next->values[dualEdgeId].s0 += make_double2(-q.s0.y, q.s0.x);
+		next->values[dualEdgeId].s_1 += make_double2(-q.s_1.y, q.s_1.x);
+		next->values[dualEdgeId].s_2 += make_double2(-q.s_2.y, q.s_2.x);
 	}
 	else
 	{
@@ -1024,11 +1026,11 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 	}
 	if (hyperb)
 	{
-		H.s2 = -H.s2;
-		H.s1 = -H.s1;
-		H.s0 = -H.s0;
-		H.s_1 = -H.s_1;
-		H.s_2 = -H.s_2;
+		H.s2 =  -1.0 * H.s2;
+		H.s1 =  -1.0 * H.s1;
+		H.s0 =  -1.0 * H.s0;
+		H.s_1 = -1.0 * H.s_1;
+		H.s_2 = -1.0 * H.s_2;
 	}
 
 	const double normSq_s2 = prev.s2.x * prev.s2.x + prev.s2.y * prev.s2.y;
@@ -1474,7 +1476,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const double volume = block_scale * block_scale * block_scale * VOLUME;
 
 #if COMPUTE_GROUND_STATE
-	if (false) //continueFromEarlier)
+	if (continueFromEarlier)
 	{
 		const double PHASE = 0;// PI / 2;
 
@@ -1504,7 +1506,19 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume) << std::endl;
 	}
 #endif
-	double extraPot = 0.0;
+
+#if ANALYTIC
+	cudaMemcpy3DParms groundPsiParams = { 0 };
+#if HYPERBOLIC
+	groundPsiParams.srcPtr = d_cudaOddPsiHyper;
+#elif PARABOLIC
+	groundPsiParams.srcPtr = d_cudaOddPsiPara;
+#endif
+	groundPsiParams.dstPtr = d_cudaGroundPsi;
+	groundPsiParams.extent = psiExtent;
+	groundPsiParams.kind = cudaMemcpyDeviceToDevice;
+	checkCudaErrors(cudaMemcpy3D(&groundPsiParams));
+#endif
 
 #if !COMPUTE_GROUND_STATE
 	// Take one forward Euler step if starting from the ground state or time step changed
@@ -1559,11 +1573,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			signal = getSignal(0);
 			Bs.Bq = BqScale * signal.Bq;
 			Bs.Bb = BzScale * signal.Bb;
-			//drawIandR(folder, h_evenPsiHyper, dxsize, dysize, dzsize, iter, Bs, d_p0, block_scale);
-			//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume) << std::endl;
+			drawIandR(folder, h_evenPsiHyper, dxsize, dysize, dzsize, iter, Bs, d_p0, block_scale);
+			std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume) << std::endl;
 
-			//double3 com = centerOfMass(h_evenPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
-			//std::cout << "Center of mass: " << com.x << ", " << com.y << ", " << com.z << std::endl;
+			double3 com = centerOfMass(h_evenPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
+			std::cout << "Center of mass: " << com.x << ", " << com.y << ", " << com.z << std::endl;
 
 			// Compute energy/chemical potential
 			get_Hpsi << <dimGrid, psiDimBlock >> > (d_HPsi, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, dimensions, block_scale, d_p0, c0, c2, c4);
@@ -1664,7 +1678,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		// Measure wall clock time
 		static auto prevTime = std::chrono::high_resolution_clock::now();
 		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
-		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
+		//std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 		prevTime = std::chrono::high_resolution_clock::now();
 
 		// For checking the numerical stability
@@ -1676,7 +1690,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		double dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume);
 #endif
 		static double prevDens = dens;
-		std::cout << "At " << t << " ms density is " << dens << std::endl;
+		//std::cout << "At " << t << " ms density is " << dens << std::endl;
 		constexpr double MARGIN = 1.0; // 0.02;
 		if (t > 0 && (abs(dens - prevDens) > MARGIN || isnan(dens)))
 		{
@@ -1755,16 +1769,17 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 #if ANALYTIC
 		// Compute error
-		constexpr double E = 126.621; // Computed with ITP
+		//constexpr double E = 126.621; // Computed with ITP
+		constexpr double E = 126.421; // Computed with ITP
 		double2 phaseShift = double2{ cos(-phaseTime * E), sin(-phaseTime * E) };
 		analyticStep << <dimGrid, psiDimBlock >> > (d_analyticPsi, d_groundPsi, dimensions, phaseShift);
 		//checkCudaErrors(cudaMemcpy3D(&analyticPsiBackParams));
 		//drawDensityRI("analytic_", h_analyticPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, resultsDir);
 
 #if HYPERBOLIC
-		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_analyticPsi, d_oddPsiHyper, dimensions);
+		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_groundPsi, d_oddPsiHyper, dimensions);
 #elif PARABOLIC
-		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_analyticPsi, d_oddPsiPara, dimensions);
+		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_groundPsi, d_oddPsiPara, dimensions);
 #endif
 		int prevStride = bodies;
 		while (prevStride > 1)
