@@ -36,17 +36,17 @@ std::string getProjectionString()
 #define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
 
 #define SAVE_STATES 0
-#define SAVE_PICTURE 1
+#define SAVE_PICTURE 0
 
 #define THREAD_BLOCK_X 16
 #define THREAD_BLOCK_Y 2
 #define THREAD_BLOCK_Z 1
 
-constexpr double DOMAIN_SIZE_X = 24.0; //16.0;
-constexpr double DOMAIN_SIZE_Y = 24.0; //16.0;
-constexpr double DOMAIN_SIZE_Z = 24.0; //16.0;
+constexpr double DOMAIN_SIZE_X = 16.0; //24.0;
+constexpr double DOMAIN_SIZE_Y = 16.0; //24.0;
+constexpr double DOMAIN_SIZE_Z = 16.0; //24.0;
 
-constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 9 * 6.0;
+constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 1 * 6.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
 
@@ -84,23 +84,29 @@ const double BzQuadScale = sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (tra
 constexpr double SQRT_2 = 1.41421356237309;
 constexpr double INV_SQRT_2 = 0.70710678118655;
 
-double dt = 1e-4; //3.9e-4;
+//double dt = 3.9e-4; // For parabolic eq and 112^3 domain
+//double dt = 6.9e-4; // For hyperbolic eq and 112^3 domain
+//double dt = 1e-4; // Default
+double dt = 0.69e-3;
 double dt_increse = 1e-5;
 
-const double IMAGE_SAVE_INTERVAL = 0.2; // ms
+const double IMAGE_SAVE_INTERVAL = 0.01; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 25.0; // End time in ms
+double END_TIME = 0.5; // End time in ms
 
 #if COMPUTE_GROUND_STATE
 double sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
 #else
-double sigma = 0.01; // 0.01; // Coefficient for the relativistic term
+double sigma = 0.001; // 0.01; // Coefficient for the relativistic term
 #endif
 double dt_per_sigma = dt / sigma;
+
+constexpr double E = 127.346; // Computed with the hyperbolic ITP
+//constexpr double E = 127.295; // Computed with the parabolic ITP
 
 enum class Phase
 {
@@ -301,7 +307,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const uint ysize = uint(domain.y / (block_scale * BLOCK_WIDTH.y)); // + 1;
 	const uint zsize = uint(domain.z / (block_scale * BLOCK_WIDTH.z)); // + 1;
 	const Vector3 p0 = 0.5 * (minp + maxp - block_scale * Vector3(BLOCK_WIDTH.x * xsize, BLOCK_WIDTH.y * ysize, BLOCK_WIDTH.z * zsize));
-	const double3 d_p0 = { p0.x + 0.18 * maxp.x, p0.y, p0.z };
+	const double3 d_p0 = { p0.x, p0.y, p0.z };
+	//const double3 d_p0 = { p0.x + 0.18 * maxp.x, p0.y, p0.z };
 
 	// compute discrete dimensions
 	const uint bsize = VALUES_IN_BLOCK; // bpos.size(); // number of values inside a block
@@ -505,16 +512,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	d0.clear();
 	d1.clear();
 	hodges.clear();
-#if !(SAVE_PICTURE)
-#if HYPERBOLIC
-	cudaFreeHost(h_evenPsiHyper);
-	cudaFreeHost(h_oddPsiHyper);
-#endif
-#if PARABOLIC
-	cudaFreeHost(h_evenPsiPara);
-	cudaFreeHost(h_oddPsiPara);
-#endif
-#endif
+
 #if HYPERBOLIC
 	cudaMemcpy3DParms evenPsiBackParamsHyper = createDeviceToHostParams(d_cudaEvenPsiHyper, h_cudaEvenPsiHyper, psiExtent);
 	cudaMemcpy3DParms oddPsiBackParamsHyper = createDeviceToHostParams(d_cudaOddPsiHyper, h_cudaOddPsiHyper, psiExtent);
@@ -708,6 +706,19 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		//std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 		prevTime = std::chrono::high_resolution_clock::now();
 
+#if HYPERBOLIC
+		drawDensity("hyper", h_oddPsiHyper, dxsize, dysize, dzsize, t, dens_folder);
+		//double3 comHyper = centerOfMass(h_oddPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
+		//std::cout << comHyper.x << ", ";
+#endif
+#if PARABOLIC
+		drawDensity("para", h_oddPsiPara, dxsize, dysize, dzsize, t, dens_folder);
+		//double3 comPara = centerOfMass(h_oddPsiPara, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
+		//std::cout << comPara.x << "; ";
+#endif
+
+#endif
+
 		// For checking the numerical stability
 #if !COMPUTE_ERROR
 #if HYPERBOLIC
@@ -717,26 +728,18 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		double dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume);
 #endif
 		static double prevDens = dens;
-		//std::cout << "At " << t << " ms density is " << dens << std::endl;
-		constexpr double MARGIN = 1.0; // 0.02;
-		//if (t > 0 && (abs(dens - prevDens) > MARGIN || isnan(dens)))
-		//{
-		//	std::cout << "The final numerically stable time step size was " << dt - dt_increse << " ms!";
-		//	return 1;
-		//}
+		std::cout << "At " << t << " ms density is " << dens << std::endl;
+		constexpr double RELATIVE_MARGIN = 0.1; // 0.02;
+		constexpr double ABSOLUTE_MARGIN = 1.1; // 0.02;
+		//if (t > 0 && (abs(dens - prevDens) > RELATIVE_MARGIN || isnan(dens)))
+		if (t > 0 && dens > ABSOLUTE_MARGIN || isnan(dens))
+		{
+			std::cout << "The final numerically stable time step size was " << dt - dt_increse << " ms!";
+			return 1;
+		}
 		prevDens = dens;
 #endif
-#if HYPERBOLIC
-		drawDensity("hyper", h_oddPsiHyper, dxsize, dysize, dzsize, t, dens_folder);
-		double3 com = centerOfMass(h_oddPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
-#endif
-#if PARABOLIC
-		drawDensity("para", h_oddPsiPara, dxsize, dysize, dzsize, t, dens_folder);
-		double3 com = centerOfMass(h_oddPsiPara, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
-#endif
-		std::cout << com.x << ", ";
 
-#endif
 		// integrate one iteration
 		for (uint step = 0; step < IMAGE_SAVE_FREQUENCY; step++)
 		{
@@ -752,11 +755,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 
 #if HYPERBOLIC
-			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true);
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true, sigma);
 			update_q_hyper << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
 #endif
 #if PARABOLIC
-			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiPara, d_evenPsiPara, d_evenQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false);
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiPara, d_evenPsiPara, d_evenQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false, 0);
 			update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddPsiPara, d_d0, dimensions);
 #endif
 			// update even values (real terms)
@@ -771,11 +774,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 			
 #if HYPERBOLIC
-			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true);
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true, sigma);
 			update_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
 #endif
 #if PARABOLIC
-			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false);
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false, 0);
 			update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenPsiPara, d_d0, dimensions);
 #endif
 			iterCount += 2;
@@ -800,8 +803,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 #if ANALYTIC
 		// Compute error
-		//constexpr double E = 127.346; // Computed with the hyperbolic ITP
-		constexpr double E = 127.295; // Computed with the parabolic ITP
 		double2 phaseShift = double2{ cos(-phaseTime * E), sin(-phaseTime * E) };
 		analyticStep << <dimGrid, psiDimBlock >> > (d_analyticPsi, d_groundPsi, dimensions, phaseShift);
 		//checkCudaErrors(cudaMemcpy3D(&analyticPsiBackParams));
@@ -941,6 +942,13 @@ void readConfFile()
 
 int main(int argc, char** argv)
 {
+	for (int i = 0; i < 10; ++i)
+	{
+		double x = 58.0 + i * 6.0;
+		std::cout << DOMAIN_SIZE_X / x / BLOCK_WIDTH_X << ", ";
+	}
+	return;
+
 	readConfFile();
 
 	const double blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
@@ -957,16 +965,16 @@ int main(int argc, char** argv)
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
 
-	integrateInTime(blockScale, domainMin, domainMax);
-	//while (!integrateInTime(blockScale, domainMin, domainMax))
-	//{
-	//	std::cout << "Time step was: " << dt << std::endl;
-	//	dt += dt_increse;
-	//	dt_per_sigma = dt / sigma;
-	//	IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
-	//
-	//	t = 0;
-	//}
+	//integrateInTime(blockScale, domainMin, domainMax);
+	while (!integrateInTime(blockScale, domainMin, domainMax))
+	{
+		std::cout << "Time step was: " << dt << std::endl;
+		dt += dt_increse;
+		dt_per_sigma = dt / sigma;
+		IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
+	
+		t = 0;
+	}
 
 	return 0;
 }

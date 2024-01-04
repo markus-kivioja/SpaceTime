@@ -136,9 +136,11 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 
 	if (hyperb)
 	{
-		H.s1 = -1.0 * H.s1;
-		H.s0 = -1.0 * H.s0;
-		H.s_1 = -1.0 * H.s_1;
+		//static constexpr double coef = 2.8; // For sigma == 0.01
+		static constexpr double coef = 10.0; // For sigma == 0.001
+		H.s1 = -coef * sigma * E * H.s1;
+		H.s0 = -coef * sigma * E * H.s0;
+		H.s_1 = -coef * sigma * E * H.s_1;
 	}
 
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
@@ -172,7 +174,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 	nextPsi->values[dualNodeId].s_1 = prev.s_1 + dt * double2{ H.s_1.y, -H.s_1.x };
 };
 
-__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double dt, bool hyperb)
+__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double dt, bool hyperb, double sigma)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -216,9 +218,11 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 
 	if (hyperb)
 	{
-		H.s1 = -1.0 * H.s1;
-		H.s0 = -1.0 * H.s0;
-		H.s_1 = -1.0 * H.s_1;
+		//static constexpr double coef = 2.8; // For sigma == 0.01
+		static constexpr double coef = 10.0; // For sigma == 0.001
+		H.s1 =  -coef * sigma * E * H.s1;
+		H.s0 =  -coef * sigma * E * H.s0;
+		H.s_1 = -coef * sigma * E * H.s_1;
 	}
 
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
@@ -247,9 +251,9 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 	H.s0 += (Bxy * prev.s1 + BxyConj * prev.s_1);
 	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
 
-	nextPsi->values[dualNodeId].s1 += 2 * dt * double2{ H.s1.y, -H.s1.x };
-	nextPsi->values[dualNodeId].s0 += 2 * dt * double2{ H.s0.y, -H.s0.x };
-	nextPsi->values[dualNodeId].s_1 += 2 * dt * double2{ H.s_1.y, -H.s_1.x };
+	nextPsi->values[dualNodeId].s1 += 2.0 * dt * double2{ H.s1.y, -H.s1.x };
+	nextPsi->values[dualNodeId].s0 += 2.0 * dt * double2{ H.s0.y, -H.s0.x };
+	nextPsi->values[dualNodeId].s_1 += 2.0 * dt * double2{ H.s_1.y, -H.s_1.x };
 };
 
 __global__ void analyticStep(PitchedPtr nextStep, PitchedPtr prevStep, uint3 dimensions, const double2 phaseShift)

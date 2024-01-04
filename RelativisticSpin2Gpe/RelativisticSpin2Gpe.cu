@@ -13,7 +13,7 @@ enum class Phase {
 	BN_HORI,
 	CYCLIC
 };
-constexpr Phase initPhase = Phase::UN;
+constexpr Phase initPhase = Phase::CYCLIC;
 
 std::string phaseToString(Phase phase)
 {
@@ -67,7 +67,7 @@ std::string getProjectionString()
 #define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
 
 #define SAVE_STATES 0
-#define SAVE_PICTURE 0
+#define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
 #define THREAD_BLOCK_Y 2
@@ -77,7 +77,7 @@ constexpr double DOMAIN_SIZE_X = 20.0;
 constexpr double DOMAIN_SIZE_Y = 20.0;
 constexpr double DOMAIN_SIZE_Z = 20.0;
 
-constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 9 * 6.0;
+constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 7 * 6.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
 
@@ -119,7 +119,7 @@ constexpr double SQRT_2 = 1.41421356237309;
 
 constexpr double NOISE_AMPLITUDE = 0;
 
-double dt = 5e-5;
+double dt = 1e-4; // 5e-5;
 double dt_increse = 1e-5;
 
 const double IMAGE_SAVE_INTERVAL = 0.01; // ms
@@ -133,9 +133,11 @@ constexpr double END_TIME = 0.51; // End time in ms
 #if COMPUTE_GROUND_STATE
 double sigma = 0.1;
 #else
-double sigma = 1.0;
+double sigma = 0.001; // 0.01; // Coefficient for the relativistic term
 #endif
 double dt_per_sigma = dt / sigma;
+
+constexpr double E = 126.621; // Computed with ITP
 
 std::string toStringShort(const double value)
 {
@@ -212,8 +214,8 @@ __global__ void weightedDiff(double* result, PitchedPtr pLeft, PitchedPtr pRight
 
 	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
 	//result[idx] = leftSqr * diffSqr;
-	//result[idx] = diffSqr;
-	result[idx] = abs(leftSqr - rightSqr);
+	result[idx] = diffSqr;
+	//result[idx] = abs(leftSqr - rightSqr);
 }
 
 __global__ void analyticStep(PitchedPtr nextStep, PitchedPtr prevStep, uint3 dimensions, const double2 phaseShift)
@@ -818,7 +820,7 @@ __global__ void forwardEuler_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr 
 	}
 }
 
-__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4, double dt, bool hyperb)
+__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4, double dt, bool hyperb, double sigma)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -865,11 +867,14 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 	}
 	if (hyperb)
 	{
-		H.s2 =  -1.0 * H.s2;
-		H.s1 =  -1.0 * H.s1;
-		H.s0 =  -1.0 * H.s0;
-		H.s_1 = -1.0 * H.s_1;
-		H.s_2 = -1.0 * H.s_2;
+		//static constexpr double coef = 2.8; // For sigma == 0.01
+		//static constexpr double coef = 10.0; // For sigma == 0.001
+		const double coef = 1.0 / (sigma * E);
+		H.s2 = -coef * sigma * E * H.s2;
+		H.s1 = -coef * sigma * E * H.s1;
+		H.s0 = -coef * sigma * E * H.s0;
+		H.s_1 = -coef * sigma * E * H.s_1;
+		H.s_2 = -coef * sigma * E * H.s_2;
 	}
 
 	const double normSq_s2 = prev.s2.x * prev.s2.x + prev.s2.y * prev.s2.y;
@@ -979,7 +984,7 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 	}
 }
 
-__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4, double dt, bool hyperb)
+__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4, double dt, bool hyperb, double sigma)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -1026,11 +1031,14 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 	}
 	if (hyperb)
 	{
-		H.s2 =  -1.0 * H.s2;
-		H.s1 =  -1.0 * H.s1;
-		H.s0 =  -1.0 * H.s0;
-		H.s_1 = -1.0 * H.s_1;
-		H.s_2 = -1.0 * H.s_2;
+		//static constexpr double coef = 2.8; // For sigma == 0.01
+		//static constexpr double coef = 10.0; // For sigma == 0.001
+		const double coef = 1.0 / (sigma * E);
+		H.s2 = -coef * sigma * E * H.s2;
+		H.s1 = -coef * sigma * E * H.s1;
+		H.s0 = -coef * sigma * E * H.s0;
+		H.s_1 = -coef * sigma * E * H.s_1;
+		H.s_2 = -coef * sigma * E * H.s_2;
 	}
 
 	const double normSq_s2 = prev.s2.x * prev.s2.x + prev.s2.y * prev.s2.y;
@@ -1269,6 +1277,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaPitchedPtr d_cudaEvenQPara = allocDevice3D(edgeExtent);
 	cudaPitchedPtr d_cudaOddPsiPara = allocDevice3D(psiExtent);
 	cudaPitchedPtr d_cudaOddQPara = allocDevice3D(edgeExtent);
+
+	std::cout << "Allocate GPU mem: " << (psiExtent.width * psiExtent.height * psiExtent.depth * 4 + edgeExtent.width * edgeExtent.height * edgeExtent.depth * 4) / (1024 * 1024 * 1024) << " GB" << std::endl;
 #endif
 #if ANALYTIC
 	cudaPitchedPtr d_cudaGroundPsi = allocDevice3D(psiExtent);
@@ -1531,13 +1541,20 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.Bb = BzScale * signal.Bb;
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
+#if COMPUTE_ERROR
+		unState << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, dimensions);
+		unState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions);
+#endif
 #if HYPERBOLIC
-		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, true);
-		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma, true);
+		//forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, true, sigma);
+		//forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma, true);
+		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma, false);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, false, 0.0);
+		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma, false);
 #endif
 #if PARABOLIC
 		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions, dt_per_sigma, false);
-		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, false);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, false, 0.0);
 		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions, dt_per_sigma, false);
 #endif
 	}
@@ -1702,10 +1719,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 #if SAVE_PICTURE
 #if HYPERBOLIC
-		drawDensity(densDir, h_oddPsiHyper, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
+		drawDensity("hyper", densDir, h_oddPsiHyper, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
 #endif
 #if PARABOLIC
-		drawDensity(densDir, h_oddPsiPara, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
+		drawDensity("parab", densDir, h_oddPsiPara, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
 #endif
 #endif
 
@@ -1724,11 +1741,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 
 #if HYPERBOLIC
-			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, true);
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, true, sigma);
 			update_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma, true);
 #endif
 #if PARABOLIC
-			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiPara, d_evenPsiPara, d_evenQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, false);
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiPara, d_evenPsiPara, d_evenQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, false, 0.0);
 			update_q << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions, dt_per_sigma, false);
 #endif
 
@@ -1744,11 +1761,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 
 #if HYPERBOLIC
-			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, true);
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, true, sigma);
 			update_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma, true);
 #endif
 #if PARABOLIC
-			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, false);
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, false, 0.0);
 			update_q << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions, dt_per_sigma, false);
 #endif
 		}
