@@ -11,9 +11,12 @@ enum class Phase {
 	UN = 0,
 	BN_VERT,
 	BN_HORI,
-	CYCLIC
+	CYCLIC,
+	CYCLIC_EDGE_UP,
+	M1,
+	M2
 };
-Phase initPhase = Phase::BN_VERT;
+Phase initPhase = Phase::CYCLIC_EDGE_UP;
 
 std::string phaseToString(Phase phase)
 {
@@ -27,6 +30,12 @@ std::string phaseToString(Phase phase)
 		return "bn_hori";
 	case Phase::CYCLIC:
 		return "cyclic";
+	case Phase::CYCLIC_EDGE_UP:
+		return "cyclic_edge_up";
+	case Phase::M1:
+		return "m=1";
+	case Phase::M2:
+		return "m=2";
 	default:
 		return "";
 	}
@@ -122,7 +131,16 @@ const double BzQuadScale = sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (tra
 constexpr double SQRT_2 = 1.41421356237309;
 //constexpr double INV_SQRT_2 = 0.70710678118655;
 
-const std::string GROUND_STATE_FILENAME = "ground_state.dat";
+std::string toStringShort(const double value)
+{
+	std::ostringstream out;
+	out.precision(2);
+	out << std::fixed << value;
+	return out.str();
+};
+
+const std::string EXTRA_INFORMATION = toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X) + "_" + phaseToString(initPhase);
+const std::string GROUND_STATE_FILENAME = "ground_state.dat"; //"ground_state_psi_" + EXTRA_INFORMATION + ".dat";
 constexpr double NOISE_AMPLITUDE = 0; //0.1;
 
 //constexpr double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
@@ -134,9 +152,9 @@ const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-constexpr double END_TIME = 20.0; // End time in ms
+constexpr double END_TIME = 0.6; // End time in ms
 
-constexpr double PHASE = 5.105088062083414; // In radians
+double PHASE = 0; // 5.105088062083414; // In radians
 
 __device__ __inline__ double trap(double3 p, double t)
 {
@@ -527,6 +545,108 @@ __global__ void cyclicState(PitchedPtr psi, uint3 dimensions, double phase = 0) 
 	pPsi->values[dualNodeId].s_2 = { 0, 0 };
 };
 
+__global__ void cyclicEdgeUpState(PitchedPtr psi, uint3 dimensions, double phase = 0) // Cyclic edge up phase
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	BlockPsis* pPsi = (BlockPsis*)(psi.ptr + psi.slicePitch * zid + psi.pitch * yid) + dataXid;
+
+	// Update psi
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	Complex5Vec prev = pPsi->values[dualNodeId];
+
+	double normSq_s2 = prev.s2.x * prev.s2.x + prev.s2.y * prev.s2.y;
+	double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
+	double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
+	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
+	double normSq_s_2 = prev.s_2.x * prev.s_2.x + prev.s_2.y * prev.s_2.y;
+	double normSq = normSq_s2 + normSq_s1 + normSq_s0 + normSq_s_1 + normSq_s_2;
+
+	pPsi->values[dualNodeId].s2 = { sqrt(normSq) * 0.5, 0 };
+	pPsi->values[dualNodeId].s1 = { 0, 0 };
+	pPsi->values[dualNodeId].s0 = { 0, sqrt(normSq) * sqrt(2.0) * 0.5 };
+	pPsi->values[dualNodeId].s_1 = { 0, 0 };
+	pPsi->values[dualNodeId].s_2 = { sqrt(normSq) * 0.5, 0 };
+};
+
+__global__ void m1State(PitchedPtr psi, uint3 dimensions, double phase = 0) // m=1 phase
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	BlockPsis* pPsi = (BlockPsis*)(psi.ptr + psi.slicePitch * zid + psi.pitch * yid) + dataXid;
+
+	// Update psi
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	Complex5Vec prev = pPsi->values[dualNodeId];
+
+	double normSq_s2 = prev.s2.x * prev.s2.x + prev.s2.y * prev.s2.y;
+	double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
+	double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
+	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
+	double normSq_s_2 = prev.s_2.x * prev.s_2.x + prev.s_2.y * prev.s_2.y;
+	double normSq = normSq_s2 + normSq_s1 + normSq_s0 + normSq_s_1 + normSq_s_2;
+
+	pPsi->values[dualNodeId].s2 = { 0, 0 };
+	pPsi->values[dualNodeId].s1 = { sqrt(normSq), 0 };
+	pPsi->values[dualNodeId].s0 = { 0, 0 };
+	pPsi->values[dualNodeId].s_1 = { 0, 0 };
+	pPsi->values[dualNodeId].s_2 = { 0, 0 };
+};
+
+__global__ void m2State(PitchedPtr psi, uint3 dimensions, double phase = 0) // m=2 phase
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	BlockPsis* pPsi = (BlockPsis*)(psi.ptr + psi.slicePitch * zid + psi.pitch * yid) + dataXid;
+
+	// Update psi
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	Complex5Vec prev = pPsi->values[dualNodeId];
+
+	double normSq_s2 = prev.s2.x * prev.s2.x + prev.s2.y * prev.s2.y;
+	double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
+	double normSq_s0 = prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y;
+	double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
+	double normSq_s_2 = prev.s_2.x * prev.s_2.x + prev.s_2.y * prev.s_2.y;
+	double normSq = normSq_s2 + normSq_s1 + normSq_s0 + normSq_s_1 + normSq_s_2;
+
+	pPsi->values[dualNodeId].s2 = { sqrt(normSq), 0 };
+	pPsi->values[dualNodeId].s1 = { 0, 0 };
+	pPsi->values[dualNodeId].s0 = { 0, 0 };
+	pPsi->values[dualNodeId].s_1 = { 0, 0 };
+	pPsi->values[dualNodeId].s_2 = { 0, 0 };
+};
+
 #if COMPUTE_GROUND_STATE
 __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __restrict__ laplace, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4, double t)
 {
@@ -649,9 +769,9 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __rest
 	double2 c23 = sqrt(1.5) * denominator - 0.2 * c4 * prev.s0 * conj(prev.s_1);
 	double2 c34 = sqrt(1.5) * denominator - 0.2 * c4 * prev.s1 * conj(prev.s0);
 
-	H.s2  += (c12 * prev.s1 + c13 * prev.s0);
-	H.s1  += (conj(c12) * prev.s2 + c23 * prev.s0);
-	H.s0  += (conj(c13) * prev.s2 + c35 * prev.s_2 + c34 * prev.s_1 + conj(c23) * prev.s1);
+	H.s2 += (c12 * prev.s1 + c13 * prev.s0);
+	H.s1 += (conj(c12) * prev.s2 + c23 * prev.s0);
+	H.s0 += (conj(c13) * prev.s2 + c35 * prev.s_2 + c34 * prev.s_1 + conj(c23) * prev.s1);
 	H.s_1 += (conj(c34) * prev.s0 + c45 * prev.s_2);
 	H.s_2 += (conj(c35) * prev.s0 + conj(c45) * prev.s_1);
 
@@ -786,9 +906,9 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __r
 	double2 c23 = sqrt(1.5) * denominator - 0.2 * c4 * prev.s0 * conj(prev.s_1);
 	double2 c34 = sqrt(1.5) * denominator - 0.2 * c4 * prev.s1 * conj(prev.s0);
 
-	H.s2  += (c12 * prev.s1 + c13 * prev.s0);
-	H.s1  += (conj(c12) * prev.s2 + c23 * prev.s0);
-	H.s0  += (conj(c13) * prev.s2 + c35 * prev.s_2 + c34 * prev.s_1 + conj(c23) * prev.s1);
+	H.s2 += (c12 * prev.s1 + c13 * prev.s0);
+	H.s1 += (conj(c12) * prev.s2 + c23 * prev.s0);
+	H.s0 += (conj(c13) * prev.s2 + c35 * prev.s_2 + c34 * prev.s_1 + conj(c23) * prev.s1);
 	H.s_1 += (conj(c34) * prev.s0 + c45 * prev.s_2);
 	H.s_2 += (conj(c35) * prev.s0 + conj(c45) * prev.s_1);
 
@@ -798,9 +918,9 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __r
 	const double2 Bxy = { B.x, B.y };
 	const double Bz = B.z;
 	const double BxyNormSq = (conj(Bxy) * Bxy).x;
-	H.s2  -= (4 * Bz * Bz + BxyNormSq) * prev.s2 + (3 * Bz * conj(Bxy)) * prev.s1 + (c * conj(Bxy) * conj(Bxy)) * prev.s0 + (0) * prev.s_1 + (0) * prev.s_2;
-	H.s1  -= (3 * Bz * Bxy) * prev.s2 + (Bz * Bz + (5 / 2) * BxyNormSq) * prev.s1 + (Bz * c * conj(Bxy)) * prev.s0 + ((3 / 2) * conj(Bxy) * conj(Bxy)) * prev.s_1 + (0) * prev.s_2;
-	H.s0  -= (c * Bxy * Bxy) * prev.s2 + (c * Bz * Bxy) * prev.s1 + (3 * BxyNormSq) * prev.s0 + (-Bz * c * conj(Bxy)) * prev.s_1 + (c * conj(Bxy) * conj(Bxy)) * prev.s_2;
+	H.s2 -= (4 * Bz * Bz + BxyNormSq) * prev.s2 + (3 * Bz * conj(Bxy)) * prev.s1 + (c * conj(Bxy) * conj(Bxy)) * prev.s0 + (0) * prev.s_1 + (0) * prev.s_2;
+	H.s1 -= (3 * Bz * Bxy) * prev.s2 + (Bz * Bz + (5 / 2) * BxyNormSq) * prev.s1 + (Bz * c * conj(Bxy)) * prev.s0 + ((3 / 2) * conj(Bxy) * conj(Bxy)) * prev.s_1 + (0) * prev.s_2;
+	H.s0 -= (c * Bxy * Bxy) * prev.s2 + (c * Bz * Bxy) * prev.s1 + (3 * BxyNormSq) * prev.s0 + (-Bz * c * conj(Bxy)) * prev.s_1 + (c * conj(Bxy) * conj(Bxy)) * prev.s_2;
 	H.s_1 -= (0) * prev.s2 + ((3 / 2) * Bxy * Bxy) * prev.s1 + (-Bz * c * Bxy) * prev.s0 + ((5 / 2) * BxyNormSq + Bz * Bz) * prev.s_1 + (-3 * Bz * conj(Bxy)) * prev.s_2;
 	H.s_2 -= (0) * prev.s2 + (0) * prev.s1 + (c * Bxy * Bxy) * prev.s0 + (-3 * Bz * Bxy) * prev.s_1 + (BxyNormSq + 4 * Bz * Bz) * prev.s_2;
 #endif
@@ -909,11 +1029,11 @@ __global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, const int4* _
 	const double Fz = c2 * (2.0 * normSq_s2 + normSq_s1 - normSq_s_1 - 2.0 * normSq_s_2);
 
 	Complex5Vec diagonalTerm;
-	diagonalTerm.s2 = double2{  2.0 * Fz + 0.4 * c4 * normSq_s_2 - 2.0 * B.z, 0 } + ab;
-	diagonalTerm.s1 = double2{        Fz + 0.4 * c4 * normSq_s_1 -       B.z, 0 } + ab;
-	diagonalTerm.s0 = double2{             0.2 * c4 * normSq_s0             , 0 } + ab;
-	diagonalTerm.s_1 = double2{      -Fz + 0.4 * c4 * normSq_s1  +       B.z, 0 } + ab;
-	diagonalTerm.s_2 = double2{-2.0 * Fz + 0.4 * c4 * normSq_s2  + 2.0 * B.z, 0 } + ab;
+	diagonalTerm.s2 = double2{ 2.0 * Fz + 0.4 * c4 * normSq_s_2 - 2.0 * B.z, 0 } + ab;
+	diagonalTerm.s1 = double2{ Fz + 0.4 * c4 * normSq_s_1 - B.z, 0 } + ab;
+	diagonalTerm.s0 = double2{ 0.2 * c4 * normSq_s0             , 0 } + ab;
+	diagonalTerm.s_1 = double2{ -Fz + 0.4 * c4 * normSq_s1 + B.z, 0 } + ab;
+	diagonalTerm.s_2 = double2{ -2.0 * Fz + 0.4 * c4 * normSq_s2 + 2.0 * B.z, 0 } + ab;
 
 	H.s2 += diagonalTerm.s2 * prev.s2;    // psi1
 	H.s1 += diagonalTerm.s1 * prev.s1;    // psi2
@@ -921,10 +1041,10 @@ __global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, const int4* _
 	H.s_1 += diagonalTerm.s_1 * prev.s_1; // psi4
 	H.s_2 += diagonalTerm.s_2 * prev.s_2; // psi5
 
-	double2 denominator = c2 * (2.0 * (prev.s2  * conj(prev.s1) +
-		                               prev.s_1 * conj(prev.s_2)) +
-		                  sqrt(6.0) * (prev.s1  * conj(prev.s0) +
-			                           prev.s0  * conj(prev.s_1))) - double2{ B.x, -B.y };
+	double2 denominator = c2 * (2.0 * (prev.s2 * conj(prev.s1) +
+		prev.s_1 * conj(prev.s_2)) +
+		sqrt(6.0) * (prev.s1 * conj(prev.s0) +
+			prev.s0 * conj(prev.s_1))) - double2{ B.x, -B.y };
 
 	double2 c12 = denominator - 0.4 * c4 * prev.s_1 * conj(prev.s_2);
 	double2 c45 = denominator - 0.4 * c4 * prev.s2 * conj(prev.s1);
@@ -933,9 +1053,9 @@ __global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, const int4* _
 	double2 c23 = sqrt(1.5) * denominator - 0.2 * c4 * prev.s0 * conj(prev.s_1);
 	double2 c34 = sqrt(1.5) * denominator - 0.2 * c4 * prev.s1 * conj(prev.s0);
 
-	H.s2  += (c12 * prev.s1 + c13 * prev.s0);
-	H.s1  += (conj(c12) * prev.s2 + c23 * prev.s0);
-	H.s0  += (conj(c13) * prev.s2 + c35 * prev.s_2 + c34 * prev.s_1 + conj(c23) * prev.s1);
+	H.s2 += (c12 * prev.s1 + c13 * prev.s0);
+	H.s1 += (conj(c12) * prev.s2 + c23 * prev.s0);
+	H.s0 += (conj(c13) * prev.s2 + c35 * prev.s_2 + c34 * prev.s_1 + conj(c23) * prev.s1);
 	H.s_1 += (conj(c34) * prev.s0 + c45 * prev.s_2);
 	H.s_2 += (conj(c35) * prev.s0 + conj(c45) * prev.s_1);
 
@@ -945,9 +1065,9 @@ __global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, const int4* _
 	const double2 Bxy = { B.x, B.y };
 	const double Bz = B.z;
 	const double BxyNormSq = (conj(Bxy) * Bxy).x;
-	H.s2  -= (4 * Bz * Bz + BxyNormSq) * prev.s2 + (3 * Bz * conj(Bxy)) * prev.s1 + (c * conj(Bxy) * conj(Bxy)) * prev.s0 + (0) * prev.s_1 + (0) * prev.s_2;
-	H.s1  -= (3 * Bz * Bxy) * prev.s2 + (Bz * Bz + (5 / 2) * BxyNormSq) * prev.s1 + (Bz * c* conj(Bxy)) * prev.s0 + ((3 / 2) * conj(Bxy) * conj(Bxy)) * prev.s_1 + (0) * prev.s_2;
-	H.s0  -= (c * Bxy * Bxy) * prev.s2 + (c * Bz* Bxy) * prev.s1 + (3 * BxyNormSq) * prev.s0 + (-Bz * c * conj(Bxy)) * prev.s_1 + (c * conj(Bxy) * conj(Bxy)) * prev.s_2;
+	H.s2 -= (4 * Bz * Bz + BxyNormSq) * prev.s2 + (3 * Bz * conj(Bxy)) * prev.s1 + (c * conj(Bxy) * conj(Bxy)) * prev.s0 + (0) * prev.s_1 + (0) * prev.s_2;
+	H.s1 -= (3 * Bz * Bxy) * prev.s2 + (Bz * Bz + (5 / 2) * BxyNormSq) * prev.s1 + (Bz * c * conj(Bxy)) * prev.s0 + ((3 / 2) * conj(Bxy) * conj(Bxy)) * prev.s_1 + (0) * prev.s_2;
+	H.s0 -= (c * Bxy * Bxy) * prev.s2 + (c * Bz * Bxy) * prev.s1 + (3 * BxyNormSq) * prev.s0 + (-Bz * c * conj(Bxy)) * prev.s_1 + (c * conj(Bxy) * conj(Bxy)) * prev.s_2;
 	H.s_1 -= (0) * prev.s2 + ((3 / 2) * Bxy * Bxy) * prev.s1 + (-Bz * c * Bxy) * prev.s0 + ((5 / 2) * BxyNormSq + Bz * Bz) * prev.s_1 + (-3 * Bz * conj(Bxy)) * prev.s_2;
 	H.s_2 -= (0) * prev.s2 + (0) * prev.s1 + (c * Bxy * Bxy) * prev.s0 + (-3 * Bz * Bxy) * prev.s_1 + (BxyNormSq + 4 * Bz * Bz) * prev.s_2;
 #endif
@@ -1310,6 +1430,18 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			std::cout << "Transform ground state to cyclic phase with a phase of " << PHASE << "." << std::endl;
 			cyclicState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, PHASE);
 			break;
+		case Phase::CYCLIC_EDGE_UP:
+			std::cout << "Transform ground state to cyclic edge up phase with a phase of " << PHASE << "." << std::endl;
+			cyclicEdgeUpState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, PHASE);
+			break;
+		case Phase::M1:
+			std::cout << "Transform ground state to m=1 phase with a phase of " << PHASE << "." << std::endl;
+			m1State << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, PHASE);
+			break;
+		case Phase::M2:
+			std::cout << "Transform ground state to m=2 phase with a phase of " << PHASE << "." << std::endl;
+			m2State << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, PHASE);
+			break;
 		default:
 			std::cout << "Initial phase " << (int)initPhase << " is not supported!";
 			break;
@@ -1407,22 +1539,22 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	int lastSaveTime = 0;
 
-	std::string dirPrefix = (END_TIME > EXPANSION_START) ? "expansion\\" : "";
-	dirPrefix += phaseToString(initPhase) + "\\" + toString(PHASE / PI * 180.0, 2) + "_deg\\" + getProjectionString() + "\\";
+	std::string dirPrefix = (END_TIME > EXPANSION_START) ? "expansion/" : "";
+	dirPrefix += phaseToString(initPhase) + "/" + toString(PHASE / PI * 180.0, 2) + "_degrees/" + getProjectionString() + "/";
 
-	std::string densDir = dirPrefix + "dens";
-	std::string vtksDir = dirPrefix + "dens_vtks";
-	std::string spinorVtksDir = dirPrefix + "spinor_vtks";
-	std::string datsDir = dirPrefix + "dats";
-
-	std::string createResultsDirCommand = "mkdir " + densDir;
-	std::string createVtksDirCommand = "mkdir " + vtksDir;
-	std::string createSpinorVtksDirCommand = "mkdir " + spinorVtksDir;
-	std::string createDatsDirCommand = "mkdir " + datsDir;
+	std::string densDir = dirPrefix; // +"dens";
+	//std::string vtksDir = dirPrefix + "dens_vtks";
+	//std::string spinorVtksDir = dirPrefix + "spinor_vtks";
+	//std::string datsDir = dirPrefix + "dats";
+	//
+	std::string createResultsDirCommand = "mkdir -p " + densDir;
+	//std::string createVtksDirCommand = "mkdir " + vtksDir;
+	//std::string createSpinorVtksDirCommand = "mkdir " + spinorVtksDir;
+	//std::string createDatsDirCommand = "mkdir " + datsDir;
 	system(createResultsDirCommand.c_str());
-	system(createVtksDirCommand.c_str());
-	system(createSpinorVtksDirCommand.c_str());
-	system(createDatsDirCommand.c_str());
+	//system(createVtksDirCommand.c_str());
+	//system(createSpinorVtksDirCommand.c_str());
+	//system(createDatsDirCommand.c_str());
 
 	double expansionBlockScale = block_scale;
 
@@ -1563,7 +1695,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 int main(int argc, char** argv)
 {
-	const double blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
+	constexpr double blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
 
 	std::cout << "Start simulating from t = " << t << " ms, with a time step size of " << dt << "." << std::endl;
 	std::cout << "The simulation will end at " << END_TIME << " ms." << std::endl;
@@ -1584,16 +1716,21 @@ int main(int argc, char** argv)
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
 
-	//Phase phases[] = {Phase::BN_VERT, Phase::BN_HORI, Phase::CYCLIC};
-	//Phase phases[] = {Phase::BN_VERT};
-	//for (auto phase : phases)
+	Phase phases[] = { Phase::CYCLIC_EDGE_UP, Phase::M1, Phase::M2};
+	for (auto phase : phases)
+	{
+		initPhase = phase;
+		t = 0;
+		integrateInTime(blockScale, domainMin, domainMax);
+	}
+
+	//constexpr int TURNS = 8; // 45 degree global phase turns
+	//for (int turn = 0; turn < TURNS; ++turn)
 	//{
-	//	initPhase = phase;
+	//	PHASE = turn * 45.0 / 180.0 * PI;
 	//	t = 0;
 	//	integrateInTime(blockScale, domainMin, domainMax);
 	//}
-
-	integrateInTime(blockScale, domainMin, domainMax);
 
 	return 0;
 }
