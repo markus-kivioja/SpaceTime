@@ -13,7 +13,7 @@ enum class Phase {
 	BN_HORI,
 	CYCLIC
 };
-constexpr Phase initPhase = Phase::CYCLIC;
+constexpr Phase initPhase = Phase::UN;
 
 std::string phaseToString(Phase phase)
 {
@@ -61,7 +61,7 @@ std::string getProjectionString()
 
 #define COMPUTE_GROUND_STATE 0
 
-#define HYPERBOLIC 1
+#define HYPERBOLIC 0
 #define PARABOLIC 1
 #define ANALYTIC 0
 #define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
@@ -77,7 +77,7 @@ constexpr double DOMAIN_SIZE_X = 20.0;
 constexpr double DOMAIN_SIZE_Y = 20.0;
 constexpr double DOMAIN_SIZE_Z = 20.0;
 
-constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 7 * 6.0;
+constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 9 * 6.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
 
@@ -122,13 +122,13 @@ constexpr double NOISE_AMPLITUDE = 0;
 double dt = 1e-4; // 5e-5;
 double dt_increse = 1e-5;
 
-const double IMAGE_SAVE_INTERVAL = 0.01; // ms
+const double IMAGE_SAVE_INTERVAL = 0.2; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-constexpr double END_TIME = 0.51; // End time in ms
+constexpr double END_TIME = 10.51; // End time in ms
 
 #if COMPUTE_GROUND_STATE
 double sigma = 0.1;
@@ -1250,7 +1250,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const uint ysize = uint(domain.y / (block_scale * BLOCK_WIDTH.y)); // + 1;
 	const uint zsize = uint(domain.z / (block_scale * BLOCK_WIDTH.z)); // + 1;
 	const Vector3 p0 = 0.5 * (minp + maxp - block_scale * Vector3(BLOCK_WIDTH.x * xsize, BLOCK_WIDTH.y * ysize, BLOCK_WIDTH.z * zsize));
-	const double3 d_p0 = { p0.x, p0.y, p0.z };
+	//const double3 d_p0 = { p0.x, p0.y, p0.z };
+	const double3 d_p0 = { p0.x + 0.18 * maxp.x, p0.y, p0.z };
 
 	// compute discrete dimensions
 	const uint bsize = VALUES_IN_BLOCK; // bpos.size(); // number of values inside a block
@@ -1266,20 +1267,23 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const size_t dzsize = zsize + 2; // One element buffer to both ends
 	cudaExtent psiExtent = make_cudaExtent(dxsize * sizeof(BlockPsis), dysize, dzsize);
 	cudaExtent edgeExtent = make_cudaExtent(dxsize * sizeof(BlockEdges), dysize, dzsize);
+
+	size_t gpuMemSize = 0;
 #if HYPERBOLIC
 	cudaPitchedPtr d_cudaEvenPsiHyper = allocDevice3D(psiExtent);
 	cudaPitchedPtr d_cudaEvenQHyper = allocDevice3D(edgeExtent);
 	cudaPitchedPtr d_cudaOddPsiHyper = allocDevice3D(psiExtent);
 	cudaPitchedPtr d_cudaOddQHyper = allocDevice3D(edgeExtent);
+	gpuMemSize += psiExtent.width * psiExtent.height * psiExtent.depth * 2 + edgeExtent.width * edgeExtent.height * edgeExtent.depth * 2;
 #endif
 #if PARABOLIC
 	cudaPitchedPtr d_cudaEvenPsiPara = allocDevice3D(psiExtent);
 	cudaPitchedPtr d_cudaEvenQPara = allocDevice3D(edgeExtent);
 	cudaPitchedPtr d_cudaOddPsiPara = allocDevice3D(psiExtent);
 	cudaPitchedPtr d_cudaOddQPara = allocDevice3D(edgeExtent);
-
-	std::cout << "Allocate GPU mem: " << (psiExtent.width * psiExtent.height * psiExtent.depth * 4 + edgeExtent.width * edgeExtent.height * edgeExtent.depth * 4) / (1024 * 1024 * 1024) << " GB" << std::endl;
+	gpuMemSize += psiExtent.width * psiExtent.height * psiExtent.depth * 2 + edgeExtent.width * edgeExtent.height * edgeExtent.depth * 2;
 #endif
+	std::cout << "Allocate GPU mem: " << gpuMemSize / (1024 * 1024 * 1024) << " GB" << std::endl;
 #if ANALYTIC
 	cudaPitchedPtr d_cudaGroundPsi = allocDevice3D(psiExtent);
 	cudaPitchedPtr d_cudaAnalyticPsi = allocDevice3D(psiExtent);
@@ -1541,10 +1545,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.Bb = BzScale * signal.Bb;
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
-#if COMPUTE_ERROR
-		unState << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, dimensions);
-		unState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions);
-#endif
 #if HYPERBOLIC
 		//forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, true, sigma);
 		//forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma, true);
@@ -1720,9 +1720,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #if SAVE_PICTURE
 #if HYPERBOLIC
 		drawDensity("hyper", densDir, h_oddPsiHyper, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
+		double3 comHyper = centerOfMass(h_oddPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
+		std::cout << comHyper.x << ", ";
 #endif
 #if PARABOLIC
 		drawDensity("parab", densDir, h_oddPsiPara, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
+		double3 comPara = centerOfMass(h_oddPsiPara, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
+		std::cout << comPara.x << "; ";
 #endif
 #endif
 

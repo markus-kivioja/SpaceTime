@@ -1595,10 +1595,12 @@ double3 centerOfMass(BlockPsis* h_evenPsi, size_t bsize, size_t dxsize, size_t d
 										  p0.y + block_scale * ((y - 1.0) * BLOCK_WIDTH_Y + localPos.y),
 										  p0.z + block_scale * ((z - 1.0) * BLOCK_WIDTH_Z + localPos.z) };
 
+					double normSq_s2 = h_evenPsi[idx].values[dualNode].s2.x * h_evenPsi[idx].values[dualNode].s2.x + h_evenPsi[idx].values[dualNode].s2.y * h_evenPsi[idx].values[dualNode].s2.y;
 					double normSq_s1 = h_evenPsi[idx].values[dualNode].s1.x * h_evenPsi[idx].values[dualNode].s1.x + h_evenPsi[idx].values[dualNode].s1.y * h_evenPsi[idx].values[dualNode].s1.y;
 					double normSq_s0 = h_evenPsi[idx].values[dualNode].s0.x * h_evenPsi[idx].values[dualNode].s0.x + h_evenPsi[idx].values[dualNode].s0.y * h_evenPsi[idx].values[dualNode].s0.y;
 					double normSq_s_1 = h_evenPsi[idx].values[dualNode].s_1.x * h_evenPsi[idx].values[dualNode].s_1.x + h_evenPsi[idx].values[dualNode].s_1.y * h_evenPsi[idx].values[dualNode].s_1.y;
-					double density = normSq_s1 + normSq_s0 + normSq_s_1;
+					double normSq_s_2 = h_evenPsi[idx].values[dualNode].s_2.x * h_evenPsi[idx].values[dualNode].s_2.x + h_evenPsi[idx].values[dualNode].s_2.y * h_evenPsi[idx].values[dualNode].s_2.y;
+					double density = normSq_s2 + normSq_s1 + normSq_s0 + normSq_s_1 + normSq_s_2;
 
 					com += density * globalPos;
 					totDens += density;
