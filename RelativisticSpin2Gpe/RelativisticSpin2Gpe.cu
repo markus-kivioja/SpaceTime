@@ -67,7 +67,7 @@ std::string getProjectionString()
 #define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
 
 #define SAVE_STATES 0
-#define SAVE_PICTURE 1
+#define SAVE_PICTURE 0
 
 #define THREAD_BLOCK_X 16
 #define THREAD_BLOCK_Y 2
@@ -137,7 +137,8 @@ double sigma = 0.001; // 0.01; // Coefficient for the relativistic term
 #endif
 double dt_per_sigma = dt / sigma;
 
-constexpr double E = 126.621; // Computed with ITP
+//constexpr double E = 126.621; // Computed with ITP
+constexpr double E = 112.0; // Adjusted by hand to match the parabolic equation
 
 std::string toStringShort(const double value)
 {
@@ -186,6 +187,34 @@ __global__ void density(double* density, PitchedPtr prevStep, uint3 dimensions)
 
 	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
 	density[idx] = (psi.s2 * conj(psi.s2)).x + (psi.s1 * conj(psi.s1)).x + (psi.s0 * conj(psi.s0)).x + (psi.s_1 * conj(psi.s_1)).x + (psi.s_2 * conj(psi.s_2)).x;
+}
+
+__global__ void com(double3* com, PitchedPtr prevStep, uint3 dimensions, const double block_scale, const double3 p0)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	char* pPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
+	Complex5Vec psi = ((BlockPsis*)pPsi)->values[dualNodeId];
+
+	double dens = (psi.s2 * conj(psi.s2)).x + (psi.s1 * conj(psi.s1)).x + (psi.s0 * conj(psi.s0)).x + (psi.s_1 * conj(psi.s_1)).x + (psi.s_2 * conj(psi.s_2)).x;
+	const double3 localPos = d_localPos[dualNodeId];
+	const double3 globalPos = { p0.x + block_scale * (dataXid * BLOCK_WIDTH_X + localPos.x),
+		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
+		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
+
+	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
+	com[idx] = dens * globalPos;
 }
 
 __global__ void weightedDiff(double* result, PitchedPtr pLeft, PitchedPtr pRight, uint3 dimensions)
@@ -868,8 +897,8 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 	if (hyperb)
 	{
 		//static constexpr double coef = 2.8; // For sigma == 0.01
-		//static constexpr double coef = 10.0; // For sigma == 0.001
-		const double coef = 1.0 / (sigma * E);
+		static constexpr double coef = 10.0; // For sigma == 0.001
+		//const double coef = 1.0 / (sigma * E);
 		H.s2 = -coef * sigma * E * H.s2;
 		H.s1 = -coef * sigma * E * H.s1;
 		H.s0 = -coef * sigma * E * H.s0;
@@ -1032,8 +1061,8 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 	if (hyperb)
 	{
 		//static constexpr double coef = 2.8; // For sigma == 0.01
-		//static constexpr double coef = 10.0; // For sigma == 0.001
-		const double coef = 1.0 / (sigma * E);
+		static constexpr double coef = 10.0; // For sigma == 0.001
+		//const double coef = 1.0 / (sigma * E);
 		H.s2 = -coef * sigma * E * H.s2;
 		H.s1 = -coef * sigma * E * H.s1;
 		H.s0 = -coef * sigma * E * H.s0;
@@ -1137,6 +1166,22 @@ double getDensity(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr ps
 	checkCudaErrors(cudaMemcpy(&hDensity, densityPtr, sizeof(double), cudaMemcpyDeviceToHost));
 
 	return hDensity;
+}
+
+double3 centerOfMass(dim3 dimGrid, dim3 dimBlock, double3* comPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, const double volume, const double block_scale, const double3 p0)
+{
+	com << <dimGrid, dimBlock >> > (comPtr, psi, dimensions, block_scale, p0);
+	int prevStride = bodies;
+	while (prevStride > 1)
+	{
+		int newStride = prevStride / 2;
+		integrateVec << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (comPtr, newStride, ((newStride * 2) != prevStride), volume);
+		prevStride = newStride;
+	}
+	double3 hCom = { 0, 0, 0 };
+	checkCudaErrors(cudaMemcpy(&hCom, comPtr, sizeof(double), cudaMemcpyDeviceToHost));
+
+	return hCom;
 }
 
 struct SpinMagDens
@@ -1251,7 +1296,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const uint zsize = uint(domain.z / (block_scale * BLOCK_WIDTH.z)); // + 1;
 	const Vector3 p0 = 0.5 * (minp + maxp - block_scale * Vector3(BLOCK_WIDTH.x * xsize, BLOCK_WIDTH.y * ysize, BLOCK_WIDTH.z * zsize));
 	//const double3 d_p0 = { p0.x, p0.y, p0.z };
-	const double3 d_p0 = { p0.x + 0.18 * maxp.x, p0.y, p0.z };
+	const double3 d_p0 = { p0.x + 0.128 * maxp.x, p0.y, p0.z };
 
 	// compute discrete dimensions
 	const uint bsize = VALUES_IN_BLOCK; // bpos.size(); // number of values inside a block
@@ -1301,6 +1346,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	//double* d_spinNorm = allocDevice<double>(bodies);
 	double* d_density = allocDevice<double>(bodies);
+	double3* d_com = allocDevice<double3>(bodies);
 #if COMPUTE_GROUND_STATE
 	double* d_energy = allocDevice<double>(bodies);
 #endif
@@ -1658,12 +1704,20 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	int lastSaveTime = 0;
 
-#if HYPERBOLIC && !PARABOLIC
-	std::string dirPrefix = "hyperbolic\\" + phaseToString(initPhase) + "\\" + getProjectionString() + "\\";
-#elif PARABOLIC && !HYPERBOLIC
-	std::string dirPrefix = "parabolic\\" + phaseToString(initPhase) + "\\" + getProjectionString() + "\\";
+#if _WIN32
+	std::string dirSeparator = "\\";
+	std::string mkdirOptions = "";
 #else
-	std::string dirPrefix = phaseToString(initPhase) + "\\" + getProjectionString() + "\\";
+	std::string dirSeparator = "/";
+	std::string mkdirOptions = "-p ";
+#endif
+
+#if HYPERBOLIC && !PARABOLIC
+	std::string dirPrefix = "hyperbolic" + dirSeparator + phaseToString(initPhase) + dirSeparator + getProjectionString() + dirSeparator;
+#elif PARABOLIC && !HYPERBOLIC
+	std::string dirPrefix = "parabolic" + dirSeparator + phaseToString(initPhase) + dirSeparator + getProjectionString() + dirSeparator;
+#else
+	std::string dirPrefix = phaseToString(initPhase) + dirSeparator + getProjectionString() + dirSeparator;
 #endif
 
 	std::string densDir = dirPrefix + "dens";
@@ -1671,10 +1725,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	std::string spinorVtksDir = dirPrefix + "spinor_vtks";
 	std::string datsDir = dirPrefix + "dats";
 
-	std::string createResultsDirCommand = "mkdir " + densDir;
-	std::string createVtksDirCommand = "mkdir " + vtksDir;
-	std::string createSpinorVtksDirCommand = "mkdir " + spinorVtksDir;
-	std::string createDatsDirCommand = "mkdir " + datsDir;
+	std::string createResultsDirCommand = "mkdir " + mkdirOptions + densDir;
+	std::string createVtksDirCommand = "mkdir " + mkdirOptions + vtksDir;
+	std::string createSpinorVtksDirCommand = "mkdir " + mkdirOptions + spinorVtksDir;
+	std::string createDatsDirCommand = "mkdir " + mkdirOptions + datsDir;
 	system(createResultsDirCommand.c_str());
 	system(createVtksDirCommand.c_str());
 	system(createSpinorVtksDirCommand.c_str());
@@ -1684,14 +1738,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 	while (t < END_TIME)
 	{
-		// Copy back from device memory to host memory
-#if HYPERBOLIC
-		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
-#endif
-#if PARABOLIC
-		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsPara));
-#endif
-
 		// Measure wall clock time
 		static auto prevTime = std::chrono::high_resolution_clock::now();
 		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
@@ -1719,15 +1765,22 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 #if SAVE_PICTURE
 #if HYPERBOLIC
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
 		drawDensity("hyper", densDir, h_oddPsiHyper, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
-		double3 comHyper = centerOfMass(h_oddPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
+#endif
+#if PARABOLIC
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsPara));
+		drawDensity("parab", densDir, h_oddPsiPara, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
+#endif
+#endif
+
+#if HYPERBOLIC
+		double3 comHyper = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiHyper, dimensions, bodies, volume, block_scale, d_p0);
 		std::cout << comHyper.x << ", ";
 #endif
 #if PARABOLIC
-		drawDensity("parab", densDir, h_oddPsiPara, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
-		double3 comPara = centerOfMass(h_oddPsiPara, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
-		std::cout << comPara.x << "; ";
-#endif
+		double3 comPara = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiPara, dimensions, bodies, volume, block_scale, d_p0);
+		std::cout << comPara.x << ", ";
 #endif
 
 		// integrate one iteration

@@ -584,22 +584,20 @@ void drawDensity(const std::string& name_prefix, const std::string& folder, Bloc
 		}
 	}));
 
-	threads.push_back(std::thread([&]() {
-		for (int x = 0; x < width * 5; ++x)
-		{
-			pic1.setColor(x, height, Vector4(0.5, 0.5, 0.5, 1.0));
-			pic1.setColor(x, 2 * height, Vector4(0.5, 0.5, 0.5, 1.0));
-		}
-		for (int y = 0; y < height * 3; ++y)
-		{
-			pic1.setColor(width, y, Vector4(0.5, 0.5, 0.5, 1.0));
-			pic1.setColor(2 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
-			pic1.setColor(3 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
-			pic1.setColor(4 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
-		}
-	}));
-
 	for (auto& thread : threads) thread.join();
+
+	for (int x = 0; x < width * 5; ++x)
+	{
+		pic1.setColor(x, height, Vector4(0.5, 0.5, 0.5, 1.0));
+		pic1.setColor(x, 2 * height, Vector4(0.5, 0.5, 0.5, 1.0));
+	}
+	for (int y = 0; y < height * 3; ++y)
+	{
+		pic1.setColor(width, y, Vector4(0.5, 0.5, 0.5, 1.0));
+		pic1.setColor(2 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
+		pic1.setColor(3 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
+		pic1.setColor(4 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
+	}
 
 	//uint axisOffsetX = 5;
 	//uint axisOffsetY = 5;
@@ -1573,43 +1571,6 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 
 	file << std::endl;
 	file.close();
-}
-
-double3 centerOfMass(BlockPsis* h_evenPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, double block_scale, double3 p0)
-{
-	double3 com{};
-
-	double totDens = 0;
-
-	for (uint z = 0; z < dzsize; ++z)
-	{
-		for (uint x = 0; x < dxsize; ++x)
-		{
-			for (uint y = 0; y < dysize; ++y)
-			{
-				const uint idx = z * dxsize * dysize + y * dxsize + x;
-				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
-				{
-					double3 localPos = getLocalPos(dualNode);
-					double3 globalPos = { p0.x + block_scale * ((x - 1.0) * BLOCK_WIDTH_X + localPos.x),
-										  p0.y + block_scale * ((y - 1.0) * BLOCK_WIDTH_Y + localPos.y),
-										  p0.z + block_scale * ((z - 1.0) * BLOCK_WIDTH_Z + localPos.z) };
-
-					double normSq_s2 = h_evenPsi[idx].values[dualNode].s2.x * h_evenPsi[idx].values[dualNode].s2.x + h_evenPsi[idx].values[dualNode].s2.y * h_evenPsi[idx].values[dualNode].s2.y;
-					double normSq_s1 = h_evenPsi[idx].values[dualNode].s1.x * h_evenPsi[idx].values[dualNode].s1.x + h_evenPsi[idx].values[dualNode].s1.y * h_evenPsi[idx].values[dualNode].s1.y;
-					double normSq_s0 = h_evenPsi[idx].values[dualNode].s0.x * h_evenPsi[idx].values[dualNode].s0.x + h_evenPsi[idx].values[dualNode].s0.y * h_evenPsi[idx].values[dualNode].s0.y;
-					double normSq_s_1 = h_evenPsi[idx].values[dualNode].s_1.x * h_evenPsi[idx].values[dualNode].s_1.x + h_evenPsi[idx].values[dualNode].s_1.y * h_evenPsi[idx].values[dualNode].s_1.y;
-					double normSq_s_2 = h_evenPsi[idx].values[dualNode].s_2.x * h_evenPsi[idx].values[dualNode].s_2.x + h_evenPsi[idx].values[dualNode].s_2.y * h_evenPsi[idx].values[dualNode].s_2.y;
-					double density = normSq_s2 + normSq_s1 + normSq_s0 + normSq_s_1 + normSq_s_2;
-
-					com += density * globalPos;
-					totDens += density;
-				}
-			}
-		}
-	}
-
-	return com 	/ totDens;
 }
 
 #endif // UTILS
