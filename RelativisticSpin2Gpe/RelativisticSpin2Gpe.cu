@@ -1776,11 +1776,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 #if HYPERBOLIC
 		double3 comHyper = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiHyper, dimensions, bodies, volume, block_scale, d_p0);
-		std::cout << comHyper.x << ", ";
+		std::cout << comHyper.x << ", " << std::endl;
 #endif
 #if PARABOLIC
 		double3 comPara = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiPara, dimensions, bodies, volume, block_scale, d_p0);
-		std::cout << comPara.x << ", ";
+		std::cout << comPara.x << ", " << std::endl;
 #endif
 
 		// integrate one iteration
@@ -1931,7 +1931,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 int main(int argc, char** argv)
 {
 	const double blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
-
+#if PARABOLIC && HYPERBOLIC
+	std::cout << "Computing both parabolic and hyperbolic" << std::endl << std::endl;
+#elif PARABOLIC
+	std::cout << "Computing parabolic" << std::endl << std::endl;
+#elif HYPERBOLIC
+	std::cout << "Computing hyperbolic" << std::endl << std::endl;
+#endif
 	std::cout << "Start simulating from t = " << t << " ms, with a time step size of " << dt << "." << std::endl;
 	std::cout << "The simulation will end at " << END_TIME << " ms." << std::endl;
 	std::cout << "Block scale = " << blockScale << std::endl;
