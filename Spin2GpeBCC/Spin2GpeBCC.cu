@@ -76,7 +76,7 @@ constexpr double GRADIENT_OFF_DUARATION = 0.034;
 #define USE_QUADRUPOLE_OFFSET 0
 #define USE_INITIAL_NOISE 0
 
-#define SAVE_STATES 0
+#define SAVE_STATES 1
 #define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
@@ -90,6 +90,9 @@ constexpr double DOMAIN_SIZE_Z = 20.0; //24.0;
 constexpr double REPLICABLE_STRUCTURE_COUNT_X = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
+
+//constexpr double k = 0.7569772335291065; // Grid upscale speed for expansion
+constexpr double k = 0.8; // Grid upscale speed for expansion
 
 constexpr double N = 2e5; // Number of atoms in the condensate
 
@@ -152,7 +155,7 @@ const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-constexpr double END_TIME = OPT_TRAP_OFF + GRADIENT_OFF_DELAY + GRADIENT_OFF_DUARATION + 5.0; // End time in ms
+constexpr double END_TIME = OPT_TRAP_OFF + GRADIENT_OFF_DELAY + GRADIENT_OFF_DUARATION + 25.0; // End time in ms
 
 double PHASE = 0; // 5.105088062083414; // In radians
 
@@ -1426,22 +1429,30 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	int lastSaveTime = 0;
 
-	std::string dirPrefix = (END_TIME > OPT_TRAP_OFF) ? "expansion\\" : "";
-	dirPrefix += phaseToString(initPhase) + "\\" + toString(PHASE / PI * 180.0, 2) + "_degrees\\" + getProjectionString() + "\\";
+#if _WIN32
+	std::string dirSeparator = "\\";
+	std::string mkdirOptions = "";
+#else
+	std::string dirSeparator = "/";
+	std::string mkdirOptions = "-p ";
+#endif
+
+	std::string dirPrefix = (END_TIME > OPT_TRAP_OFF) ? "expansion" + dirSeparator : "";
+	dirPrefix += phaseToString(initPhase) + dirSeparator + toString(PHASE / PI * 180.0, 2) + "_degrees" + dirSeparator + getProjectionString() + dirSeparator;
 
 	std::string densDir = dirPrefix; // +"dens";
 	//std::string vtksDir = dirPrefix + "dens_vtks";
 	//std::string spinorVtksDir = dirPrefix + "spinor_vtks";
-	//std::string datsDir = dirPrefix + "dats";
+	std::string datsDir = dirPrefix + "dats";
 	//
-	std::string createResultsDirCommand = "mkdir " + densDir;
-	//std::string createVtksDirCommand = "mkdir " + vtksDir;
-	//std::string createSpinorVtksDirCommand = "mkdir " + spinorVtksDir;
-	//std::string createDatsDirCommand = "mkdir " + datsDir;
+	std::string createResultsDirCommand = "mkdir " + mkdirOptions + densDir;
+	//std::string createVtksDirCommand = "mkdir " + mkdirOptions + vtksDir;
+	//std::string createSpinorVtksDirCommand = "mkdir " + mkdirOptions + spinorVtksDir;
+	std::string createDatsDirCommand = "mkdir " + mkdirOptions + datsDir;
 	system(createResultsDirCommand.c_str());
 	//system(createVtksDirCommand.c_str());
 	//system(createSpinorVtksDirCommand.c_str());
-	//system(createDatsDirCommand.c_str());
+	system(createDatsDirCommand.c_str());
 
 	double expansionBlockScale = block_scale;
 
@@ -1502,7 +1513,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			// update odd values
 			t += dt / omega_r * 1e3; // [ms]
 			if (t >= OPT_TRAP_OFF) {
-				double k = 0.7569772335291065; // From the Aalto QCD code
 				expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
 			}
 			signal = getSignal(t);
@@ -1520,7 +1530,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			// update even values
 			t += dt / omega_r * 1e3; // [ms]
 			if (t >= OPT_TRAP_OFF) {
-				double k = 0.7569772335291065; // From the Aalto QCD code
 				expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
 			}
 			signal = getSignal(t);
@@ -1554,9 +1563,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		//checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
 		//if (t - STATE_PREP_DURATION >= 179)
+		static bool savedState = false;
+		if (t >= OPT_TRAP_OFF && !savedState)
 		{
-			saveVolume(vtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - STATE_PREP_DURATION);
-			saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - STATE_PREP_DURATION);
+			//saveVolume(vtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - STATE_PREP_DURATION);
+			//saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - STATE_PREP_DURATION);
 
 			std::ofstream oddFs(datsDir + "/" + toString(t) + ".dat", std::ios::binary | std::ios_base::trunc);
 			if (oddFs.fail() != 0) return 1;
@@ -1568,6 +1579,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			if (evenFs.fail() != 0) return 1;
 			evenFs.write((char*)&h_evenPsi[0], hostSize * sizeof(BlockPsis));
 			evenFs.close();
+
+			savedState = true;
 		}
 #endif
 	}
