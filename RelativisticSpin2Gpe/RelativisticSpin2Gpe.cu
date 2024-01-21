@@ -61,7 +61,7 @@ std::string getProjectionString()
 
 #define COMPUTE_GROUND_STATE 0
 
-#define HYPERBOLIC 0
+#define HYPERBOLIC 1
 #define PARABOLIC 1
 #define ANALYTIC 0
 #define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
@@ -122,7 +122,7 @@ constexpr double NOISE_AMPLITUDE = 0;
 double dt = 1e-4; // 5e-5;
 double dt_increse = 1e-5;
 
-const double IMAGE_SAVE_INTERVAL = 0.2; // ms
+const double IMAGE_SAVE_INTERVAL = 0.01; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
@@ -138,7 +138,7 @@ double sigma = 0.001; // 0.01; // Coefficient for the relativistic term
 double dt_per_sigma = dt / sigma;
 
 //constexpr double E = 126.621; // Computed with ITP
-constexpr double E = 112.0; // Adjusted by hand to match the parabolic equation
+constexpr double E = 112.5; // Adjusted by hand to match the parabolic equation
 
 std::string toStringShort(const double value)
 {
@@ -1295,8 +1295,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const uint ysize = uint(domain.y / (block_scale * BLOCK_WIDTH.y)); // + 1;
 	const uint zsize = uint(domain.z / (block_scale * BLOCK_WIDTH.z)); // + 1;
 	const Vector3 p0 = 0.5 * (minp + maxp - block_scale * Vector3(BLOCK_WIDTH.x * xsize, BLOCK_WIDTH.y * ysize, BLOCK_WIDTH.z * zsize));
-	//const double3 d_p0 = { p0.x, p0.y, p0.z };
-	const double3 d_p0 = { p0.x + 0.128 * maxp.x, p0.y, p0.z };
+	const double3 d_p0 = { p0.x, p0.y, p0.z };
+	//const double3 d_p0 = { p0.x + 0.128 * maxp.x, p0.y, p0.z };
 
 	// compute discrete dimensions
 	const uint bsize = VALUES_IN_BLOCK; // bpos.size(); // number of values inside a block
@@ -1774,6 +1774,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 #endif
 
+#if !COMPUTE_ERROR
 #if HYPERBOLIC
 		double3 comHyper = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiHyper, dimensions, bodies, volume, block_scale, d_p0);
 		std::cout << comHyper.x << ", " << std::endl;
@@ -1781,6 +1782,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #if PARABOLIC
 		double3 comPara = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiPara, dimensions, bodies, volume, block_scale, d_p0);
 		std::cout << comPara.x << ", " << std::endl;
+#endif
 #endif
 
 		// integrate one iteration
@@ -1839,7 +1841,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		//double2 hError = { 0 };
 		double hError = { 0 };
 		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(double2), cudaMemcpyDeviceToHost));
-		std::cout << hError << ", ";
+		std::cout << hError << ", " << std::endl;
 #endif
 #if ANALYTIC
 		// Compute error

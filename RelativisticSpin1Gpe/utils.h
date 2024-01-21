@@ -1044,41 +1044,6 @@ void saveVolume(const std::string& namePrefix, BlockPsis* pPsi, double3* pLocalA
 	file.close();
 }
 
-double3 centerOfMass(BlockPsis* h_evenPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, double block_scale, double3 p0)
-{
-	double3 com{};
-
-	double totDens = 0;
-
-	for (uint z = 0; z < dzsize; ++z)
-	{
-		for (uint x = 0; x < dxsize; ++x)
-		{
-			for (uint y = 0; y < dysize; ++y)
-			{
-				const uint idx = z * dxsize * dysize + y * dxsize + x;
-				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
-				{
-					double3 localPos = getLocalPos(dualNode);
-					double3 globalPos = { p0.x + block_scale * ((x - 1.0) * BLOCK_WIDTH_X + localPos.x),
-										  p0.y + block_scale * ((y - 1.0) * BLOCK_WIDTH_Y + localPos.y),
-										  p0.z + block_scale * ((z - 1.0) * BLOCK_WIDTH_Z + localPos.z) };
-
-					double normSq_s1 = h_evenPsi[idx].values[dualNode].s1.x * h_evenPsi[idx].values[dualNode].s1.x + h_evenPsi[idx].values[dualNode].s1.y * h_evenPsi[idx].values[dualNode].s1.y;
-					double normSq_s0 = h_evenPsi[idx].values[dualNode].s0.x * h_evenPsi[idx].values[dualNode].s0.x + h_evenPsi[idx].values[dualNode].s0.y * h_evenPsi[idx].values[dualNode].s0.y;
-					double normSq_s_1 = h_evenPsi[idx].values[dualNode].s_1.x * h_evenPsi[idx].values[dualNode].s_1.x + h_evenPsi[idx].values[dualNode].s_1.y * h_evenPsi[idx].values[dualNode].s_1.y;
-					double density = normSq_s1 + normSq_s0 + normSq_s_1;
-
-					com += density * globalPos;
-					totDens += density;
-				}
-			}
-		}
-	}
-
-	return com / totDens;
-}
-
 void savePreImageSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, double block_scale, double3 p0, double t)
 {
 	constexpr double THRESHOLD = 0.9996;

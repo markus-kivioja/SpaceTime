@@ -92,7 +92,7 @@ __global__ void itp_psi(PitchedPtr HPsiPtr, PitchedPtr nextStep, PitchedPtr prev
 	nextPsi->values[dualNodeId].s_1 = prev.s_1 - dt * H.s_1;
 };
 
-__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double dt, bool hyperb)
+__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, double dt, bool hyperb, double sigma)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -572,6 +572,34 @@ __global__ void uvTheta(double3* out_u, double3* out_v, double* outTheta, Pitche
 		out_v[idx] = u;
 	}
 	outTheta[idx] = theta;
+}
+
+__global__ void com(double3* com, PitchedPtr prevStep, uint3 dimensions, const double block_scale, const double3 p0)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	char* pPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
+	Complex3Vec psi = ((BlockPsis*)pPsi)->values[dualNodeId];
+
+	double dens = (psi.s1 * conj(psi.s1)).x + (psi.s0 * conj(psi.s0)).x + (psi.s_1 * conj(psi.s_1)).x;
+	const double3 localPos = d_localPos[dualNodeId];
+	const double3 globalPos = { p0.x + block_scale * (dataXid * BLOCK_WIDTH_X + localPos.x),
+		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
+		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
+
+	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
+	com[idx] = dens * globalPos;
 }
 
 __global__ void integrate(double* dataVec, size_t stride, bool addLast, double dv)

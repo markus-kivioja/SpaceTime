@@ -31,7 +31,7 @@ std::string getProjectionString()
 #define COMPUTE_GROUND_STATE 0
 
 #define HYPERBOLIC 1
-#define PARABOLIC 0
+#define PARABOLIC 1
 #define ANALYTIC 0
 #define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
 
@@ -46,7 +46,7 @@ constexpr double DOMAIN_SIZE_X = 16.0; //24.0;
 constexpr double DOMAIN_SIZE_Y = 16.0; //24.0;
 constexpr double DOMAIN_SIZE_Z = 16.0; //24.0;
 
-constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 1 * 6.0;
+constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 9 * 6.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
 
@@ -86,8 +86,8 @@ constexpr double INV_SQRT_2 = 0.70710678118655;
 
 //double dt = 3.9e-4; // For parabolic eq and 112^3 domain
 //double dt = 6.9e-4; // For hyperbolic eq and 112^3 domain
-//double dt = 1e-4; // Default
-double dt = 0.69e-3;
+double dt = 1e-4; // Default
+//double dt = 0.69e-3;
 double dt_increse = 1e-5;
 
 const double IMAGE_SAVE_INTERVAL = 0.01; // ms
@@ -96,7 +96,7 @@ uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt)
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 0.5; // End time in ms
+double END_TIME = 4.5; // End time in ms
 
 #if COMPUTE_GROUND_STATE
 double sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
@@ -105,7 +105,8 @@ double sigma = 0.001; // 0.01; // Coefficient for the relativistic term
 #endif
 double dt_per_sigma = dt / sigma;
 
-constexpr double E = 127.346; // Computed with the hyperbolic ITP
+constexpr double E = 126.7; // Adjusted by hand to match the parabolic equation
+//constexpr double E = 127.346; // Computed with the hyperbolic ITP
 //constexpr double E = 127.295; // Computed with the parabolic ITP
 
 enum class Phase
@@ -177,6 +178,22 @@ double getDensity(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr ps
 	checkCudaErrors(cudaMemcpy(&hDensity, densityPtr, sizeof(double), cudaMemcpyDeviceToHost));
 
 	return hDensity;
+}
+
+double3 centerOfMass(dim3 dimGrid, dim3 dimBlock, double3* comPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, const double volume, const double block_scale, const double3 p0)
+{
+	com << <dimGrid, dimBlock >> > (comPtr, psi, dimensions, block_scale, p0);
+	int prevStride = bodies;
+	while (prevStride > 1)
+	{
+		int newStride = prevStride / 2;
+		integrateVec << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (comPtr, newStride, ((newStride * 2) != prevStride), volume);
+		prevStride = newStride;
+	}
+	double3 hCom = { 0, 0, 0 };
+	checkCudaErrors(cudaMemcpy(&hCom, comPtr, sizeof(double), cudaMemcpyDeviceToHost));
+
+	return hCom;
 }
 
 struct SpinMagDens
@@ -354,6 +371,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	//double* d_spinNorm = allocDevice<double>(bodies);
 	double* d_density = allocDevice<double>(bodies);
+	double3* d_com = allocDevice<double3>(bodies);
 #if COMPUTE_GROUND_STATE
 	double* d_energy = allocDevice<double>(bodies);
 #endif
@@ -481,8 +499,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	std::string psi_filename = loadGroundState ? GROUND_STATE_PSI_FILENAME : toString(t) + ".dat";
 #if HYPERBOLIC
 	loadFromFile(psi_filename, (char*)&h_oddPsiHyper[0], hostSize * sizeof(BlockPsis));
-	std::string q_filename = loadGroundState ? GROUND_STATE_Q_FILENAME : toString(t) + ".dat";
-	loadFromFile(q_filename, (char*)&h_oddQHyper[0], hostSize * sizeof(BlockEdges));
+	//std::string q_filename = loadGroundState ? GROUND_STATE_Q_FILENAME : toString(t) + ".dat";
+	//loadFromFile(q_filename, (char*)&h_oddQHyper[0], hostSize * sizeof(BlockEdges));
 #endif
 #if PARABOLIC
 	loadFromFile(psi_filename, (char*)&h_oddPsiPara[0], hostSize * sizeof(BlockPsis));
@@ -585,14 +603,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #if HYPERBOLIC
 		polarState << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, dimensions);
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_oddPsiHyper, d_d0, dimensions);
-		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true, sigma);
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_evenPsiHyper, d_d0, dimensions);
 		//forwardEuler_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
 #endif
 #if PARABOLIC
 		polarState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions);
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddPsiPara, d_d0, dimensions);
-		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false, sigma);
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenPsiPara, d_d0, dimensions);
 #endif
 	}
@@ -692,34 +710,36 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	int iterCount = 0;
 	while (t < END_TIME)
 	{
-#if SAVE_PICTURE
-		// Copy back from device memory to host memory
-#if HYPERBOLIC
-		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
-#endif
-#if PARABOLIC
-		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsPara));
-#endif
 		// Measure wall clock time
 		static auto prevTime = std::chrono::high_resolution_clock::now();
 		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
 		//std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 		prevTime = std::chrono::high_resolution_clock::now();
 
+#if SAVE_PICTURE
 #if HYPERBOLIC
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
 		drawDensity("hyper", h_oddPsiHyper, dxsize, dysize, dzsize, t, dens_folder);
-		//double3 comHyper = centerOfMass(h_oddPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
-		//std::cout << comHyper.x << ", ";
 #endif
 #if PARABOLIC
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsPara));
 		drawDensity("para", h_oddPsiPara, dxsize, dysize, dzsize, t, dens_folder);
-		//double3 comPara = centerOfMass(h_oddPsiPara, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
-		//std::cout << comPara.x << "; ";
+#endif
 #endif
 
+#if !COMPUTE_ERROR
+#if HYPERBOLIC
+		double3 comHyper = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiHyper, dimensions, bodies, volume, block_scale, d_p0);
+		std::cout << comHyper.x << ", " << std::endl;
+#endif
+#if PARABOLIC
+		double3 comPara = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiPara, dimensions, bodies, volume, block_scale, d_p0);
+		std::cout << comPara.x << ", " << std::endl;
+#endif
 #endif
 
 		// For checking the numerical stability
+#if 0 // Disable / enable numerical stability measurement
 #if !COMPUTE_ERROR
 #if HYPERBOLIC
 		double dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
@@ -738,6 +758,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			return 1;
 		}
 		prevDens = dens;
+#endif
 #endif
 
 		// integrate one iteration
@@ -798,7 +819,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		double hError = { 0 };
 		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(double2), cudaMemcpyDeviceToHost));
 		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - sqrt((conj(hError) * hError).x) << ", ";
-		std::cout << hError << ", ";
+		std::cout << hError << ", " << std::endl;
 		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - hError.x << ", ";
 #endif
 #if ANALYTIC
@@ -942,12 +963,13 @@ void readConfFile()
 
 int main(int argc, char** argv)
 {
-	for (int i = 0; i < 10; ++i)
-	{
-		double x = 58.0 + i * 6.0;
-		std::cout << DOMAIN_SIZE_X / x / BLOCK_WIDTH_X << ", ";
-	}
-	return;
+#if PARABOLIC && HYPERBOLIC
+	std::cout << "Computing both parabolic and hyperbolic" << std::endl << std::endl;
+#elif PARABOLIC
+	std::cout << "Computing parabolic" << std::endl << std::endl;
+#elif HYPERBOLIC
+	std::cout << "Computing hyperbolic with E = " << E << std::endl << std::endl;
+#endif
 
 	readConfFile();
 
@@ -965,16 +987,16 @@ int main(int argc, char** argv)
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
 
-	//integrateInTime(blockScale, domainMin, domainMax);
-	while (!integrateInTime(blockScale, domainMin, domainMax))
-	{
-		std::cout << "Time step was: " << dt << std::endl;
-		dt += dt_increse;
-		dt_per_sigma = dt / sigma;
-		IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
-	
-		t = 0;
-	}
+	integrateInTime(blockScale, domainMin, domainMax);
+	//while (!integrateInTime(blockScale, domainMin, domainMax))
+	//{
+	//	std::cout << "Time step was: " << dt << std::endl;
+	//	dt += dt_increse;
+	//	dt_per_sigma = dt / sigma;
+	//	IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
+	//
+	//	t = 0;
+	//}
 
 	return 0;
 }

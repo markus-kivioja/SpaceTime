@@ -92,7 +92,7 @@ constexpr double REPLICABLE_STRUCTURE_COUNT_X = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
 
 //constexpr double k = 0.7569772335291065; // Grid upscale speed for expansion
-constexpr double k = 0.8; // Grid upscale speed for expansion
+constexpr double k = 3.0; // Grid upscale speed for expansion
 
 constexpr double N = 2e5; // Number of atoms in the condensate
 
@@ -154,7 +154,7 @@ const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
-double t = 0; // Start time in ms
+double t = 5.100511723082174598; // Start time in ms
 constexpr double END_TIME = OPT_TRAP_OFF + GRADIENT_OFF_DELAY + GRADIENT_OFF_DUARATION + 25.0; // End time in ms
 
 double PHASE = 0; // 5.105088062083414; // In radians
@@ -1469,11 +1469,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
 		leapfrog << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
-		densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume)) + ", ";
-		tString += std::to_string(t) + ", ";
-		bqString += std::to_string(signal.Bq) + ", ";
-		bbString += std::to_string(signal.Bb.z) + ", ";
-		optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
+		//densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume)) + ", ";
+		//tString += std::to_string(t) + ", ";
+		//bqString += std::to_string(signal.Bq) + ", ";
+		//bbString += std::to_string(signal.Bb.z) + ", ";
+		//optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
 
 		// update even values
 		t += dt / omega_r * 1e3; // [ms]
@@ -1483,11 +1483,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
 		leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
-		densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume)) + ", ";
-		tString += std::to_string(t) + ", ";
-		bqString += std::to_string(signal.Bq) + ", ";
-		bbString += std::to_string(signal.Bb.z) + ", ";
-		optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
+		//densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume)) + ", ";
+		//tString += std::to_string(t) + ", ";
+		//bqString += std::to_string(signal.Bq) + ", ";
+		//bbString += std::to_string(signal.Bb.z) + ", ";
+		//optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
 	}
 
 #if SAVE_PICTURE
@@ -1521,11 +1521,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 			leapfrog << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
-			densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume)) + ", ";
-			tString += std::to_string(t) + ", ";
-			bqString += std::to_string(signal.Bq) + ", ";
-			bbString += std::to_string(signal.Bb.z) + ", ";
-			optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
+			//densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume)) + ", ";
+			//tString += std::to_string(t) + ", ";
+			//bqString += std::to_string(signal.Bq) + ", ";
+			//bbString += std::to_string(signal.Bb.z) + ", ";
+			//optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
 
 			// update even values
 			t += dt / omega_r * 1e3; // [ms]
@@ -1538,11 +1538,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 			leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
-			densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume)) + ", ";
-			tString += std::to_string(t) + ", ";
-			bqString += std::to_string(signal.Bq) + ", ";
-			bbString += std::to_string(signal.Bb.z) + ", ";
-			optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
+			//densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume)) + ", ";
+			//tString += std::to_string(t) + ", ";
+			//bqString += std::to_string(signal.Bq) + ", ";
+			//bbString += std::to_string(signal.Bb.z) + ", ";
+			//optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
 		}
 #if SAVE_PICTURE
 		// Copy back from device memory to host memory
@@ -1564,7 +1564,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 		//if (t - STATE_PREP_DURATION >= 179)
 		static bool savedState = false;
-		if (t >= OPT_TRAP_OFF && !savedState)
+		if (t >= 15.0 && !savedState)
 		{
 			//saveVolume(vtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - STATE_PREP_DURATION);
 			//saveSpinor(spinorVtksDir, h_oddPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t - STATE_PREP_DURATION);
