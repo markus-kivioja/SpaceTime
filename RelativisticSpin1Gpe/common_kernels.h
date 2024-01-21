@@ -134,15 +134,6 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 		H.s_1 += hodge * d0psi.s_1;
 	}
 
-	if (hyperb)
-	{
-		//static constexpr double coef = 2.8; // For sigma == 0.01
-		static constexpr double coef = 10.0; // For sigma == 0.001
-		H.s1 = -coef * sigma * E * H.s1;
-		H.s0 = -coef * sigma * E * H.s0;
-		H.s_1 = -coef * sigma * E * H.s_1;
-	}
-
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
 	const double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
 	const double normSq = normSq_s1 + (prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y) + normSq_s_1;
@@ -153,6 +144,13 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 
 	double2 totalPot = { trap(globalPos) + c0 * normSq, 0 };
+
+	if (hyperb)
+	{
+		H.s1 = -(1 + 2 * sigma * totalPot.x) * H.s1;
+		H.s0 = -(1 + 2 * sigma * totalPot.x) * H.s0;
+		H.s_1 = -(1 + 2 * sigma * totalPot.x) * H.s_1;
+	}
 
 	H.s1 += totalPot * prev.s1;
 	H.s0 += totalPot * prev.s0;
@@ -216,15 +214,6 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 		H.s_1 += hodge * d0psi.s_1;
 	}
 
-	if (hyperb)
-	{
-		//static constexpr double coef = 2.8; // For sigma == 0.01
-		static constexpr double coef = 10.0; // For sigma == 0.001
-		H.s1 =  -coef * sigma * E * H.s1;
-		H.s0 =  -coef * sigma * E * H.s0;
-		H.s_1 = -coef * sigma * E * H.s_1;
-	}
-
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
 	const double normSq_s_1 = prev.s_1.x * prev.s_1.x + prev.s_1.y * prev.s_1.y;
 	const double normSq = normSq_s1 + (prev.s0.x * prev.s0.x + prev.s0.y * prev.s0.y) + normSq_s_1;
@@ -235,6 +224,13 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 
 	double2 totalPot = { trap(globalPos) + c0 * normSq, 0 };
+
+	if (hyperb)
+	{
+		H.s1 = -(1 + 2 * sigma * totalPot.x) * H.s1;
+		H.s0 = -(1 + 2 * sigma * totalPot.x) * H.s0;
+		H.s_1 = -(1 + 2 * sigma * totalPot.x) * H.s_1;
+	}
 
 	H.s1 += totalPot * prev.s1;
 	H.s0 += totalPot * prev.s0;

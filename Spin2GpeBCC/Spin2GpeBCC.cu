@@ -1636,6 +1636,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 void readConfFile(const std::string& confFileName)
 {
+	std::cout << "Read conf file " << confFileName << std::endl;
 	std::ifstream file;
 	file.open(confFileName, std::ios::in);
 	if (file.is_open())
@@ -1645,10 +1646,12 @@ void readConfFile(const std::string& confFileName)
 		{
 			if (size_t pos = line.find("rel_phase") != std::string::npos)
 			{
+				std::cout << "Relative phase from conf file: " << line.substr(pos + 9) << std::endl;
 				relativePhase = std::stod(line.substr(pos + 9));
 			}
 			else if (size_t pos = line.find("phase") != std::string::npos)
 			{
+				std::cout << "Phase from conf file: " << line.substr(pos + 5) << std::endl;
 				initPhase = stringToPhase(line.substr(pos + 5));
 			}
 		}

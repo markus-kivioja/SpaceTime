@@ -105,7 +105,7 @@ double sigma = 0.001; // 0.01; // Coefficient for the relativistic term
 #endif
 double dt_per_sigma = dt / sigma;
 
-constexpr double E = 126.7; // Adjusted by hand to match the parabolic equation
+//constexpr double E = 126.7; // Adjusted by hand to match the parabolic equation
 //constexpr double E = 127.346; // Computed with the hyperbolic ITP
 //constexpr double E = 127.295; // Computed with the parabolic ITP
 
