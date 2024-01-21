@@ -32,6 +32,16 @@ std::string phaseToString(Phase phase)
 	}
 }
 
+Phase stringToPhase(const std::string& phase)
+{
+	if (phase == "un") return Phase::UN;
+	if (phase == "bn_vert") return Phase::BN_VERT;
+	if (phase == "bn_hori") return Phase::BN_HORI;
+	if (phase == "cyclic") return Phase::CYCLIC;
+	return Phase::UN;
+}
+
+
 std::string getProjectionString()
 {
 #if BASIS == X_QUANTIZED
@@ -46,7 +56,7 @@ std::string getProjectionString()
 // Experimental field ramps from D.S. Hall (Amherst)
 constexpr double STATE_PREP_DURATION = 0.1;
 constexpr double CREATION_RAMP_DURATION = 0.0177;
-constexpr double HOLD_TIME = 0.5;
+constexpr double HOLD_TIME = 0.25; // 0.5;
 constexpr double HOLD_TIME_EXTRA_DELAY = 0.005;
 constexpr double TOTAL_HOLD_TIME = HOLD_TIME + HOLD_TIME_EXTRA_DELAY;
 constexpr double PROJECTION_RAMP_DURATION = 0.120;
@@ -76,7 +86,7 @@ constexpr double GRADIENT_OFF_DUARATION = 0.034;
 #define USE_QUADRUPOLE_OFFSET 0
 #define USE_INITIAL_NOISE 0
 
-#define SAVE_STATES 1
+#define SAVE_STATES 0
 #define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
@@ -91,8 +101,8 @@ constexpr double REPLICABLE_STRUCTURE_COUNT_X = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
 
-//constexpr double k = 0.7569772335291065; // Grid upscale speed for expansion
-constexpr double k = 3.0; // Grid upscale speed for expansion
+//constexpr double k = 0.7569772335291065; // Grid upscale speed for expansion (from QCD code)
+constexpr double k = 3.0; // Grid upscale speed for expansion (from own experiments)
 
 constexpr double N = 2e5; // Number of atoms in the condensate
 
@@ -142,22 +152,21 @@ std::string toStringShort(const double value)
 	return out.str();
 };
 
-const std::string EXTRA_INFORMATION = toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X) + "_" + phaseToString(initPhase);
 const std::string GROUND_STATE_FILENAME = "ground_state_psi_" + toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X) + ".dat";
 constexpr double NOISE_AMPLITUDE = 0; //0.1;
 
 //constexpr double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 constexpr double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-const double IMAGE_SAVE_INTERVAL = 0.25; // ms
+const double IMAGE_SAVE_INTERVAL = 0.05; // 1.0; // ms
 const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
-double t = 5.100511723082174598; // Start time in ms
-constexpr double END_TIME = OPT_TRAP_OFF + GRADIENT_OFF_DELAY + GRADIENT_OFF_DUARATION + 25.0; // End time in ms
+double t = 0; // Start time in ms
+constexpr double END_TIME = OPT_TRAP_OFF + GRADIENT_OFF_DELAY + GRADIENT_OFF_DUARATION + 24.0; // End time in ms
 
-double PHASE = 0; // 5.105088062083414; // In radians
+double relativePhase = 0; // 5.105088062083414; // In radians
 
 __host__ __device__ __inline__ double trap(double3 p, double t)
 {
@@ -1320,16 +1329,16 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			unState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions);
 			break;
 		case Phase::BN_VERT:
-			std::cout << "Transform ground state to vertically oriented biaxial nematic phase with a phase of " << PHASE << "." << std::endl;
-			verticalBnState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, PHASE);
+			std::cout << "Transform ground state to vertically oriented biaxial nematic phase with a phase of " << relativePhase << "." << std::endl;
+			verticalBnState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, relativePhase);
 			break;
 		case Phase::BN_HORI:
-			std::cout << "Transform ground state to horizontally oriented biaxial nematic phase with a phase of " << PHASE << "." << std::endl;
-			horizontalBnState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, PHASE);
+			std::cout << "Transform ground state to horizontally oriented biaxial nematic phase with a phase of " << relativePhase << "." << std::endl;
+			horizontalBnState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, relativePhase);
 			break;
 		case Phase::CYCLIC:
-			std::cout << "Transform ground state to cyclic phase with a phase of " << PHASE << "." << std::endl;
-			cyclicState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, PHASE);
+			std::cout << "Transform ground state to cyclic phase with a phase of " << relativePhase << "." << std::endl;
+			cyclicState << <dimGrid, dimBlock >> > (d_oddPsi, dimensions, relativePhase);
 			break;
 		default:
 			std::cout << "Initial phase " << (int)initPhase << " is not supported!";
@@ -1437,8 +1446,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	std::string mkdirOptions = "-p ";
 #endif
 
-	std::string dirPrefix = (END_TIME > OPT_TRAP_OFF) ? "expansion" + dirSeparator : "";
-	dirPrefix += phaseToString(initPhase) + dirSeparator + toString(PHASE / PI * 180.0, 2) + "_degrees" + dirSeparator + getProjectionString() + dirSeparator;
+	std::string dirPrefix = phaseToString(initPhase) + dirSeparator + toStringShort(HOLD_TIME)+"us_winding" + dirSeparator + toString(relativePhase / PI * 180.0, 2) + "_deg_phase" + dirSeparator + getProjectionString() + dirSeparator;
 
 	std::string densDir = dirPrefix; // +"dens";
 	//std::string vtksDir = dirPrefix + "dens_vtks";
@@ -1452,7 +1460,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	system(createResultsDirCommand.c_str());
 	//system(createVtksDirCommand.c_str());
 	//system(createSpinorVtksDirCommand.c_str());
-	system(createDatsDirCommand.c_str());
+	//system(createDatsDirCommand.c_str());
 
 	double expansionBlockScale = block_scale;
 
@@ -1626,9 +1634,36 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	return 0;
 }
 
+void readConfFile(const std::string& confFileName)
+{
+	std::ifstream file;
+	file.open(confFileName, std::ios::in);
+	if (file.is_open())
+	{
+		std::string line;
+		while (std::getline(file, line))
+		{
+			if (size_t pos = line.find("rel_phase") != std::string::npos)
+			{
+				relativePhase = std::stod(line.substr(pos + 9));
+			}
+			else if (size_t pos = line.find("phase") != std::string::npos)
+			{
+				initPhase = stringToPhase(line.substr(pos + 5));
+			}
+		}
+	}
+}
+
 int main(int argc, char** argv)
 {
 	constexpr double blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
+
+	if (argc > 1)
+	{
+		std::cout << "Read config " << argv[1] << std::endl;
+		readConfFile(std::string(argv[1]));
+	}
 
 	std::cout << "Start simulating from t = " << t << " ms, with a time step size of " << dt << "." << std::endl;
 	std::cout << "The simulation will end at " << END_TIME << " ms." << std::endl;
@@ -1661,7 +1696,7 @@ int main(int argc, char** argv)
 	//constexpr int TURNS = 8; // 45 degree global phase turns
 	//for (int turn = 0; turn < TURNS; ++turn)
 	//{
-	//	PHASE = turn * 45.0 / 180.0 * PI;
+	//	relativePhase = turn * 45.0 / 180.0 * PI;
 	//	t = 0;
 	//	integrateInTime(blockScale, domainMin, domainMax);
 	//}
