@@ -62,20 +62,22 @@ std::string getProjectionString()
 #define COMPUTE_GROUND_STATE 0
 
 #define HYPERBOLIC 1
-#define PARABOLIC 1
+#define PARABOLIC 0
 #define ANALYTIC 0
 #define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
 
 #define SAVE_STATES 0
-#define SAVE_PICTURE 0
+#define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
 #define THREAD_BLOCK_Y 2
 #define THREAD_BLOCK_Z 1
 
-constexpr double DOMAIN_SIZE_X = 20.0;
-constexpr double DOMAIN_SIZE_Y = 20.0;
-constexpr double DOMAIN_SIZE_Z = 20.0;
+constexpr double F = 2; // Hyperfine spin
+
+constexpr double DOMAIN_SIZE_X = 24.0;
+constexpr double DOMAIN_SIZE_Y = 24.0;
+constexpr double DOMAIN_SIZE_Z = 24.0;
 
 constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 9 * 6.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
@@ -83,8 +85,8 @@ constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 9 * 6.0;
 
 constexpr double N = 2e5; // Number of atoms in the condensate
 
-constexpr double trapFreq_r = 126;
-constexpr double trapFreq_z = 166;
+constexpr double trapFreq_r = 143;
+constexpr double trapFreq_z = 178;
 
 constexpr double omega_r = trapFreq_r * 2 * PI;
 constexpr double omega_z = trapFreq_z * 2 * PI;
@@ -122,13 +124,13 @@ constexpr double NOISE_AMPLITUDE = 0;
 double dt = 1e-4; // 5e-5;
 double dt_increse = 1e-5;
 
-const double IMAGE_SAVE_INTERVAL = 0.01; // ms
+const double IMAGE_SAVE_INTERVAL = 0.2; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-constexpr double END_TIME = 10.51; // End time in ms
+constexpr double END_TIME = 7.4; // End time in ms
 
 #if COMPUTE_GROUND_STATE
 double sigma = 0.1;
@@ -138,7 +140,7 @@ double sigma = 0.001; // 0.01; // Coefficient for the relativistic term
 double dt_per_sigma = dt / sigma;
 
 //constexpr double E = 126.621; // Computed with ITP
-constexpr double E = 112.5; // Adjusted by hand to match the parabolic equation
+//constexpr double E = 112.5; // Adjusted by hand to match the parabolic equation
 
 std::string toStringShort(const double value)
 {
@@ -148,7 +150,7 @@ std::string toStringShort(const double value)
 	return out.str();
 };
 
-const std::string EXTRA_INFORMATION = toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X) + "_" + phaseToString(initPhase);
+const std::string EXTRA_INFORMATION = toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X);
 const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + EXTRA_INFORMATION + ".dat";
 const std::string GROUND_STATE_Q_FILENAME = "ground_state_q_" + EXTRA_INFORMATION + ".dat";
 
@@ -894,17 +896,6 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 		H.s_1 += hodge * d0psi.s_1;
 		H.s_2 += hodge * d0psi.s_2;
 	}
-	if (hyperb)
-	{
-		//static constexpr double coef = 2.8; // For sigma == 0.01
-		static constexpr double coef = 10.0; // For sigma == 0.001
-		//const double coef = 1.0 / (sigma * E);
-		H.s2 = -coef * sigma * E * H.s2;
-		H.s1 = -coef * sigma * E * H.s1;
-		H.s0 = -coef * sigma * E * H.s0;
-		H.s_1 = -coef * sigma * E * H.s_1;
-		H.s_2 = -coef * sigma * E * H.s_2;
-	}
 
 	const double normSq_s2 = prev.s2.x * prev.s2.x + prev.s2.y * prev.s2.y;
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
@@ -919,6 +910,16 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 
 	double2 ab = { trap(globalPos) + c0 * normSq, 0 };
+
+	if (hyperb)
+	{
+		double c_K = 1 + (2 / F) * sigma * ab.x;
+		H.s2 = -c_K * H.s2;
+		H.s1 = -c_K * H.s1;
+		H.s0 = -c_K * H.s0;
+		H.s_1 = -c_K * H.s_1;
+		H.s_2 = -c_K * H.s_2;
+	}
 
 	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bb);
 
@@ -1058,17 +1059,6 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 		H.s_1 += hodge * d0psi.s_1;
 		H.s_2 += hodge * d0psi.s_2;
 	}
-	if (hyperb)
-	{
-		//static constexpr double coef = 2.8; // For sigma == 0.01
-		static constexpr double coef = 10.0; // For sigma == 0.001
-		//const double coef = 1.0 / (sigma * E);
-		H.s2 = -coef * sigma * E * H.s2;
-		H.s1 = -coef * sigma * E * H.s1;
-		H.s0 = -coef * sigma * E * H.s0;
-		H.s_1 = -coef * sigma * E * H.s_1;
-		H.s_2 = -coef * sigma * E * H.s_2;
-	}
 
 	const double normSq_s2 = prev.s2.x * prev.s2.x + prev.s2.y * prev.s2.y;
 	const double normSq_s1 = prev.s1.x * prev.s1.x + prev.s1.y * prev.s1.y;
@@ -1083,6 +1073,16 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 
 	double2 ab = { trap(globalPos) + c0 * normSq, 0 };
+
+	if (hyperb)
+	{
+		double c_K = 1 + (2 / F) * sigma * ab.x;
+		H.s2 = -c_K * H.s2;
+		H.s1 = -c_K * H.s1;
+		H.s0 = -c_K * H.s0;
+		H.s_1 = -c_K * H.s_1;
+		H.s_2 = -c_K * H.s_2;
+	}
 
 	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bb);
 
@@ -1295,8 +1295,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const uint ysize = uint(domain.y / (block_scale * BLOCK_WIDTH.y)); // + 1;
 	const uint zsize = uint(domain.z / (block_scale * BLOCK_WIDTH.z)); // + 1;
 	const Vector3 p0 = 0.5 * (minp + maxp - block_scale * Vector3(BLOCK_WIDTH.x * xsize, BLOCK_WIDTH.y * ysize, BLOCK_WIDTH.z * zsize));
-	const double3 d_p0 = { p0.x, p0.y, p0.z };
-	//const double3 d_p0 = { p0.x + 0.128 * maxp.x, p0.y, p0.z };
+	//const double3 d_p0 = { p0.x, p0.y, p0.z };
+	const double3 d_p0 = { p0.x + 0.18 * maxp.x, p0.y, p0.z };
 
 	// compute discrete dimensions
 	const uint bsize = VALUES_IN_BLOCK; // bpos.size(); // number of values inside a block
@@ -1478,8 +1478,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	std::string psi_filename = loadGroundState ? GROUND_STATE_PSI_FILENAME : toString(t) + ".dat";
 #if HYPERBOLIC
 	loadFromFile(psi_filename, (char*)&h_oddPsiHyper[0], hostSize * sizeof(BlockPsis));
-	std::string q_filename = loadGroundState ? GROUND_STATE_Q_FILENAME : toString(t) + ".dat";
-	loadFromFile(q_filename, (char*)&h_oddQHyper[0], hostSize * sizeof(BlockEdges));
+	//std::string q_filename = loadGroundState ? GROUND_STATE_Q_FILENAME : toString(t) + ".dat";
+	//loadFromFile(q_filename, (char*)&h_oddQHyper[0], hostSize * sizeof(BlockEdges));
 #endif
 #if PARABOLIC
 	loadFromFile(psi_filename, (char*)&h_oddPsiPara[0], hostSize * sizeof(BlockPsis));
@@ -1777,7 +1777,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #if !COMPUTE_ERROR
 #if HYPERBOLIC
 		double3 comHyper = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiHyper, dimensions, bodies, volume, block_scale, d_p0);
-		std::cout << comHyper.x << ", " << std::endl;
+		std::cout << comHyper.x << ", "; // << std::endl;
 #endif
 #if PARABOLIC
 		double3 comPara = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiPara, dimensions, bodies, volume, block_scale, d_p0);

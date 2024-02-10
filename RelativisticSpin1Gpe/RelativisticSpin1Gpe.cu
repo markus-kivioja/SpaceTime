@@ -30,7 +30,7 @@ std::string getProjectionString()
 
 #define COMPUTE_GROUND_STATE 0
 
-#define HYPERBOLIC 1
+#define HYPERBOLIC 0
 #define PARABOLIC 1
 #define ANALYTIC 0
 #define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
@@ -42,11 +42,13 @@ std::string getProjectionString()
 #define THREAD_BLOCK_Y 2
 #define THREAD_BLOCK_Z 1
 
+constexpr double F = 1; // Hyperfine spin
+
 constexpr double DOMAIN_SIZE_X = 16.0; //24.0;
 constexpr double DOMAIN_SIZE_Y = 16.0; //24.0;
 constexpr double DOMAIN_SIZE_Z = 16.0; //24.0;
 
-constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 9 * 6.0;
+constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 0 * 6.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
 
@@ -86,8 +88,8 @@ constexpr double INV_SQRT_2 = 0.70710678118655;
 
 //double dt = 3.9e-4; // For parabolic eq and 112^3 domain
 //double dt = 6.9e-4; // For hyperbolic eq and 112^3 domain
-double dt = 1e-4; // Default
-//double dt = 0.69e-3;
+//double dt = 4e-4; // Default
+double dt = 1.1e-3;
 double dt_increse = 1e-5;
 
 const double IMAGE_SAVE_INTERVAL = 0.01; // ms
@@ -96,7 +98,7 @@ uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt)
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 4.5; // End time in ms
+double END_TIME = 0.5; // End time in ms
 
 #if COMPUTE_GROUND_STATE
 double sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
@@ -729,8 +731,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 #if !COMPUTE_ERROR
 #if HYPERBOLIC
-		double3 comHyper = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiHyper, dimensions, bodies, volume, block_scale, d_p0);
-		std::cout << comHyper.x << ", " << std::endl;
+		//double3 comHyper = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiHyper, dimensions, bodies, volume, block_scale, d_p0);
+		//std::cout << comHyper.x << ", " << std::endl;
 #endif
 #if PARABOLIC
 		double3 comPara = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiPara, dimensions, bodies, volume, block_scale, d_p0);
@@ -739,7 +741,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 
 		// For checking the numerical stability
-#if 0 // Disable / enable numerical stability measurement
+#if 1 // Disable / enable numerical stability measurement
 #if !COMPUTE_ERROR
 #if HYPERBOLIC
 		double dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
@@ -968,7 +970,7 @@ int main(int argc, char** argv)
 #elif PARABOLIC
 	std::cout << "Computing parabolic" << std::endl << std::endl;
 #elif HYPERBOLIC
-	std::cout << "Computing hyperbolic with E = " << E << std::endl << std::endl;
+	std::cout << "Computing hyperbolic" << std::endl << std::endl;
 #endif
 
 	readConfFile();
@@ -987,16 +989,16 @@ int main(int argc, char** argv)
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
 
-	integrateInTime(blockScale, domainMin, domainMax);
-	//while (!integrateInTime(blockScale, domainMin, domainMax))
-	//{
-	//	std::cout << "Time step was: " << dt << std::endl;
-	//	dt += dt_increse;
-	//	dt_per_sigma = dt / sigma;
-	//	IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
-	//
-	//	t = 0;
-	//}
+	//integrateInTime(blockScale, domainMin, domainMax);
+	while (!integrateInTime(blockScale, domainMin, domainMax))
+	{
+		std::cout << "Time step was: " << dt << std::endl;
+		dt += dt_increse;
+		dt_per_sigma = dt / sigma;
+		IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
+	
+		t = 0;
+	}
 
 	return 0;
 }

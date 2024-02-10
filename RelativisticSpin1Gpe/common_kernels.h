@@ -147,9 +147,10 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 
 	if (hyperb)
 	{
-		H.s1 = -(1 + 2 * sigma * totalPot.x) * H.s1;
-		H.s0 = -(1 + 2 * sigma * totalPot.x) * H.s0;
-		H.s_1 = -(1 + 2 * sigma * totalPot.x) * H.s_1;
+		double c_K = 1 + (2 / F) * sigma * totalPot.x;
+		H.s1 = -c_K * H.s1;
+		H.s0 = -c_K * H.s0;
+		H.s_1 = -c_K * H.s_1;
 	}
 
 	H.s1 += totalPot * prev.s1;
@@ -227,9 +228,10 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 
 	if (hyperb)
 	{
-		H.s1 = -(1 + 2 * sigma * totalPot.x) * H.s1;
-		H.s0 = -(1 + 2 * sigma * totalPot.x) * H.s0;
-		H.s_1 = -(1 + 2 * sigma * totalPot.x) * H.s_1;
+		double c_K = 1 + (2 / F) * sigma * totalPot.x;
+		H.s1 = -c_K * H.s1;
+		H.s0 = -c_K * H.s0;
+		H.s_1 = -c_K * H.s_1;
 	}
 
 	H.s1 += totalPot * prev.s1;

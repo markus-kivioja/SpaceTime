@@ -86,7 +86,7 @@ constexpr double GRADIENT_OFF_DUARATION = 0.034;
 #define USE_QUADRUPOLE_OFFSET 0
 #define USE_INITIAL_NOISE 0
 
-#define SAVE_STATES 0
+#define SAVE_STATES 1
 #define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
@@ -158,12 +158,12 @@ constexpr double NOISE_AMPLITUDE = 0; //0.1;
 //constexpr double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 constexpr double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-const double IMAGE_SAVE_INTERVAL = 0.05; // 1.0; // ms
+const double IMAGE_SAVE_INTERVAL = 0.01; // 1.0; // ms
 const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
-double t = 0; // Start time in ms
+double t = 10.100250578359510456; // Start time in ms
 constexpr double END_TIME = OPT_TRAP_OFF + GRADIENT_OFF_DELAY + GRADIENT_OFF_DUARATION + 24.0; // End time in ms
 
 double relativePhase = 0; // 5.105088062083414; // In radians
