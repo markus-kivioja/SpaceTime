@@ -1,7 +1,6 @@
 #include <cuda_runtime.h>
 #include <helper_cuda.h>
 
-#include "VortexState.hpp"
 #include <Output/Picture.hpp>
 #include <Output/Text.hpp>
 #include <Types/Complex.hpp>
@@ -12,9 +11,11 @@
 
 #include <mesh.h>
 
-ddouble RATIO = 1.0;
-ddouble KAPPA = 10;
-ddouble G = 300;
+constexpr double RATIO = 1.0;
+constexpr double KAPPA = 10;
+constexpr double g = 300;
+
+constexpr double sigma = 0.001; //0.008;
 
 #define RELATIVISTIC 1
 
@@ -26,14 +27,10 @@ ddouble G = 300;
 #define THREAD_BLOCK_Y 8
 #define THREAD_BLOCK_Z 1
 
-ddouble potentialRZ(const ddouble r, const ddouble z)
-{
-	return 0.5 * (r * r + RATIO * RATIO * z * z);
-}
 
-ddouble potentialV3(const Vector3& p)
+double potentialV3(const Vector3& p)
 {
-	return 0.5 * (p.x * p.x + p.y * p.y + RATIO * RATIO * p.z * p.z);
+	return 0.5 * (p.x * p.x + p.y * p.y + RATIO * RATIO * p.z * p.z) + 100;
 }
 
 bool saveVolumeMap(const std::string& path, const Buffer<ushort>& vol, const uint xsize, const uint ysize, const uint zsize, const Vector3& h)
@@ -89,6 +86,71 @@ struct PitchedPtr
 	size_t slicePitch;
 };
 
+__host__ __device__ __inline__ double2 operator+(double2 a, double2 b)
+{
+	return { a.x + b.x, a.y + b.y };
+}
+__host__ __device__ __inline__ double3 operator+(double3 a, double3 b)
+{
+	return { a.x + b.x, a.y + b.y, a.z + b.z };
+}
+__host__ __device__ __inline__ double2 operator-(double2 a, double2 b)
+{
+	return { a.x - b.x, a.y - b.y };
+}
+__host__ __device__ __inline__ double2 operator-(double2 a)
+{
+	return { -a.x, -a.y };
+}
+__host__ __device__ __inline__ double3 operator-(double3 a, double3 b)
+{
+	return { a.x - b.x, a.y - b.y, a.z - b.z };
+}
+__host__ __device__ __inline__ void operator+=(double2& a, double2 b)
+{
+	a.x += b.x;
+	a.y += b.y;
+}
+__host__ __device__ __inline__ void operator+=(double3& a, double3 b)
+{
+	a.x += b.x;
+	a.y += b.y;
+	a.z += b.z;
+}
+__host__ __device__ __inline__ void operator-=(double2& a, double2 b)
+{
+	a.x -= b.x;
+	a.y -= b.y;
+}
+__host__ __device__ __inline__ double2 operator*(double b, double2 a)
+{
+	return { b * a.x, b * a.y };
+}
+__host__ __device__ __inline__ double3 operator*(double b, double3 a)
+{
+	return { b * a.x, b * a.y, b * a.z };
+}
+__host__ __device__ __inline__ double3 operator*(double3 a, double b)
+{
+	return { b * a.x, b * a.y, b * a.z };
+}
+__host__ __device__ __inline__ double3 operator/(double3 a, double b)
+{
+	return { a.x / b, a.y / b, a.z / b };
+}
+__host__ __device__ __inline__ double2 operator/(double2 a, double b)
+{
+	return { a.x / b, a.y / b };
+}
+__host__ __device__ __inline__ double2 conj(double2 a) // Complex conjugate
+{
+	return { a.x, -a.y };
+}
+__host__ __device__ __inline__ double2 operator*(double2 a, double2 b) // Complex number multiplication
+{
+	return { a.x * b.x - a.y * b.y, a.y * b.x + a.x * b.y };
+}
+
 __global__ void init_q(PitchedPtr next_q, PitchedPtr psi, int3* d0, uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -114,7 +176,7 @@ __global__ void init_q(PitchedPtr next_q, PitchedPtr psi, int3* d0, uint3 dimens
 	next->values[dualEdgeId] = d0psi;
 }
 
-__global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, ddouble dtime_per_sigma)
+__global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, ddouble dt_per_sigma)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -136,18 +198,18 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 	double2 d0psi = ((BlockPsis*)(pPsi + d0[dualEdgeId].y))->values[d0[dualEdgeId].z] -
 		((BlockPsis*)(pPsi))->values[d0[dualEdgeId].x];
 
-#if RELATIVISTIC
 	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * dataZid + prev_q.pitch * yid) + xid;
-	double2 q = dtime_per_sigma * (prev->values[dualEdgeId] + d0psi);
+
+#if RELATIVISTIC
+	double2 q = dt_per_sigma * (prev->values[dualEdgeId] + d0psi);
 	next->values[dualEdgeId] += make_double2(-q.y, q.x);
 #else
-	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * dataZid + prev_q.pitch * yid) + xid;
 	double2 q = d0psi - prev->values[dualEdgeId];
 	next->values[dualEdgeId] += make_double2(q.x, q.y);
 #endif
 }
 
-__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, PitchedPtr potentials, int2* d1, ddouble* hodges, ddouble g, uint3 dimensions)
+__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, PitchedPtr potentials, int2* d1, ddouble* hodges, ddouble g, uint3 dimensions, double dt)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -179,18 +241,103 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 		d1q += hodges[edgeId] * ((BlockEdges*)(p_qs + d1[edgeId].x))->values[d1[edgeId].y];
 	}
 
-
 	double normsq = (conj(prev_psi) * prev_psi).x;
 
+	double totalPot = pot->values[dualNodeId] + g * normsq;
+
 #if RELATIVISTIC
-	double2 Hpsi = (pot->values[dualNodeId] + g * normsq) * prev_psi - d1q;
-#else
-	double2 Hpsi = d1q + (pot->values[dualNodeId] + g * normsq) * prev_psi;
+	double c_K = 1 + sigma * totalPot;
+	d1q = -c_K * d1q;
 #endif
-	p_next_psi->values[dualNodeId] += make_double2(Hpsi.y, -Hpsi.x);
+
+	double2 Hpsi = d1q + totalPot * prev_psi;
+	p_next_psi->values[dualNodeId] += dt * make_double2(Hpsi.y, -Hpsi.x);
 };
 
-uint integrateInTime(const VortexState& state, const ddouble block_scale, const Vector3& minp, const Vector3& maxp, const ddouble iteration_period, const uint number_of_iterations, ddouble sigma)
+__global__ void com(double3* com, PitchedPtr prevStep, uint3 dimensions, const double block_scale, const double3 p0)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataZid = zid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+
+	// Exit leftover threads
+	if (xid >= dimensions.x || yid >= dimensions.y || dataZid >= dimensions.z)
+	{
+		return;
+	}
+
+	size_t dualNodeId = zid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+
+	char* pPsi = prevStep.ptr + prevStep.slicePitch * dataZid + prevStep.pitch * yid + sizeof(BlockPsis) * xid;
+	double2 psi = ((BlockPsis*)pPsi)->values[dualNodeId];
+
+	double dens = (psi * conj(psi)).x;
+	const double3 localPos = d_localPos[dualNodeId];
+	const double3 globalPos = { p0.x + block_scale * (xid * BLOCK_WIDTH_X + localPos.x),
+		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
+		p0.z + block_scale * (dataZid * BLOCK_WIDTH_Z + localPos.z) };
+
+	size_t idx = VALUES_IN_BLOCK * (dataZid * dimensions.x * dimensions.y + yid * dimensions.x + xid) + dualNodeId;
+	com[idx] = dens * globalPos;
+}
+
+__global__ void integrateVec(double3* dataVec, size_t stride, bool addLast, double dv)
+{
+	size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+	if (idx >= stride)
+	{
+		return;
+	}
+
+	dataVec[idx] += dataVec[idx + stride];
+
+	if ((idx == (stride - 1)) && addLast)
+	{
+		dataVec[idx] += dataVec[idx + stride + 1];
+	}
+
+	if (stride == 1)
+	{
+		dataVec[0] = dv * dataVec[0];
+	}
+}
+
+double3 centerOfMass(dim3 dimGrid, dim3 dimBlock, double3* comPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, const double volume, const double block_scale, const double3 p0)
+{
+	com << <dimGrid, dimBlock >> > (comPtr, psi, dimensions, block_scale, p0);
+	int prevStride = bodies;
+	while (prevStride > 1)
+	{
+		int newStride = prevStride / 2;
+		integrateVec << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (comPtr, newStride, ((newStride * 2) != prevStride), volume);
+		prevStride = newStride;
+	}
+	double3 hCom = { 0, 0, 0 };
+	checkCudaErrors(cudaMemcpy(&hCom, comPtr, sizeof(double), cudaMemcpyDeviceToHost));
+
+	return hCom;
+}
+
+void loadFromFile(const std::string& filename, char* dst, size_t size)
+{
+	std::ifstream psi_fs(filename, std::ios::binary | std::ios::in);
+	if (psi_fs.fail() != 0)
+	{
+		std::cout << "Failed to open file " << filename << std::endl;
+		exit(1);
+	}
+	else
+	{
+		std::cout << "Loading data from " << filename << "..." << std::endl;
+	}
+	psi_fs.read(dst, size);
+	psi_fs.close();
+}
+
+
+uint integrateInTime(const ddouble block_scale, const Vector3& minp, const Vector3& maxp, const ddouble iteration_period, const uint number_of_iterations, ddouble sigma)
 {
 	uint i, j, k, l;
 
@@ -199,7 +346,9 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	const uint xsize = uint(domain.x / (block_scale * BLOCK_WIDTH.x)) + 1;
 	const uint ysize = uint(domain.y / (block_scale * BLOCK_WIDTH.y)) + 1;
 	const uint zsize = uint(domain.z / (block_scale * BLOCK_WIDTH.z)) + 1;
-	const Vector3 p0 = 0.5 * (minp + maxp - block_scale * Vector3(BLOCK_WIDTH.x * xsize, BLOCK_WIDTH.y * ysize, BLOCK_WIDTH.z * zsize));
+	Vector3 p0 = 0.5 * (minp + maxp - block_scale * Vector3(BLOCK_WIDTH.x * xsize, BLOCK_WIDTH.y * ysize, BLOCK_WIDTH.z * zsize));
+	p0.x -= 0.14 * maxp.x;
+	const double3 d_p0 = { p0.x, p0.y, p0.z };
 
 	//std::cout << xsize << ", " << ysize << ", " << zsize << std::endl;
 
@@ -219,9 +368,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	std::cout << "bodies = " << bodies << std::endl;
 
 	// initialize stationary state
-	Buffer<Complex> Psi0(vsize, Complex(0, 0)); // initial discrete wave function
 	Buffer<ddouble> pot(vsize, 0.0); // discrete potential multiplied by time step size
-	ddouble g = state.getG(); // effective interaction strength
 	ddouble maxpot = 0.0; // maximal value of potential
 	for (k = 0; k < zsize; k++)
 	{
@@ -233,9 +380,8 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 				{
 					const uint ii = ii0 + k * bxysize + j * bxsize + i * bsize + l;
 					const Vector3 p(p0.x + block_scale * (i * BLOCK_WIDTH.x + bpos[l].x), p0.y + block_scale * (j * BLOCK_WIDTH.y + bpos[l].y), p0.z + block_scale * (k * BLOCK_WIDTH.z + bpos[l].z)); // position
-					Psi0[ii] = state.getPsi(p);
 					pot[ii] = potentialV3(p);
-					const ddouble poti = pot[ii] + g * Psi0[ii].normsq();
+					const ddouble poti = pot[ii];
 					if (poti > maxpot) maxpot = poti;
 				}
 			}
@@ -249,6 +395,9 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	cudaExtent psiExtent = make_cudaExtent(dxsize * sizeof(BlockPsis), dysize, dzsize);
 	cudaExtent edgeExtent = make_cudaExtent(dxsize * sizeof(BlockEdges), dysize, dzsize);
 	cudaExtent potExtent = make_cudaExtent(dxsize * sizeof(BlockPots), dysize, dzsize);
+
+	double3* d_com;
+	checkCudaErrors(cudaMalloc(&d_com, bodies * sizeof(double3)));
 
 	cudaPitchedPtr d_cudaEven;
 	cudaPitchedPtr d_cuda_q_even;
@@ -282,12 +431,12 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	//std::cout << "lapsize = " << lapsize << ", lapfac = " << lapfac << ", lapfac0 = " << lapfac0 << std::endl;
 
 	// compute time step size
-	//const uint steps_per_iteration = uint(iteration_period * (maxpot + lapfac0)) + 1;
-#if RELATIVISTIC
-	const uint steps_per_iteration = 499; // 185 is the min stable for hyperbolic
-#else
-	const uint steps_per_iteration = 522; // ... and 522 for the parabolic
-#endif
+	const uint steps_per_iteration = uint(iteration_period * (maxpot + lapfac0)) + 1;
+//#if RELATIVISTIC
+//	const uint steps_per_iteration = 499; // 185 is the min stable for hyperbolic
+//#else
+//	const uint steps_per_iteration = 522; // ... and 522 for the parabolic
+//#endif
 	const ddouble dt = iteration_period / ddouble(steps_per_iteration); // time step in time units
 	const ddouble dt_per_sigma = dt / sigma;
 
@@ -301,12 +450,7 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	std::cout << "Domain: " << domain.x << ", " << domain.y << ", " << domain.z << std::endl;
 	std::cout << "Maxpot:" << maxpot << std::endl;
 
-	// multiply terms with dt
-	g *= dt;
-	lapfac *= dt;
-	lapfac0 *= dt;
-	for (i = 0; i < vsize; i++) pot[i] *= dt;
-	for (int i = 0; i < hodges.size(); ++i) hodges[i] = -0.5 * hodges[i] / (block_scale * block_scale) * dt;
+	for (int i = 0; i < hodges.size(); ++i) hodges[i] = -0.5 * hodges[i] / (block_scale * block_scale);
 
 	int3* d_d0;
 	checkCudaErrors(cudaMalloc(&d_d0, d0.size() * sizeof(int3)));
@@ -329,9 +473,9 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 	memset(h_odd, 0, hostSize * sizeof(BlockPsis));
 	memset(h_pot, 0, hostSize * sizeof(BlockPots));
 
-	// initialize discrete field
-	const Complex oddPhase = state.getPhase(-0.5 * dt);
-	//Random rnd(54363);
+	loadFromFile("ground_state.dat", (char*)&h_even[0], hostSize * sizeof(BlockPsis));
+	loadFromFile("ground_state.dat", (char*)&h_odd[0], hostSize * sizeof(BlockPsis));
+
 	for (k = 0; k < zsize; k++)
 	{
 		for (j = 0; j < ysize; j++)
@@ -342,12 +486,6 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 				{
 					const uint srcI = ii0 + k * bxysize + j * bxsize + i * bsize + l;
 					const uint dstI = (k + 1) * dxsize * dysize + (j + 1) * dxsize + (i + 1);
-					ddouble r = Psi0[srcI].r;
-					ddouble i = Psi0[srcI].i;
-					double2 even = make_double2(Psi0[srcI].r, Psi0[srcI].i); // No noice
-					h_even[dstI].values[l] = even;
-					h_odd[dstI].values[l] = make_double2(oddPhase.r * even.x - oddPhase.i * even.y,
-						oddPhase.i * even.x + oddPhase.r * even.y);
 					h_pot[dstI].values[l] = pot[srcI];
 				}
 			}
@@ -459,7 +597,10 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 				const uint idx = k * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
 				double norm = sqrt(h_even[idx].values[0].x * h_even[idx].values[0].x + h_even[idx].values[0].y * h_even[idx].values[0].y);
 
-				pic.setColor(i, j, INTENSITY * Vector4(h_even[idx].values[0].x, norm, h_even[idx].values[0].y, 1.0));
+				//pic.setColor(i, j, INTENSITY * Vector4(h_even[idx].values[0].x, norm, h_even[idx].values[0].y, 1.0));
+				double r = h_even[idx].values[0].x * h_even[idx].values[0].x;
+				double g = h_even[idx].values[0].y * h_even[idx].values[0].y;
+				pic.setColor(i, j, INTENSITY * Vector4(r, g, 0, 1.0));
 			}
 		}
 		std::ostringstream picpath;
@@ -471,35 +612,34 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 		pic.save(picpath.str(), false);
 
 		// print squared norm and error
-		const Complex currentPhase = state.getPhase(iter * steps_per_iteration * dt);
-		ddouble errorNormSq = 0;
-		ddouble normsq = 0.0;
-		Complex error(0.0, 0.0);
-		for (k = 0; k < zsize; k++)
-		{
-			for (j = 0; j < ysize; j++)
-			{
-				for (i = 0; i < xsize; i++)
-				{
-					for (l = 0; l < bsize; l++)
-					{
-						const uint srcI = ii0 + k * bxysize + j * bxsize + i * bsize + l;
-						const uint dstI = (k + 1) * dxsize * dysize + (j + 1) * dxsize + (i + 1);
-
-						Complex evenPsi(h_even[dstI].values[l].x, h_even[dstI].values[l].y);
-						normsq += evenPsi.normsq() * volume;
-						error += (Psi0[srcI].con() * evenPsi) * volume;
-
-						Complex groundTruth = currentPhase * Psi0[srcI];
-						errorNormSq += (groundTruth - evenPsi).normsq();
-					}
-				}
-			}
-		}
-		ddouble RMSE = sqrt(errorNormSq / (double)(zsize * ysize * xsize * bsize));
-		ddouble errorAbs = abs(normsq - error.norm());
-		std::cout << "normsq=" << normsq << " error=" << errorAbs << std::endl;
-		errorText << RMSE << " ";
+		//ddouble errorNormSq = 0;
+		//ddouble normsq = 0.0;
+		//Complex error(0.0, 0.0);
+		//for (k = 0; k < zsize; k++)
+		//{
+		//	for (j = 0; j < ysize; j++)
+		//	{
+		//		for (i = 0; i < xsize; i++)
+		//		{
+		//			for (l = 0; l < bsize; l++)
+		//			{
+		//				const uint srcI = ii0 + k * bxysize + j * bxsize + i * bsize + l;
+		//				const uint dstI = (k + 1) * dxsize * dysize + (j + 1) * dxsize + (i + 1);
+		//
+		//				Complex evenPsi(h_even[dstI].values[l].x, h_even[dstI].values[l].y);
+		//				normsq += evenPsi.normsq() * volume;
+		//				error += (Psi0[srcI].con() * evenPsi) * volume;
+		//
+		//				Complex groundTruth = currentPhase * Psi0[srcI];
+		//				errorNormSq += (groundTruth - evenPsi).normsq();
+		//			}
+		//		}
+		//	}
+		//}
+		//ddouble RMSE = sqrt(errorNormSq / (double)(zsize * ysize * xsize * bsize));
+		//ddouble errorAbs = abs(normsq - error.norm());
+		//std::cout << "normsq=" << normsq << " error=" << errorAbs << std::endl;
+		//errorText << RMSE << " ";
 #endif
 
 #if SAVE_VOLUME
@@ -535,25 +675,27 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 		//if (errorAbs > 0.01) break;
 
 		// integrate one iteration
-		std::cout << "Iteration " << iter << std::endl;
+		//std::cout << "Iteration " << iter << std::endl;
 		for (uint step = 0; step < steps_per_iteration; step++)
 		{
 #if RELATIVISTIC
 			// update odd values (imaginary terms)
-			update_psi << <psiDimGrid, dimBlock >> > (d_psiOdd, d_psiEven, d_qEven, d_pot, d_d1, d_hodges, g, dimensions);
+			update_psi << <psiDimGrid, dimBlock >> > (d_psiOdd, d_psiEven, d_qEven, d_pot, d_d1, d_hodges, g, dimensions, dt);
 			update_q << <edgeDimGrid, dimBlock >> > (d_qOdd, d_qEven, d_psiEven, d_d0, dimensions, dt_per_sigma);
 			// update even values (real terms)
-			update_psi << <psiDimGrid, dimBlock >> > (d_psiEven, d_psiOdd, d_qOdd, d_pot, d_d1, d_hodges, g, dimensions);
+			update_psi << <psiDimGrid, dimBlock >> > (d_psiEven, d_psiOdd, d_qOdd, d_pot, d_d1, d_hodges, g, dimensions, dt);
 			update_q << <edgeDimGrid, dimBlock >> > (d_qEven, d_qOdd, d_psiOdd, d_d0, dimensions, dt_per_sigma);
 #else
 			// update odd values (imaginary terms)
 			update_q << <edgeDimGrid, dimBlock >> > (d_qEven, d_qEven, d_psiEven, d_d0, dimensions, dt_per_sigma);
-			update_psi << <psiDimGrid, dimBlock >> > (d_psiOdd, d_psiEven, d_qEven, d_pot, d_d1, d_hodges, g, dimensions);
+			update_psi << <psiDimGrid, dimBlock >> > (d_psiOdd, d_psiEven, d_qEven, d_pot, d_d1, d_hodges, g, dimensions, dt);
 			// update even values (real terms)
 			update_q << <edgeDimGrid, dimBlock >> > (d_qOdd, d_qOdd, d_psiOdd, d_d0, dimensions, dt_per_sigma);
-			update_psi << <psiDimGrid, dimBlock >> > (d_psiEven, d_psiOdd, d_qOdd, d_pot, d_d1, d_hodges, g, dimensions);
+			update_psi << <psiDimGrid, dimBlock >> > (d_psiEven, d_psiOdd, d_qOdd, d_pot, d_d1, d_hodges, g, dimensions, dt);
 #endif
 		}
+		double3 comPara = centerOfMass(psiDimGrid, dimBlock, d_com, d_psiOdd, dimensions, bodies, volume, block_scale, d_p0);
+		std::cout << comPara.x << ", "; // << std::endl;
 #if SAVE_PICTURE || SAVE_VOLUME
 		// Copy back from device memory to host memory
 		checkCudaErrors(cudaMemcpy3D(&evenBackParams));
@@ -577,55 +719,27 @@ uint integrateInTime(const VortexState& state, const ddouble block_scale, const 
 
 int main(int argc, char** argv)
 {
-#if LOAD_STATE_FROM_DISK
-	VortexState state;
-	state.load("state.dat");
-	const ddouble eps = 1e-5 * state.searchFunctionMax();
-	const ddouble maxr = state.searchMaxR(eps);
-	const ddouble maxz = state.searchMaxZ(eps);
-#else
-	// preliminary vortex state to find vortex size
-	VortexState state0;
-	state0.setKappa(KAPPA);
-	state0.setG(G);
-	if (IS_3D) state0.setRange(0.0, 15.0, 35.0, 0.2, 0.2); // use this for 3d
-	state0.iterateSolution(potentialRZ, 10000, 1e-29);
-	const ddouble eps = 1e-5 * state0.searchFunctionMax();
-	const ddouble minr = state0.searchMinR(eps);
-	ddouble maxr = state0.searchMaxR(eps);
-	ddouble maxz = state0.searchMaxZ(eps);
-	//std::cout << "maxf=" << 1e6*eps << " minr=" << minr << " maxr=" << maxr << " maxz=" << maxz << std::endl;
+	const double DOMAIN_SIZE_X = 10.0;
+	constexpr double REPLICABLE_STRUCTURE_COUNT_X = 110.0;
+	ddouble maxr = DOMAIN_SIZE_X * 0.5;
+	ddouble maxz = DOMAIN_SIZE_X * 0.5;
 
-	// more accurate vortex state
-	VortexState state;
-	state.setKappa(KAPPA);
-	state.setG(G);
-	if (IS_3D) state.setRange(minr, maxr, maxz, 0.03, 0.03); // use this for 3d
-	state.initialize(state0);
-	state.iterateSolution(potentialRZ, 10000, 1e-29);
-	state.save("state.dat");
-	maxr = state.searchMaxR(eps);
-	maxz = state.searchMaxZ(eps);
-	//std::cout << "maxf=" << state.searchFunctionMax() << std::endl;
-#endif
 
-	const int number_of_iterations = 10;
-	const ddouble iteration_period = 1.0;
-	const ddouble block_scale = PIx2 / (20.0 * sqrt(state.integrateCurvature()));
+	const int number_of_iterations = 1000;
+	const ddouble iteration_period = 0.2;
+	const double blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH.x;
 
 	std::cout << "1 GPU version" << std::endl;
 	std::cout << "kappa = " << KAPPA << std::endl;
-	std::cout << "g = " << G << std::endl;
-	std::cout << "ranks = 576" << std::endl;
-	std::cout << "block_scale = " << block_scale << std::endl;
+	std::cout << "g = " << g << std::endl;
+	std::cout << "block_scale = " << blockScale << std::endl;
 	std::cout << "iteration_period = " << iteration_period << std::endl;
 	std::cout << "maxr = " << maxr << std::endl;
 	std::cout << "maxz = " << maxz << std::endl;
-	std::cout << "dual edge length = " << DUAL_EDGE_LENGTH * block_scale << std::endl;
+	std::cout << "dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
 
 	// Integrate in time using DEC
-	const ddouble sigma = 0.002; //0.008;
-	integrateInTime(state, block_scale, Vector3(-maxr, -maxr, -maxz), Vector3(maxr, maxr, maxz), iteration_period, number_of_iterations, sigma);
+	integrateInTime(blockScale, Vector3(-maxr, -maxr, -maxz), Vector3(maxr, maxr, maxz), iteration_period, number_of_iterations, sigma);
 
 	return 0;
 }

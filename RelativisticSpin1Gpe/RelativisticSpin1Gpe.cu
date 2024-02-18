@@ -44,17 +44,17 @@ std::string getProjectionString()
 
 constexpr double F = 1; // Hyperfine spin
 
-constexpr double DOMAIN_SIZE_X = 16.0; //24.0;
-constexpr double DOMAIN_SIZE_Y = 16.0; //24.0;
-constexpr double DOMAIN_SIZE_Z = 16.0; //24.0;
+constexpr double DOMAIN_SIZE_X = 24.0; //16.0; //24.0;
+constexpr double DOMAIN_SIZE_Y = 24.0; //16.0; //24.0;
+constexpr double DOMAIN_SIZE_Z = 24.0; //16.0; //24.0;
 
-constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 0 * 6.0;
+constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 9 * 6.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
 
 constexpr double N = 2e5; // Number of atoms in the condensate
 
-constexpr double trapFreq_r = 126;
+constexpr double trapFreq_r = 126; // Cloud oscillates at 125.91 Hz in sims
 constexpr double trapFreq_z = 166;
 
 constexpr double omega_r = trapFreq_r * 2 * PI;
@@ -88,17 +88,17 @@ constexpr double INV_SQRT_2 = 0.70710678118655;
 
 //double dt = 3.9e-4; // For parabolic eq and 112^3 domain
 //double dt = 6.9e-4; // For hyperbolic eq and 112^3 domain
-//double dt = 4e-4; // Default
-double dt = 1.1e-3;
+double dt = 1e-4; // Default
+//double dt = 1.1e-3;
 double dt_increse = 1e-5;
 
-const double IMAGE_SAVE_INTERVAL = 0.01; // ms
+const double IMAGE_SAVE_INTERVAL = 0.2; //0.01; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 double t = 0; // Start time in ms
-double END_TIME = 0.5; // End time in ms
+double END_TIME = 70.5; // End time in ms
 
 #if COMPUTE_GROUND_STATE
 double sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
@@ -326,8 +326,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const uint ysize = uint(domain.y / (block_scale * BLOCK_WIDTH.y)); // + 1;
 	const uint zsize = uint(domain.z / (block_scale * BLOCK_WIDTH.z)); // + 1;
 	const Vector3 p0 = 0.5 * (minp + maxp - block_scale * Vector3(BLOCK_WIDTH.x * xsize, BLOCK_WIDTH.y * ysize, BLOCK_WIDTH.z * zsize));
-	const double3 d_p0 = { p0.x, p0.y, p0.z };
-	//const double3 d_p0 = { p0.x + 0.18 * maxp.x, p0.y, p0.z };
+	//const double3 d_p0 = { p0.x, p0.y, p0.z };
+	const double3 d_p0 = { p0.x + 0.18 * maxp.x, p0.y, p0.z };
 
 	// compute discrete dimensions
 	const uint bsize = VALUES_IN_BLOCK; // bpos.size(); // number of values inside a block
@@ -736,12 +736,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 #if PARABOLIC
 		double3 comPara = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiPara, dimensions, bodies, volume, block_scale, d_p0);
-		std::cout << comPara.x << ", " << std::endl;
+		std::cout << comPara.x << ", "; // << std::endl;
 #endif
 #endif
 
 		// For checking the numerical stability
-#if 1 // Disable / enable numerical stability measurement
+#if 0 // Disable / enable numerical stability measurement
 #if !COMPUTE_ERROR
 #if HYPERBOLIC
 		double dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);

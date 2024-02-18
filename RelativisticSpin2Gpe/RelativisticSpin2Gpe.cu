@@ -85,7 +85,7 @@ constexpr double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 9 * 6.0;
 
 constexpr double N = 2e5; // Number of atoms in the condensate
 
-constexpr double trapFreq_r = 143;
+constexpr double trapFreq_r = 143; // Cloud oscillates at 142.92 Hz in sims
 constexpr double trapFreq_z = 178;
 
 constexpr double omega_r = trapFreq_r * 2 * PI;
@@ -913,7 +913,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 
 	if (hyperb)
 	{
-		double c_K = 1 + (2 / F) * sigma * ab.x;
+		double c_K = 1 + sigma * ab.x;
 		H.s2 = -c_K * H.s2;
 		H.s1 = -c_K * H.s1;
 		H.s0 = -c_K * H.s0;
@@ -1076,7 +1076,7 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 
 	if (hyperb)
 	{
-		double c_K = 1 + (2 / F) * sigma * ab.x;
+		double c_K = 1 + sigma * ab.x;
 		H.s2 = -c_K * H.s2;
 		H.s1 = -c_K * H.s1;
 		H.s0 = -c_K * H.s0;

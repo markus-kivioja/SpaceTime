@@ -4,8 +4,26 @@
 #define EDGES_IN_BLOCK 24
 #define INDICES_PER_BLOCK 48
 const Vector3 BLOCK_WIDTH = Vector3(2.27, 2.27, 2.27); // dimensions of unit block
+constexpr double BLOCK_WIDTH_X = 2.27; // dimensions of unit block
+constexpr double BLOCK_WIDTH_Y = 2.27; // dimensions of unit block
+constexpr double BLOCK_WIDTH_Z = 2.27; // dimensions of unit block
 const ddouble VOLUME = 0.97475691666666664; // volume of body elements
 const bool IS_3D = true; // 3-dimensional
+
+__constant__ double3 d_localPos[VALUES_IN_BLOCK] = {
+	{0.28374999999999967, 0.85124999999999962, 1.9862500000000001},
+	{1.9862500000000001, 0.28374999999999967, 0.85124999999999962},
+	{1.9862500000000001, 0.85124999999999962, 0.28374999999999967},
+	{1.9862500000000001, 0.85124999999999962, 1.4187499999999997},
+	{1.9862500000000001, 1.4187499999999997, 0.85124999999999962},
+	{0.28374999999999967, 1.9862500000000001, 0.85124999999999962},
+	{0.85124999999999962, 1.9862500000000001, 0.28374999999999967},
+	{0.85124999999999962, 1.9862500000000001, 1.4187499999999997},
+	{1.4187499999999997, 1.9862500000000001, 0.85124999999999962},
+	{0.85124999999999962, 0.28374999999999967, 1.9862500000000001},
+	{0.85124999999999962, 1.4187499999999997, 1.9862500000000001},
+	{1.4187499999999997, 0.85124999999999962, 1.9862500000000001 } };
+
 void getPositions(Buffer<Vector3> &pos)
 {
 	pos.resize(VALUES_IN_BLOCK);
@@ -163,54 +181,4 @@ ddouble getLaplacian(Buffer<ddouble>& hodges, Buffer<int3>& d0, Buffer<int2>& d1
 	hodges[47] = -2.3287857323060788;
 
 	return 2.328785732306081;
-}
-
-// Arithmetic operators for cuda vector types
-inline __host__ __device__ __inline__ double2 operator+(double2 a, double2 b)
-{
-	return make_double2(a.x + b.x, a.y + b.y);
-}
-inline __host__ __device__ __inline__ double3 operator+(double3 a, double3 b)
-{
-	return make_double3(a.x + b.x, a.y + b.y, a.z + b.z);
-}
-inline __host__ __device__ __inline__ double2 operator-(double2 a, double2 b)
-{
-	return make_double2(a.x - b.x, a.y - b.y);
-}
-inline __host__ __device__ __inline__ void operator+=(double2& a, double2 b)
-{
-	a.x += b.x;
-	a.y += b.y;
-}
-inline __host__ __device__ __inline__ void operator+=(double3& a, double3 b)
-{
-	a.x += b.x;
-	a.y += b.y;
-	a.z += b.z;
-}
-inline __host__ __device__ __inline__ void operator-=(double2& a, double2 b)
-{
-	a.x -= b.x;
-	a.y -= b.y;
-}
-inline __host__ __device__ __inline__ double2 operator*(double b, double2 a)
-{
-	return make_double2(b * a.x, b * a.y);
-}
-inline __host__ __device__ __inline__ double3 operator*(double b, double3 a)
-{
-	return make_double3(b * a.x, b * a.y, b * a.z);
-}
-inline __host__ __device__ __inline__ double2 operator/(double2 a, double b)
-{
-	return make_double2(a.x / b, a.y / b);
-}
-inline __host__ __device__ __inline__ double2 conj(double2 a) // Complex conjugate
-{
-	return make_double2(a.x, -a.y);
-}
-inline __host__ __device__ __inline__ double2 operator*(double2 a, double2 b) // Complex number multiplication
-{
-	return make_double2(a.x * b.x - a.y * b.y, a.y * b.x + a.x * b.y);
 }
