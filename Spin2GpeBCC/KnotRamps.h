@@ -20,14 +20,14 @@ enum class RampType
 
 // Experimentally realistic ramps
 //// Quadrupole ////
-const std::vector<double> Bqs = { 0.0 };
-const std::vector<double> BqDurations = { 100 };
-const std::vector<RampType> BqTypes = { RampType::CONSTANT };
+const std::vector<double> Bqs = { 4.3, 0.0, 0.0 };
+const std::vector<double> BqDurations = { OPT_TRAP_OFF + GRADIENT_OFF_DELAY, GRADIENT_OFF_DUARATION, 100 };
+const std::vector<RampType> BqTypes = { RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT };
 
 //// Bias ////
-const std::vector<double3> Bbs = { make_double3(0, 0, 3.0) };
-const std::vector<double> BbDurations = { 100};
-const std::vector<RampType> BbTypes = { RampType::CONSTANT };
+const std::vector<double3> Bbs = { make_double3(0, 0, 0.219), make_double3(0, 0, 0), make_double3(0, 0, 0), make_double3(0, 0, 3.0) };
+const std::vector<double> BbDurations = { STATE_PREP_DURATION, CREATION_RAMP_DURATION, TOTAL_HOLD_TIME, 100 };
+const std::vector<RampType> BbTypes = { RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT, RampType::FAST_EXTRACTION };
 
 // Start with the magnetic field zero being at the center of the condensate
 //// Quadrupole ////

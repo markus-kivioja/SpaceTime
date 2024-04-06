@@ -54,27 +54,16 @@ std::string getProjectionString()
 }
 
 // Experimental field ramps from D.S. Hall (Amherst)
-//constexpr double STATE_PREP_DURATION = 0.1;
-//constexpr double CREATION_RAMP_DURATION = 0.0177;
-//constexpr double HOLD_TIME = 0.25; // 0.5;
-//constexpr double HOLD_TIME_EXTRA_DELAY = 0.005;
-//constexpr double TOTAL_HOLD_TIME = HOLD_TIME + HOLD_TIME_EXTRA_DELAY;
-//constexpr double PROJECTION_RAMP_DURATION = 0.120;
-//constexpr double OPT_TRAP_OFF_DELAY = 0.020;
-//constexpr double OPT_TRAP_OFF = STATE_PREP_DURATION + CREATION_RAMP_DURATION + TOTAL_HOLD_TIME + OPT_TRAP_OFF_DELAY; // When the expansion starts in ms
-//constexpr double GRADIENT_OFF_DELAY = 0.010;
-//constexpr double GRADIENT_OFF_DUARATION = 0.034;
-
-constexpr double STATE_PREP_DURATION = 0;
-constexpr double CREATION_RAMP_DURATION = 0;
-constexpr double HOLD_TIME = 0;
-constexpr double HOLD_TIME_EXTRA_DELAY = 0;
-constexpr double TOTAL_HOLD_TIME = 0;
-constexpr double PROJECTION_RAMP_DURATION = 0;
-constexpr double OPT_TRAP_OFF_DELAY = 0;
-constexpr double OPT_TRAP_OFF = 0;
-constexpr double GRADIENT_OFF_DELAY = 0;
-constexpr double GRADIENT_OFF_DUARATION = 0;
+constexpr double STATE_PREP_DURATION = 0.1;
+constexpr double CREATION_RAMP_DURATION = 0.0177;
+constexpr double HOLD_TIME = 0.25; // 0.5;
+constexpr double HOLD_TIME_EXTRA_DELAY = 0.005;
+constexpr double TOTAL_HOLD_TIME = HOLD_TIME + HOLD_TIME_EXTRA_DELAY;
+constexpr double PROJECTION_RAMP_DURATION = 0.120;
+constexpr double OPT_TRAP_OFF_DELAY = 0.020;
+constexpr double OPT_TRAP_OFF = STATE_PREP_DURATION + CREATION_RAMP_DURATION + TOTAL_HOLD_TIME + OPT_TRAP_OFF_DELAY; // When the expansion starts in ms
+constexpr double GRADIENT_OFF_DELAY = 0.010;
+constexpr double GRADIENT_OFF_DUARATION = 0.034;
 
 //#include "AliceRingRamps.h"
 #include "KnotRamps.h"
