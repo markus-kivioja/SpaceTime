@@ -101,6 +101,13 @@ struct PitchedPtr
 	size_t slicePitch;
 };
 
+constexpr uint32_t PREV_STEP_COUNT = TIME_METHOD_ORDER - 1;
+
+struct PrevSteps
+{
+	PitchedPtr vals[PREV_STEP_COUNT];
+};
+
 struct MagFields
 {
 	double Bq{};
