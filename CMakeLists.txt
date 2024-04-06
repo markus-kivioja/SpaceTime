@@ -9,7 +9,7 @@ add_subdirectory(Types)
 
 add_subdirectory(GrossPitaevskii)
 #add_subdirectory(GrossPitaevskiiGpuCube)
-#add_subdirectory(GrossPitaevskiiGpuBcc)
+add_subdirectory(GrossPitaevskiiGpuBcc)
 #add_subdirectory(GrossPitaevskiiGpuC15)
 #add_subdirectory(RelativisticGpeCube)
 add_subdirectory(RelativisticGpeBCC)

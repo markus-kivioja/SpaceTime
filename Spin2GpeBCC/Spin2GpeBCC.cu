@@ -54,16 +54,27 @@ std::string getProjectionString()
 }
 
 // Experimental field ramps from D.S. Hall (Amherst)
-constexpr double STATE_PREP_DURATION = 0.1;
-constexpr double CREATION_RAMP_DURATION = 0.0177;
-constexpr double HOLD_TIME = 0.25; // 0.5;
-constexpr double HOLD_TIME_EXTRA_DELAY = 0.005;
-constexpr double TOTAL_HOLD_TIME = HOLD_TIME + HOLD_TIME_EXTRA_DELAY;
-constexpr double PROJECTION_RAMP_DURATION = 0.120;
-constexpr double OPT_TRAP_OFF_DELAY = 0.020;
-constexpr double OPT_TRAP_OFF = STATE_PREP_DURATION + CREATION_RAMP_DURATION + TOTAL_HOLD_TIME + OPT_TRAP_OFF_DELAY; // When the expansion starts in ms
-constexpr double GRADIENT_OFF_DELAY = 0.010;
-constexpr double GRADIENT_OFF_DUARATION = 0.034;
+//constexpr double STATE_PREP_DURATION = 0.1;
+//constexpr double CREATION_RAMP_DURATION = 0.0177;
+//constexpr double HOLD_TIME = 0.25; // 0.5;
+//constexpr double HOLD_TIME_EXTRA_DELAY = 0.005;
+//constexpr double TOTAL_HOLD_TIME = HOLD_TIME + HOLD_TIME_EXTRA_DELAY;
+//constexpr double PROJECTION_RAMP_DURATION = 0.120;
+//constexpr double OPT_TRAP_OFF_DELAY = 0.020;
+//constexpr double OPT_TRAP_OFF = STATE_PREP_DURATION + CREATION_RAMP_DURATION + TOTAL_HOLD_TIME + OPT_TRAP_OFF_DELAY; // When the expansion starts in ms
+//constexpr double GRADIENT_OFF_DELAY = 0.010;
+//constexpr double GRADIENT_OFF_DUARATION = 0.034;
+
+constexpr double STATE_PREP_DURATION = 0;
+constexpr double CREATION_RAMP_DURATION = 0;
+constexpr double HOLD_TIME = 0;
+constexpr double HOLD_TIME_EXTRA_DELAY = 0;
+constexpr double TOTAL_HOLD_TIME = 0;
+constexpr double PROJECTION_RAMP_DURATION = 0;
+constexpr double OPT_TRAP_OFF_DELAY = 0;
+constexpr double OPT_TRAP_OFF = 0;
+constexpr double GRADIENT_OFF_DELAY = 0;
+constexpr double GRADIENT_OFF_DUARATION = 0;
 
 //#include "AliceRingRamps.h"
 #include "KnotRamps.h"
@@ -86,7 +97,7 @@ constexpr double GRADIENT_OFF_DUARATION = 0.034;
 #define USE_QUADRUPOLE_OFFSET 0
 #define USE_INITIAL_NOISE 0
 
-#define SAVE_STATES 1
+#define SAVE_STATES 0
 #define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
@@ -102,7 +113,7 @@ constexpr double REPLICABLE_STRUCTURE_COUNT_X = 112.0;
 //constexpr double REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
 
 //constexpr double k = 0.7569772335291065; // Grid upscale speed for expansion (from QCD code)
-constexpr double k = 3.0; // Grid upscale speed for expansion (from own experiments)
+constexpr double k = 1.0; // Grid upscale speed for expansion (from own experiments)
 
 constexpr double N = 2e5; // Number of atoms in the condensate
 
@@ -158,12 +169,12 @@ constexpr double NOISE_AMPLITUDE = 0; //0.1;
 //constexpr double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 constexpr double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-const double IMAGE_SAVE_INTERVAL = 0.01; // 1.0; // ms
+const double IMAGE_SAVE_INTERVAL = 0.1; // 1.0; // ms
 const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
-double t = 10.100250578359510456; // Start time in ms
+double t = 0; // Start time in ms
 constexpr double END_TIME = OPT_TRAP_OFF + GRADIENT_OFF_DELAY + GRADIENT_OFF_DUARATION + 24.0; // End time in ms
 
 double relativePhase = 0; // 5.105088062083414; // In radians
@@ -1479,7 +1490,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		leapfrog << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
 		//densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume)) + ", ";
 		//tString += std::to_string(t) + ", ";
-		//bqString += std::to_string(signal.Bq) + ", ";
+		//std::cout << std::to_string(signal.Bq) + ", ";
 		//bbString += std::to_string(signal.Bb.z) + ", ";
 		//optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
 
@@ -1493,7 +1504,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
 		//densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume)) + ", ";
 		//tString += std::to_string(t) + ", ";
-		//bqString += std::to_string(signal.Bq) + ", ";
+		//std::cout << std::to_string(signal.Bq) + ", ";
 		//bbString += std::to_string(signal.Bb.z) + ", ";
 		//optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
 	}
@@ -1531,7 +1542,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			leapfrog << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
 			//densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume)) + ", ";
 			//tString += std::to_string(t) + ", ";
-			//bqString += std::to_string(signal.Bq) + ", ";
+			//std::cout << std::to_string(signal.Bq) + ", ";
 			//bbString += std::to_string(signal.Bb.z) + ", ";
 			//optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
 
@@ -1548,7 +1559,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
 			//densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume)) + ", ";
 			//tString += std::to_string(t) + ", ";
-			//bqString += std::to_string(signal.Bq) + ", ";
+			//std::cout << std::to_string(signal.Bq) + ", ";
 			//bbString += std::to_string(signal.Bb.z) + ", ";
 			//optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
 		}
