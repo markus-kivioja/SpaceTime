@@ -56,9 +56,9 @@ std::string getProjectionString()
 constexpr uint32_t TIME_METHOD_ORDER = 4;
 
 // Experimental field ramps from D.S. Hall (Amherst)
-constexpr double STATE_PREP_DURATION = 0.001;
+constexpr double STATE_PREP_DURATION = 0;// 0.1;
 constexpr double CREATION_RAMP_DURATION = 0.0177;
-constexpr double HOLD_TIME = 0.25; // 0.5;
+constexpr double HOLD_TIME = 50.25; // 0.5;
 constexpr double HOLD_TIME_EXTRA_DELAY = 0.005;
 constexpr double TOTAL_HOLD_TIME = HOLD_TIME + HOLD_TIME_EXTRA_DELAY;
 constexpr double PROJECTION_RAMP_DURATION = 0.120;
@@ -160,7 +160,7 @@ constexpr double NOISE_AMPLITUDE = 0; //0.1;
 //constexpr double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
 constexpr double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-const double IMAGE_SAVE_INTERVAL = 0.1; // 1.0; // ms
+const double IMAGE_SAVE_INTERVAL = 0.2; // 1.0; // ms
 const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 1.0 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
@@ -990,11 +990,11 @@ __global__ void leapfrog(PitchedPtr nextStep, PrevSteps prevSteps, const int4* _
 	H.s_2 -= (0) * prev.s2 + (0) * prev.s1 + (c * Bxy * Bxy) * prev.s0 + (-3 * Bz * Bxy) * prev.s_1 + (BxyNormSq + 4 * Bz * Bz) * prev.s_2;
 #endif
 
-	nextPsi->values[dualNodeId].s2 +=   (1.0 / 8.0) * (8.0 * n_plus_1.s2  - 8.0 * n_minus_1.s2  - 12.0 * dt * double2{ H.s2.y,  -H.s2.x  });
-	nextPsi->values[dualNodeId].s1 +=   (1.0 / 8.0) * (8.0 * n_plus_1.s1  - 8.0 * n_minus_1.s1  - 12.0 * dt * double2{ H.s1.y,  -H.s1.x  });
-	nextPsi->values[dualNodeId].s0 +=   (1.0 / 8.0) * (8.0 * n_plus_1.s0  - 8.0 * n_minus_1.s0  - 12.0 * dt * double2{ H.s0.y,  -H.s0.x  });
-	nextPsi->values[dualNodeId].s_1 +=  (1.0 / 8.0) * (8.0 * n_plus_1.s_1 - 8.0 * n_minus_1.s_1 - 12.0 * dt * double2{ H.s_1.y, -H.s_1.x });
-	nextPsi->values[dualNodeId].s_2 +=  (1.0 / 8.0) * (8.0 * n_plus_1.s_2 - 8.0 * n_minus_1.s_2 - 12.0 * dt * double2{ H.s_2.y, -H.s_2.x });
+	nextPsi->values[dualNodeId].s2  += (1.0 / 7.0) * (8.0 * n_plus_1.s2  - 8.0 * n_minus_1.s2  - 12.0 * dt * double2{ H.s2.y,  -H.s2.x  });
+	nextPsi->values[dualNodeId].s1  += (1.0 / 7.0) * (8.0 * n_plus_1.s1  - 8.0 * n_minus_1.s1  - 12.0 * dt * double2{ H.s1.y,  -H.s1.x  });
+	nextPsi->values[dualNodeId].s0  += (1.0 / 7.0) * (8.0 * n_plus_1.s0  - 8.0 * n_minus_1.s0  - 12.0 * dt * double2{ H.s0.y,  -H.s0.x  });
+	nextPsi->values[dualNodeId].s_1 += (1.0 / 7.0) * (8.0 * n_plus_1.s_1 - 8.0 * n_minus_1.s_1 - 12.0 * dt * double2{ H.s_1.y, -H.s_1.x });
+	nextPsi->values[dualNodeId].s_2 += (1.0 / 7.0) * (8.0 * n_plus_1.s_2 - 8.0 * n_minus_1.s_2 - 12.0 * dt * double2{ H.s_2.y, -H.s_2.x });
 };
 #endif
 //void energy_h(dim3 dimGrid, dim3 dimBlock, double* energyPtr, PitchedPtr psi, PitchedPtr potentials, int4* lapInd, double* hodges, double g, uint3 dimensions, double volume, size_t bodies)
@@ -1084,7 +1084,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const uint ysize = uint(domain.y / (block_scale * BLOCK_WIDTH.y)); // + 1;
 	const uint zsize = uint(domain.z / (block_scale * BLOCK_WIDTH.z)); // + 1;
 	const Vector3 p0 = 0.5 * (minp + maxp - block_scale * Vector3(BLOCK_WIDTH.x * xsize, BLOCK_WIDTH.y * ysize, BLOCK_WIDTH.z * zsize));
-	const double3 d_p0 = { p0.x, p0.y, p0.z };
+	//const double3 d_p0 = { p0.x, p0.y, p0.z };
+	const double3 d_p0 = { p0.x + 0.14 * maxp.x, p0.y, p0.z };
 
 	// compute discrete dimensions
 	const uint bsize = VALUES_IN_BLOCK; // bpos.size(); // number of values inside a block
@@ -1530,19 +1531,22 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 			nextIdx = (nextIdx + 1) % TIME_METHOD_ORDER;
 		}
+		checkCudaErrors(cudaMemcpy3D(&psiBackParams));
+		double3 com = centerOfMass(h_psi, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
+		std::cout << com.x << ", ";
 #if SAVE_PICTURE
 		// Copy back from device memory to host memory
-		checkCudaErrors(cudaMemcpy3D(&psiBackParams));
-
-		// Measure wall clock time
-		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
-		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
-		prevTime = std::chrono::high_resolution_clock::now();
-
-		signal = getSignal(0);
-		Bs.Bq = BqScale * signal.Bq;
-		Bs.Bb = BzScale * signal.Bb;
-		drawDensity(densDir, h_psi, dxsize, dysize, dzsize, t - STATE_PREP_DURATION, Bs, d_p0, block_scale);
+		//checkCudaErrors(cudaMemcpy3D(&psiBackParams));
+		//
+		//// Measure wall clock time
+		//auto duration = std::chrono::high_resolution_clock::now() - prevTime;
+		//std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
+		//prevTime = std::chrono::high_resolution_clock::now();
+		//
+		//signal = getSignal(0);
+		//Bs.Bq = BqScale * signal.Bq;
+		//Bs.Bb = BzScale * signal.Bb;
+		//drawDensity(densDir, h_psi, dxsize, dysize, dzsize, t - STATE_PREP_DURATION, Bs, d_p0, block_scale);
 #endif
 #if SAVE_STATES
 		// Copy back from device memory to host memory
