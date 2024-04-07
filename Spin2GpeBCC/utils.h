@@ -105,7 +105,7 @@ constexpr uint32_t PREV_STEP_COUNT = TIME_METHOD_ORDER - 1;
 
 struct PrevSteps
 {
-	PitchedPtr vals[PREV_STEP_COUNT];
+	PitchedPtr vals[TIME_METHOD_ORDER];
 };
 
 struct MagFields

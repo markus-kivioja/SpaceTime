@@ -48,6 +48,8 @@ void printRamp()
 
 Signal getSignal(double t)
 {
+	return { 0 };
+
 	Signal signal;
 
 	double tOrig = t;

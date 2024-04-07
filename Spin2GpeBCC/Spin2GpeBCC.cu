@@ -158,7 +158,7 @@ const std::string GROUND_STATE_FILENAME = "ground_state_psi_" + toStringShort(DO
 constexpr double NOISE_AMPLITUDE = 0; //0.1;
 
 //constexpr double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
-constexpr double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
+constexpr double dt = 1e-6; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
 const double IMAGE_SAVE_INTERVAL = 0.2; // 1.0; // ms
 const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 1.0 / 1e3 * omega_r / dt) + 1;
@@ -837,14 +837,14 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, int4* __r
 	H.s_2 -= (0) * prev.s2 + (0) * prev.s1 + (c * Bxy * Bxy) * prev.s0 + (-3 * Bz * Bxy) * prev.s_1 + (BxyNormSq + 4 * Bz * Bz) * prev.s_2;
 #endif
 
-	nextPsi->values[dualNodeId].s2 = prev.s2 + dt * double2{ H.s2.y, -H.s2.x };
-	nextPsi->values[dualNodeId].s1 = prev.s1 + dt * double2{ H.s1.y, -H.s1.x };
-	nextPsi->values[dualNodeId].s0 = prev.s0 + dt * double2{ H.s0.y, -H.s0.x };
+	nextPsi->values[dualNodeId].s2 = prev.s2   + dt * double2{ H.s2.y, -H.s2.x };
+	nextPsi->values[dualNodeId].s1 = prev.s1   + dt * double2{ H.s1.y, -H.s1.x };
+	nextPsi->values[dualNodeId].s0 = prev.s0   + dt * double2{ H.s0.y, -H.s0.x };
 	nextPsi->values[dualNodeId].s_1 = prev.s_1 + dt * double2{ H.s_1.y, -H.s_1.x };
 	nextPsi->values[dualNodeId].s_2 = prev.s_2 + dt * double2{ H.s_2.y, -H.s_2.x };
 };
 
-__global__ void leapfrog(PitchedPtr nextStep, PrevSteps prevSteps, const int4* __restrict__ laplace, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4, double alpha, double t)
+__global__ void leapfrog(PrevSteps steps, const int4* __restrict__ laplace, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double block_scale, const double3 p0, const double c0, const double c2, const double c4, double alpha, double t)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -864,17 +864,15 @@ __global__ void leapfrog(PitchedPtr nextStep, PrevSteps prevSteps, const int4* _
 	const size_t threadIdxInBlock = threadIdx.z * THREAD_BLOCK_Y * THREAD_BLOCK_X + threadIdx.y * THREAD_BLOCK_X + localDataXid;
 
 	// Calculate the pointers for this block
-	char* prevPsis[3];
-	for (int i = 0; i < 3; ++i)
+	char* prevPsis[TIME_METHOD_ORDER];
+	for (int i = 0; i < TIME_METHOD_ORDER; ++i)
 	{
-		prevPsis[i] = prevSteps.vals[i].ptr + prevSteps.vals[i].slicePitch * zid + prevSteps.vals[i].pitch * yid + sizeof(BlockPsis) * dataXid;
+		prevPsis[i] = steps.vals[i].ptr + steps.vals[i].slicePitch * zid + steps.vals[i].pitch * yid + sizeof(BlockPsis) * dataXid;
 	}
-	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + dataXid;
+	BlockPsis* nextPsi = (BlockPsis*)(steps.vals[0].ptr + steps.vals[0].slicePitch * zid + steps.vals[0].pitch * yid) + dataXid;
 
 	// Update psi
-	const Complex5Vec n_minus_1 = ((BlockPsis*)prevPsis[0])->values[dualNodeId];
-	const Complex5Vec n = ((BlockPsis*)prevPsis[1])->values[dualNodeId];
-	const Complex5Vec n_plus_1 = ((BlockPsis*)prevPsis[2])->values[dualNodeId];
+	const Complex5Vec n = ((BlockPsis*)prevPsis[2])->values[dualNodeId];
 	ldsPrevPsis[threadIdxInBlock].values[dualNodeId] = n;
 
 	// Kill also the leftover edge threads
@@ -914,8 +912,8 @@ __global__ void leapfrog(PitchedPtr nextStep, PrevSteps prevSteps, const int4* _
 		}
 		else // Read from the global memory
 		{
-			const int offset = laplacian.z * prevSteps.vals[1].slicePitch + laplacian.y * prevSteps.vals[1].pitch + laplacian.x * sizeof(BlockPsis);
-			otherBoundaryZeroCell = ((BlockPsis*)(prevPsis[1] + offset))->values[laplacian.w];
+			const int offset = laplacian.z * steps.vals[2].slicePitch + laplacian.y * steps.vals[2].pitch + laplacian.x * sizeof(BlockPsis);
+			otherBoundaryZeroCell = ((BlockPsis*)(prevPsis[2] + offset))->values[laplacian.w];
 		}
 
 		const double hodge = hodges[primaryFace] / (block_scale * block_scale);
@@ -940,18 +938,19 @@ __global__ void leapfrog(PitchedPtr nextStep, PrevSteps prevSteps, const int4* _
 		p0.y + block_scale * (yid * BLOCK_WIDTH_Y + localPos.y),
 		p0.z + block_scale * (zid * BLOCK_WIDTH_Z + localPos.z) };
 
-	double2 ab = { trap(globalPos, t) + c0 * normSq, -alpha * normSq * normSq };
+	//double2 ab = { trap(globalPos, t) + c0 * normSq, -alpha * normSq * normSq };
+	double ab = trap(globalPos, t) + c0 * normSq;
 
 	double3 B = magneticField(globalPos, Bs.Bq, Bs.Bb);
 
 	const double Fz = c2 * (2.0 * normSq_s2 + normSq_s1 - normSq_s_1 - 2.0 * normSq_s_2);
 
 	Complex5Vec diagonalTerm;
-	diagonalTerm.s2 = double2{  2.0 * Fz + 0.4 * c4 * normSq_s_2 - 2.0 * B.z, 0 } + ab;
-	diagonalTerm.s1 = double2{        Fz + 0.4 * c4 * normSq_s_1 -       B.z, 0 } + ab;
-	diagonalTerm.s0 = double2{             0.2 * c4 * normSq_s0             , 0 } + ab;
-	diagonalTerm.s_1 = double2{      -Fz + 0.4 * c4 * normSq_s1  +       B.z, 0 } + ab;
-	diagonalTerm.s_2 = double2{-2.0 * Fz + 0.4 * c4 * normSq_s2  + 2.0 * B.z, 0 } + ab;
+	diagonalTerm.s2 = double2{  2.0 * Fz + 0.4 * c4 * normSq_s_2 - 2.0 * B.z + ab, 0 };
+	diagonalTerm.s1 = double2{        Fz + 0.4 * c4 * normSq_s_1 -       B.z + ab, 0 };
+	diagonalTerm.s0 = double2{             0.2 * c4 * normSq_s0              + ab, 0 };
+	diagonalTerm.s_1 = double2{      -Fz + 0.4 * c4 * normSq_s1  +       B.z + ab, 0 };
+	diagonalTerm.s_2 = double2{-2.0 * Fz + 0.4 * c4 * normSq_s2  + 2.0 * B.z + ab, 0 };
 
 	H.s2 += diagonalTerm.s2 * n.s2;    // psi1
 	H.s1 += diagonalTerm.s1 * n.s1;    // psi2
@@ -990,11 +989,28 @@ __global__ void leapfrog(PitchedPtr nextStep, PrevSteps prevSteps, const int4* _
 	H.s_2 -= (0) * prev.s2 + (0) * prev.s1 + (c * Bxy * Bxy) * prev.s0 + (-3 * Bz * Bxy) * prev.s_1 + (BxyNormSq + 4 * Bz * Bz) * prev.s_2;
 #endif
 
-	nextPsi->values[dualNodeId].s2  += (1.0 / 7.0) * (8.0 * n_plus_1.s2  - 8.0 * n_minus_1.s2  - 12.0 * dt * double2{ H.s2.y,  -H.s2.x  });
-	nextPsi->values[dualNodeId].s1  += (1.0 / 7.0) * (8.0 * n_plus_1.s1  - 8.0 * n_minus_1.s1  - 12.0 * dt * double2{ H.s1.y,  -H.s1.x  });
-	nextPsi->values[dualNodeId].s0  += (1.0 / 7.0) * (8.0 * n_plus_1.s0  - 8.0 * n_minus_1.s0  - 12.0 * dt * double2{ H.s0.y,  -H.s0.x  });
-	nextPsi->values[dualNodeId].s_1 += (1.0 / 7.0) * (8.0 * n_plus_1.s_1 - 8.0 * n_minus_1.s_1 - 12.0 * dt * double2{ H.s_1.y, -H.s_1.x });
-	nextPsi->values[dualNodeId].s_2 += (1.0 / 7.0) * (8.0 * n_plus_1.s_2 - 8.0 * n_minus_1.s_2 - 12.0 * dt * double2{ H.s_2.y, -H.s_2.x });
+	const Complex5Vec n_minus_2 = ((BlockPsis*)prevPsis[0])->values[dualNodeId];
+	const Complex5Vec n_minus_1 = ((BlockPsis*)prevPsis[1])->values[dualNodeId];
+	const Complex5Vec n_plus_1 = ((BlockPsis*)prevPsis[3])->values[dualNodeId];
+
+	Complex5Vec temp;
+	temp.s2 =  -8.0 * (n_plus_1.s2  - n_minus_1.s2 );
+	temp.s1 =  -8.0 * (n_plus_1.s1  - n_minus_1.s1 );
+	temp.s0 =  -8.0 * (n_plus_1.s0  - n_minus_1.s0 );
+	temp.s_1 = -8.0 * (n_plus_1.s_1 - n_minus_1.s_1);
+	temp.s_2 = -8.0 * (n_plus_1.s_2 - n_minus_1.s_2);
+
+	//nextPsi->values[dualNodeId].s2  = (n_minus_2.s2  + 8.0 * n_plus_1.s2  - 8.0 * n_minus_1.s2  - 12.0 * dt * double2{ H.s2.y,  -H.s2.x  });
+	//nextPsi->values[dualNodeId].s1  = (n_minus_2.s1  + 8.0 * n_plus_1.s1  - 8.0 * n_minus_1.s1  - 12.0 * dt * double2{ H.s1.y,  -H.s1.x  });
+	//nextPsi->values[dualNodeId].s0  = (n_minus_2.s0  + 8.0 * n_plus_1.s0  - 8.0 * n_minus_1.s0  - 12.0 * dt * double2{ H.s0.y,  -H.s0.x  });
+	//nextPsi->values[dualNodeId].s_1 = (n_minus_2.s_1 + 8.0 * n_plus_1.s_1 - 8.0 * n_minus_1.s_1 - 12.0 * dt * double2{ H.s_1.y, -H.s_1.x });
+	//nextPsi->values[dualNodeId].s_2 = (n_minus_2.s_2 + 8.0 * n_plus_1.s_2 - 8.0 * n_minus_1.s_2 - 12.0 * dt * double2{ H.s_2.y, -H.s_2.x });
+
+	nextPsi->values[dualNodeId].s2  = (n_minus_2.s2  + temp.s2  + 12.0 * dt * double2{ H.s2.y,  -H.s2.x  });
+	nextPsi->values[dualNodeId].s1  = (n_minus_2.s1  + temp.s1  + 12.0 * dt * double2{ H.s1.y,  -H.s1.x  });
+	nextPsi->values[dualNodeId].s0  = (n_minus_2.s0  + temp.s0  + 12.0 * dt * double2{ H.s0.y,  -H.s0.x  });
+	nextPsi->values[dualNodeId].s_1 = (n_minus_2.s_1 + temp.s_1 + 12.0 * dt * double2{ H.s_1.y, -H.s_1.x });
+	nextPsi->values[dualNodeId].s_2 = (n_minus_2.s_2 + temp.s_2 + 12.0 * dt * double2{ H.s_2.y, -H.s_2.x });
 };
 #endif
 //void energy_h(dim3 dimGrid, dim3 dimBlock, double* energyPtr, PitchedPtr psi, PitchedPtr potentials, int4* lapInd, double* hodges, double g, uint3 dimensions, double volume, size_t bodies)
@@ -1472,9 +1488,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	while (t < STATE_PREP_DURATION)
 	{
 		PrevSteps prevs;
-		for (int i = 0; i < PREV_STEP_COUNT; ++i)
+		for (int i = 0; i < TIME_METHOD_ORDER; ++i)
 		{
-			int prevIdx = (nextIdx + 1 + i) % TIME_METHOD_ORDER;
+			int prevIdx = (nextIdx + i) % TIME_METHOD_ORDER;
 			prevs.vals[i] = d_psis[prevIdx];
 		}
 
@@ -1483,7 +1499,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.Bb = BzScale * signal.Bb;
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
-		leapfrog << <dimGrid, dimBlock >> > (d_psis[nextIdx], prevs, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
+		leapfrog << <dimGrid, dimBlock >> > (prevs, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
 
 		t += dt / omega_r * 1e3; // [ms]
 
@@ -1511,9 +1527,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		for (uint step = 0; step < IMAGE_SAVE_FREQUENCY; step++)
 		{
 			PrevSteps prevs;
-			for (int i = 0; i < PREV_STEP_COUNT; ++i)
+			for (int i = 0; i < TIME_METHOD_ORDER; ++i)
 			{
-				int prevIdx = (nextIdx + 1 + i) % TIME_METHOD_ORDER;
+				int prevIdx = (nextIdx + i) % TIME_METHOD_ORDER;
 				prevs.vals[i] = d_psis[prevIdx];
 			}
 
@@ -1522,7 +1538,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			Bs.Bb = BzScale * signal.Bb;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
-			leapfrog << <dimGrid, dimBlock >> > (d_psis[nextIdx], prevs, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
+			leapfrog << <dimGrid, dimBlock >> > (prevs, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
 			
 			t += dt / omega_r * 1e3; // [ms]
 			if (t >= OPT_TRAP_OFF) {
@@ -1530,6 +1546,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			}
 
 			nextIdx = (nextIdx + 1) % TIME_METHOD_ORDER;
+
+			for (int i = 0; i < 4; ++i) std::cout << getDensity(dimGrid, dimBlock, d_density, d_psis[i], dimensions, bodies, volume) << ", ";
+			std::cout << std::endl;
 		}
 		checkCudaErrors(cudaMemcpy3D(&psiBackParams));
 		double3 com = centerOfMass(h_psi, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
