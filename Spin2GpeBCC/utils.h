@@ -75,18 +75,77 @@ __host__ __device__ __inline__ double2 conj(double2 a) // Complex conjugate
 {
 	return { a.x, -a.y };
 }
+__host__ __device__ __inline__ double dot(double3 a, double3 b) // Complex conjugate
+{
+	return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+__host__ __device__ __inline__ double3 cross(double3 a, double3 b)
+{
+	return {
+		a.y * b.z - a.z * b.y,
+		a.z * b.x - a.x * b.z,
+		a.x * b.y - a.y * b.x
+	};
+}
+__host__ __device__ __inline__ double mag(double3 a) // Complex conjugate
+{
+	return sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+}
 __host__ __device__ __inline__ double2 operator*(double2 a, double2 b) // Complex number multiplication
 {
 	return { a.x * b.x - a.y * b.y, a.y * b.x + a.x * b.y };
 }
 
+__host__ __device__ __inline__ double scalarTripleProd(double3 a, double3 b, double3 c)
+{
+	// computes scalar triple product
+	return dot(a, cross(b, c));
+}
+
+__host__ __device__ __inline__  double4 baryCoords(double3 a, double3 b, double3 c, double3 d, double3 p)
+{
+	double3 vap = p - a;
+	double3 vbp = p - b;
+
+	double3 vab = b - a;
+	double3 vac = c - a;
+	double3 vad = d - a;
+
+	double3 vbc = c - b;
+	double3 vbd = d - b;
+
+	double va6 = scalarTripleProd(vbp, vbd, vbc);
+	double vb6 = scalarTripleProd(vap, vac, vad);
+	double vc6 = scalarTripleProd(vap, vad, vab);
+	double vd6 = scalarTripleProd(vap, vab, vac);
+	double v6 = 1 / scalarTripleProd(vab, vac, vad);
+
+	return make_double4(va6 * v6, vb6 * v6, vc6 * v6, vd6 * v6);
+}
+
+__host__ __device__ __inline__ double& subscript(double4 vec, int idx)
+{
+	switch (idx)
+	{
+	case 0:
+		return vec.x;
+	case 1:
+		return vec.y;
+	case 2:
+		return vec.z;
+	case 3:
+		return vec.w;
+	}
+	return vec.x;
+}
+
 struct Complex5Vec
 {
-	double2 s2;
-	double2 s1;
-	double2 s0;
-	double2 s_1;
-	double2 s_2;
+	double2 s2 = {0, 0};
+	double2 s1 = { 0, 0 };
+	double2 s0 = { 0, 0 };
+	double2 s_1 = { 0, 0 };
+	double2 s_2 = { 0, 0 };
 };
 
 struct BlockPsis

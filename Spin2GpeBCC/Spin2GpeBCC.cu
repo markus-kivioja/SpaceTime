@@ -989,6 +989,109 @@ __global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, const int4* _
 	nextPsi->values[dualNodeId].s_2 += 2 * dt * double2{ H.s_2.y, -H.s_2.x };
 };
 #endif
+
+__device__ 	double3 getGlobalPos(int blockX, int blockY, int blockZ, int cellIdx, const double blockScale, const double3 p0)
+{
+	const double3 local = d_localPos[cellIdx];
+	return { p0.x + blockScale * (blockX * BLOCK_WIDTH_X + local.x),
+				p0.y + blockScale * (blockY * BLOCK_WIDTH_Y + local.y),
+				p0.z + blockScale * (blockZ * BLOCK_WIDTH_Z + local.z) };
+};
+
+__global__ void interpolate(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __restrict__ laplace, const double* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const double3 p0, const double prevScale, const double newScale)
+{
+	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	const size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	const size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+	const size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid > dimensions.x || yid > dimensions.y || zid > dimensions.z)
+	{
+		return;
+	}
+
+	const size_t localDataXid = threadIdx.x / VALUES_IN_BLOCK;
+
+	__shared__ BlockPsis ldsPrevPsis[THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X];
+	const size_t threadIdxInBlock = threadIdx.z * THREAD_BLOCK_Y * THREAD_BLOCK_X + threadIdx.y * THREAD_BLOCK_X + localDataXid;
+
+	// Calculate the pointers for this block
+	char* prevPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
+	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + dataXid;
+
+	// Update psi
+	const Complex5Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
+	ldsPrevPsis[threadIdxInBlock].values[dualNodeId] = prev;
+
+	// Kill also the leftover edge threads
+	if (dataXid == dimensions.x || yid == dimensions.y || zid == dimensions.z)
+	{
+		return;
+	}
+	__syncthreads();
+
+	uint primaryFace = dualNodeId * FACE_COUNT;
+
+	double3 neighbourPositions[FACE_COUNT];
+	Complex5Vec neigbhourPsis[FACE_COUNT];
+
+	// Add the Laplacian to the Hamiltonian
+#pragma unroll
+	for (int i = 0; i < FACE_COUNT; ++i)
+	{
+		const int4 laplacian = laplace[primaryFace];
+
+		int neighbourGlobalX = dataXid + laplacian.x;
+		int neighbourGlobalY = yid + laplacian.y;
+		int neighbourGlobalZ = zid + laplacian.z;
+
+		neighbourPositions[i] = getGlobalPos(neighbourGlobalX, neighbourGlobalY, neighbourGlobalZ, laplacian.w, prevScale, p0);
+
+		const int neighbourX = localDataXid + laplacian.x;
+		const int neighbourY = threadIdx.y + laplacian.y;
+		const int neighbourZ = threadIdx.z + laplacian.z;
+
+		Complex5Vec otherBoundaryZeroCell;
+		// Read from the local shared memory
+		if ((0 <= neighbourX) && (neighbourX < THREAD_BLOCK_X) &&
+			(0 <= neighbourY) && (neighbourY < THREAD_BLOCK_Y) &&
+			(0 <= neighbourZ) && (neighbourZ < THREAD_BLOCK_Z))
+		{
+			const int neighbourIdx = neighbourZ * THREAD_BLOCK_Y * THREAD_BLOCK_X + neighbourY * THREAD_BLOCK_X + neighbourX;
+			otherBoundaryZeroCell = ldsPrevPsis[neighbourIdx].values[laplacian.w];
+		}
+		else // Read from the global memory
+		{
+			const int offset = laplacian.z * prevStep.slicePitch + laplacian.y * prevStep.pitch + laplacian.x * sizeof(BlockPsis);
+			otherBoundaryZeroCell = ((BlockPsis*)(prevPsi + offset))->values[laplacian.w];
+		}
+
+		neigbhourPsis[i] = otherBoundaryZeroCell;
+
+		primaryFace++;
+	}
+
+	double3 pos = getGlobalPos(dataXid, yid, zid, dualNodeId, newScale, p0);
+	double4 weights = baryCoords(neighbourPositions[0], neighbourPositions[1], neighbourPositions[2], neighbourPositions[3], pos);
+
+	Complex5Vec interpolated;
+	for (int i = 0; i < FACE_COUNT; ++i)
+	{
+		interpolated.s2 += subscript(weights, i) * neigbhourPsis[i].s2;
+		interpolated.s1 += subscript(weights, i) * neigbhourPsis[i].s1;
+		interpolated.s0 += subscript(weights, i) * neigbhourPsis[i].s0;
+		interpolated.s_1 += subscript(weights, i) * neigbhourPsis[i].s_1;
+		interpolated.s_2 += subscript(weights, i) * neigbhourPsis[i].s_2;
+	}
+
+	nextPsi->values[dualNodeId].s2 += 2 * dt * double2{ H.s2.y, -H.s2.x };
+	nextPsi->values[dualNodeId].s1 += 2 * dt * double2{ H.s1.y, -H.s1.x };
+	nextPsi->values[dualNodeId].s0 += 2 * dt * double2{ H.s0.y, -H.s0.x };
+	nextPsi->values[dualNodeId].s_1 += 2 * dt * double2{ H.s_1.y, -H.s_1.x };
+	nextPsi->values[dualNodeId].s_2 += 2 * dt * double2{ H.s_2.y, -H.s_2.x };
+}
 //void energy_h(dim3 dimGrid, dim3 dimBlock, double* energyPtr, PitchedPtr psi, PitchedPtr potentials, int4* lapInd, double* hodges, double g, uint3 dimensions, double volume, size_t bodies)
 //{
 //	energy << <dimGrid, dimBlock >> > (energyPtr, psi, potentials, lapInd, hodges, g, dimensions, volume);
@@ -1092,10 +1195,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const size_t dzsize = zsize + 2; // One element buffer to both ends
 	cudaExtent psiExtent = make_cudaExtent(dxsize * sizeof(BlockPsis), dysize, dzsize);
 
-	cudaPitchedPtr d_cudaEvenPsi;
-	cudaPitchedPtr d_cudaOddPsi;
-	checkCudaErrors(cudaMalloc3D(&d_cudaEvenPsi, psiExtent));
-	checkCudaErrors(cudaMalloc3D(&d_cudaOddPsi, psiExtent));
+	cudaPitchedPtr d_cudaEvenPsis[2];
+	cudaPitchedPtr d_cudaOddPsis[2];
+	for (int i = 0; i < 2; ++i)
+	{
+		checkCudaErrors(cudaMalloc3D(&d_cudaEvenPsis[i], psiExtent));
+		checkCudaErrors(cudaMalloc3D(&d_cudaOddPsis[i], psiExtent));
+	}
 
 	//double* d_energy;
 	double* d_spinNorm;
@@ -1111,15 +1217,18 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	checkCudaErrors(cudaMalloc(&d_u, bodies * sizeof(double3)));
 	checkCudaErrors(cudaMalloc(&d_v, bodies * sizeof(double3)));
 	checkCudaErrors(cudaMalloc(&d_theta, bodies * sizeof(double)));
-
-	size_t offset = d_cudaEvenPsi.pitch * dysize + d_cudaEvenPsi.pitch + sizeof(BlockPsis);
-	PitchedPtr d_evenPsi = { (char*)d_cudaEvenPsi.ptr + offset, d_cudaEvenPsi.pitch, d_cudaEvenPsi.pitch * dysize };
-	PitchedPtr d_oddPsi = { (char*)d_cudaOddPsi.ptr + offset, d_cudaOddPsi.pitch, d_cudaOddPsi.pitch * dysize };
-
+	PitchedPtr d_evenPsis[2];
+	PitchedPtr d_oddPsis[2];
+	for (int i = 0; i < 2; ++i)
+	{
+		size_t offset = d_cudaEvenPsis[i].pitch * dysize + d_cudaEvenPsis[i].pitch + sizeof(BlockPsis);
+		d_evenPsis[i] = { (char*)d_cudaEvenPsis[i].ptr + offset, d_cudaEvenPsis[i].pitch, d_cudaEvenPsis[i].pitch * dysize };
+		d_oddPsis[i]= { (char*)d_cudaOddPsis[i].ptr + offset, d_cudaOddPsis[i].pitch, d_cudaOddPsis[i].pitch * dysize };
+	}
 	// find terms for laplacian
 	Buffer<int4> lapind;
 	Buffer<double> hodges;
-	getLaplacian(lapind, hodges, sizeof(BlockPsis), d_evenPsi.pitch, d_evenPsi.slicePitch);
+	getLaplacian(lapind, hodges, sizeof(BlockPsis), d_evenPsis[0].pitch, d_evenPsis[0].slicePitch);
 
 	//std::cout << "lapsize = " << lapsize << ", lapfac = " << lapfac << ", lapfac0 = " << lapfac0 << std::endl;
 
@@ -1261,25 +1370,25 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	h_cudaEvenPsi.ptr = h_evenPsi;
 	h_cudaEvenPsi.pitch = dxsize * sizeof(BlockPsis);
-	h_cudaEvenPsi.xsize = d_cudaEvenPsi.xsize;
-	h_cudaEvenPsi.ysize = d_cudaEvenPsi.ysize;
+	h_cudaEvenPsi.xsize = d_cudaEvenPsis[0].xsize;
+	h_cudaEvenPsi.ysize = d_cudaEvenPsis[0].ysize;
 
 	h_cudaOddPsi.ptr = h_oddPsi;
 	h_cudaOddPsi.pitch = dxsize * sizeof(BlockPsis);
-	h_cudaOddPsi.xsize = d_cudaOddPsi.xsize;
-	h_cudaOddPsi.ysize = d_cudaOddPsi.ysize;
+	h_cudaOddPsi.xsize = d_cudaOddPsis[0].xsize;
+	h_cudaOddPsi.ysize = d_cudaOddPsis[0].ysize;
 
 	// Copy from host memory to device memory
 	cudaMemcpy3DParms evenPsiParams = { 0 };
 	cudaMemcpy3DParms oddPsiParams = { 0 };
 
 	evenPsiParams.srcPtr = h_cudaEvenPsi;
-	evenPsiParams.dstPtr = d_cudaEvenPsi;
+	evenPsiParams.dstPtr = d_cudaEvenPsis[0];
 	evenPsiParams.extent = psiExtent;
 	evenPsiParams.kind = cudaMemcpyHostToDevice;
 
 	oddPsiParams.srcPtr = h_cudaOddPsi;
-	oddPsiParams.dstPtr = d_cudaOddPsi;
+	oddPsiParams.dstPtr = d_cudaOddPsis[0];
 	oddPsiParams.extent = psiExtent;
 	oddPsiParams.kind = cudaMemcpyHostToDevice;
 
@@ -1297,13 +1406,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaFreeHost(h_oddPsi);
 #endif
 	cudaMemcpy3DParms evenPsiBackParams = { 0 };
-	evenPsiBackParams.srcPtr = d_cudaEvenPsi;
+	evenPsiBackParams.srcPtr = d_cudaEvenPsis[0];
 	evenPsiBackParams.dstPtr = h_cudaEvenPsi;
 	evenPsiBackParams.extent = psiExtent;
 	evenPsiBackParams.kind = cudaMemcpyDeviceToHost;
 
 	cudaMemcpy3DParms oddPsiBackParams = { 0 };
-	oddPsiBackParams.srcPtr = d_cudaOddPsi;
+	oddPsiBackParams.srcPtr = d_cudaOddPsis[0];
 	oddPsiBackParams.dstPtr = h_cudaOddPsi;
 	oddPsiBackParams.extent = psiExtent;
 	oddPsiBackParams.kind = cudaMemcpyDeviceToHost;
@@ -1345,7 +1454,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			break;
 		}
 
-		std::cout << "Total density: " << getDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume) << std::endl;
+		std::cout << "Total density: " << getDensity(dimGrid, dimBlock, d_density, d_oddPsis[0], dimensions, bodies, volume) << std::endl;
 	}
 
 	// Take one forward Euler step if starting from the ground state or time step changed
@@ -1358,7 +1467,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.Bb = BzScale * signal.Bb;
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
-		forwardEuler << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, alpha, t);
+		forwardEuler << <dimGrid, dimBlock >> > (d_evenPsis[0], d_oddPsis[0], d_lapind, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, alpha, t);
 	}
 	else
 	{
@@ -1467,7 +1576,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	// Measure wall clock time
 	static auto prevTime = std::chrono::high_resolution_clock::now();
 
-	while (t < STATE_PREP_DURATION)
+	if (0) //while (t < STATE_PREP_DURATION)
 	{
 		// update odd values
 		t += dt / omega_r * 1e3; // [ms]
@@ -1513,6 +1622,29 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	drawDensity(densDir, h_oddPsi, dxsize, dysize, dzsize, t - STATE_PREP_DURATION, Bs, d_p0, block_scale);
 #endif
 
+	auto getPos = [&](int blockX, int blockY, int blockZ, int cellIdx) -> double3
+	{
+		const double3 local = getLocalPos(cellIdx);
+		return { p0.x + expansionBlockScale * (blockX * BLOCK_WIDTH_X + local.x),
+				 p0.y + expansionBlockScale * (blockY * BLOCK_WIDTH_Y + local.y),
+			     p0.z + expansionBlockScale * (blockZ * BLOCK_WIDTH_Z + local.z) };
+	};
+	
+	auto center = getPos(110, 111, 111, 3);
+	std::vector<double3> others;
+	others.push_back(getPos(110, 111, 111, 1));
+	others.push_back(getPos(110, 111, 111, 4));
+	others.push_back(getPos(111, 111, 111, 0));
+	others.push_back(getPos(110, 111, 111, 11));
+
+	for (int i = 0; i < 4; ++i)
+	{
+		std::cout << "Distance to " << i << ": " << mag(center - others[i]) / expansionBlockScale << std::endl;
+	}
+	auto barys = baryCoords(others[0], others[1], others[2], others[3], center);
+	std::cout << "Barycentric coordinates: " << barys.x << ", " << barys.y << ", " << barys.z << ", " << barys.w << std::endl;
+	return 0;
+
 	while (t < END_TIME)
 	{
 		// integrate one iteration
@@ -1520,15 +1652,17 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		{
 			// update odd values
 			t += dt / omega_r * 1e3; // [ms]
-			if (t >= OPT_TRAP_OFF) {
+			//if (t >= OPT_TRAP_OFF)
+			{
 				expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
 			}
+
 			signal = getSignal(t);
 			Bs.Bq = BqScale * signal.Bq;
 			Bs.Bb = BzScale * signal.Bb;
 			Bs.BqQuad = BqQuadScale * signal.Bq;
 			Bs.BbQuad = BzQuadScale * signal.Bb;
-			leapfrog << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
+			//leapfrog << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
 			//densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume)) + ", ";
 			//tString += std::to_string(t) + ", ";
 			//std::cout << std::to_string(signal.Bq) + ", ";
@@ -1536,16 +1670,17 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			//optTrapString += std::to_string(trap({ maxp.x, maxp.y, maxp.z }, t)) + ", ";
 
 			// update even values
-			t += dt / omega_r * 1e3; // [ms]
-			if (t >= OPT_TRAP_OFF) {
-				expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
-			}
-			signal = getSignal(t);
-			Bs.Bq = BqScale * signal.Bq;
-			Bs.Bb = BzScale * signal.Bb;
-			Bs.BqQuad = BqQuadScale * signal.Bq;
-			Bs.BbQuad = BzQuadScale * signal.Bb;
-			leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
+			//t += dt / omega_r * 1e3; // [ms]
+			////if (t >= OPT_TRAP_OFF)
+			//{
+			//	expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
+			//}
+			//signal = getSignal(t);
+			//Bs.Bq = BqScale * signal.Bq;
+			//Bs.Bb = BzScale * signal.Bb;
+			//Bs.BqQuad = BqQuadScale * signal.Bq;
+			//Bs.BbQuad = BzQuadScale * signal.Bb;
+			//leapfrog << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, d_p0, c0, c2, c4, alpha, t);
 			//densityStr += std::to_string(getDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume)) + ", ";
 			//tString += std::to_string(t) + ", ";
 			//std::cout << std::to_string(signal.Bq) + ", ";
