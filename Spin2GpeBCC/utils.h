@@ -98,7 +98,6 @@ __host__ __device__ __inline__ double2 operator*(double2 a, double2 b) // Comple
 
 __host__ __device__ __inline__ double scalarTripleProd(double3 a, double3 b, double3 c)
 {
-	// computes scalar triple product
 	return dot(a, cross(b, c));
 }
 
@@ -343,7 +342,7 @@ void drawIandR(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, s
 	//pic1.save("mag_pos.bmp", false);
 }
 
-void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t, MagFields Bs, const double3 p0, double block_scale)
+void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t, MagFields /*Bs*/, const double3 /*p0*/, double /*block_scale*/)
 {
 	const int SIZE = 2;
 	double INTENSITY = 1;
@@ -474,10 +473,10 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 
 					//if ((j / SIZE) == dysize / 2)
 					{
-						double3 localPos = getLocalPos(dualNode);
-						const double3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
-													p0.y + block_scale * (((j - 1) / SIZE) * BLOCK_WIDTH_Y + localPos.y),
-													p0.z + block_scale * (((k - 1) / SIZE) * BLOCK_WIDTH_Z + localPos.z) };
+						//double3 localPos = getLocalPos(dualNode);
+						//const double3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
+						//							p0.y + block_scale * (((j - 1) / SIZE) * BLOCK_WIDTH_Y + localPos.y),
+						//							p0.z + block_scale * (((k - 1) / SIZE) * BLOCK_WIDTH_Z + localPos.z) };
 
 						//double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
 						//minB = min(minB, sqrt(B.x * B.x + B.y * B.y + B.z * B.z));
@@ -630,10 +629,10 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 
 					//if ((j / SIZE) == dysize / 2)
 					{
-						double3 localPos = getLocalPos(dualNode);
-						const double3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
-													p0.y + block_scale * (((j - 1) / SIZE) * BLOCK_WIDTH_Y + localPos.y),
-													p0.z + block_scale * (((k - 1) / SIZE) * BLOCK_WIDTH_Z + localPos.z) };
+						//double3 localPos = getLocalPos(dualNode);
+						//const double3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
+						//							p0.y + block_scale * (((j - 1) / SIZE) * BLOCK_WIDTH_Y + localPos.y),
+						//							p0.z + block_scale * (((k - 1) / SIZE) * BLOCK_WIDTH_Z + localPos.z) };
 
 						//double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
 						//minB = min(minB, sqrt(B.x * B.x + B.y * B.y + B.z * B.z));
@@ -786,10 +785,10 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 
 					//if ((k / SIZE) == dzsize / 2)
 					{
-						double3 localPos = getLocalPos(dualNode);
-						const double3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
-													p0.y + block_scale * (((j - 1) / SIZE) * BLOCK_WIDTH_Y + localPos.y),
-													p0.z + block_scale * (((k - 1) / SIZE) * BLOCK_WIDTH_Z + localPos.z) };
+						//double3 localPos = getLocalPos(dualNode);
+						//const double3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
+						//							p0.y + block_scale * (((j - 1) / SIZE) * BLOCK_WIDTH_Y + localPos.y),
+						//							p0.z + block_scale * (((k - 1) / SIZE) * BLOCK_WIDTH_Z + localPos.z) };
 
 						//double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
 						//minB = min(minB, sqrt(B.x * B.x + B.y * B.y + B.z * B.z));
