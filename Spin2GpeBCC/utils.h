@@ -122,7 +122,7 @@ __host__ __device__ __inline__  double4 baryCoords(double3 a, double3 b, double3
 	return make_double4(va6 * v6, vb6 * v6, vc6 * v6, vd6 * v6);
 }
 
-__host__ __device__ __inline__ double& subscript(double4 vec, int idx)
+__host__ __device__ __inline__ double subscript(double4 vec, int idx)
 {
 	switch (idx)
 	{
