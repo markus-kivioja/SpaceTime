@@ -584,22 +584,20 @@ void drawDensity(const std::string& name_prefix, const std::string& folder, Bloc
 		}
 	}));
 
-	threads.push_back(std::thread([&]() {
-		for (int x = 0; x < width * 5; ++x)
-		{
-			pic1.setColor(x, height, Vector4(0.5, 0.5, 0.5, 1.0));
-			pic1.setColor(x, 2 * height, Vector4(0.5, 0.5, 0.5, 1.0));
-		}
-		for (int y = 0; y < height * 3; ++y)
-		{
-			pic1.setColor(width, y, Vector4(0.5, 0.5, 0.5, 1.0));
-			pic1.setColor(2 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
-			pic1.setColor(3 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
-			pic1.setColor(4 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
-		}
-	}));
-
 	for (auto& thread : threads) thread.join();
+
+	for (int x = 0; x < width * 5; ++x)
+	{
+		pic1.setColor(x, height, Vector4(0.5, 0.5, 0.5, 1.0));
+		pic1.setColor(x, 2 * height, Vector4(0.5, 0.5, 0.5, 1.0));
+	}
+	for (int y = 0; y < height * 3; ++y)
+	{
+		pic1.setColor(width, y, Vector4(0.5, 0.5, 0.5, 1.0));
+		pic1.setColor(2 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
+		pic1.setColor(3 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
+		pic1.setColor(4 * width, y, Vector4(0.5, 0.5, 0.5, 1.0));
+	}
 
 	//uint axisOffsetX = 5;
 	//uint axisOffsetY = 5;

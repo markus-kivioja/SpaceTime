@@ -1251,7 +1251,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const uint zsize = uint(domain.z / (block_scale * BLOCK_WIDTH.z)); // + 1;
 	const Vector3 p0 = 0.5 * (minp + maxp - block_scale * Vector3(BLOCK_WIDTH.x * xsize, BLOCK_WIDTH.y * ysize, BLOCK_WIDTH.z * zsize));
 	//const double3 d_p0 = { p0.x, p0.y, p0.z };
-	const double3 d_p0 = { p0.x + 0.18 * maxp.x, p0.y, p0.z };
+	const double3 d_p0 = { p0.x + 0.15 * maxp.x, p0.y, p0.z };
 
 	// compute discrete dimensions
 	const uint bsize = VALUES_IN_BLOCK; // bpos.size(); // number of values inside a block
@@ -1659,11 +1659,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	int lastSaveTime = 0;
 
 #if HYPERBOLIC && !PARABOLIC
-	std::string dirPrefix = "hyperbolic\\" + phaseToString(initPhase) + "\\" + getProjectionString() + "\\";
+	std::string dirPrefix = "hyperbolic/" + phaseToString(initPhase) + "/" + getProjectionString() + "/";
 #elif PARABOLIC && !HYPERBOLIC
-	std::string dirPrefix = "parabolic\\" + phaseToString(initPhase) + "\\" + getProjectionString() + "\\";
+	std::string dirPrefix = "parabolic/" + phaseToString(initPhase) + "/" + getProjectionString() + "/";
 #else
-	std::string dirPrefix = phaseToString(initPhase) + "\\" + getProjectionString() + "\\";
+	std::string dirPrefix = phaseToString(initPhase) + "/" + getProjectionString() + "/";
 #endif
 
 	std::string densDir = dirPrefix + "dens";
@@ -1671,10 +1671,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	std::string spinorVtksDir = dirPrefix + "spinor_vtks";
 	std::string datsDir = dirPrefix + "dats";
 
-	std::string createResultsDirCommand = "mkdir " + densDir;
-	std::string createVtksDirCommand = "mkdir " + vtksDir;
-	std::string createSpinorVtksDirCommand = "mkdir " + spinorVtksDir;
-	std::string createDatsDirCommand = "mkdir " + datsDir;
+	std::string createResultsDirCommand = "mkdir -p " + densDir;
+	std::string createVtksDirCommand = "mkdir -p " + vtksDir;
+	std::string createSpinorVtksDirCommand = "mkdir -p " + spinorVtksDir;
+	std::string createDatsDirCommand = "mkdir -p " + datsDir;
 	system(createResultsDirCommand.c_str());
 	system(createVtksDirCommand.c_str());
 	system(createSpinorVtksDirCommand.c_str());
@@ -1721,12 +1721,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #if HYPERBOLIC
 		drawDensity("hyper", densDir, h_oddPsiHyper, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
 		double3 comHyper = centerOfMass(h_oddPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
-		std::cout << comHyper.x << ", ";
+		std::cout << comHyper.x << ", " << std::endl;
 #endif
 #if PARABOLIC
 		drawDensity("parab", densDir, h_oddPsiPara, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
 		double3 comPara = centerOfMass(h_oddPsiPara, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
-		std::cout << comPara.x << "; ";
+		std::cout << comPara.x << ", " << std::endl;
 #endif
 #endif
 
