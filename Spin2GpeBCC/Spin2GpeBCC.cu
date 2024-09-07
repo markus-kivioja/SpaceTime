@@ -156,10 +156,9 @@ const std::string GROUND_STATE_FILENAME = "ground_state_psi_" + toStringShort(DO
 constexpr double NOISE_AMPLITUDE = 0; //0.1;
 
 //constexpr double dt = 1e-4; // 1 x // Before the monopole creation ramp (0 - 200 ms)
-//constexpr double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
-constexpr double dt = 1e-4; // 0.1 x // During and after the monopole creation ramp (200 ms - )
+constexpr double dt = 1e-5; // 0.1 x // During and after the monopole creation ramp (200 ms - )
 
-const double IMAGE_SAVE_INTERVAL = 0.1; // 1.0; // ms
+const double IMAGE_SAVE_INTERVAL = 1.0; // ms
 const uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
@@ -1620,7 +1619,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	// Measure wall clock time
 	static auto prevTime = std::chrono::high_resolution_clock::now();
 
-	if (0) //while (t < STATE_PREP_DURATION)
+	while (t < STATE_PREP_DURATION)
 	{
 		// update odd values
 		t += dt / omega_r * 1e3; // [ms]
@@ -1666,74 +1665,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	drawDensity(densDir, h_oddPsi, dxsize, dysize, dzsize, t - STATE_PREP_DURATION, Bs, d_original_p0, expansionBlockScale);
 #endif
 
-	auto getPos = [](int blockX, int blockY, int blockZ, int cellIdx, double3 p0, double scale) -> double3
-	{
-		const double3 local = getLocalPos(cellIdx);
-		return { p0.x + scale * (blockX * BLOCK_WIDTH_X + local.x),
-				 p0.y + scale * (blockY * BLOCK_WIDTH_Y + local.y),
-				 p0.z + scale * (blockZ * BLOCK_WIDTH_Z + local.z) };
-	};
-	
-	auto center = getPos(110, 111, 111, 3, expansion_p0, expansionBlockScale);
-	std::vector<double3> others;
-	others.push_back(getPos(110, 111, 111, 1, expansion_p0, expansionBlockScale));
-	others.push_back(getPos(110, 111, 111, 4, expansion_p0, expansionBlockScale));
-	others.push_back(getPos(111, 111, 111, 0, expansion_p0, expansionBlockScale));
-	others.push_back(getPos(110, 111, 111, 11, expansion_p0, expansionBlockScale));
-	others.push_back(center);
-
-	for (int i = 0; i < 5; ++i)
-	{
-		std::cout << "Distance to " << i << ": " << mag(center - others[i]) / expansionBlockScale << std::endl;
-	}
-	auto barys = baryCoords(others[0], others[1], others[2], others[3], center);
-	std::cout << "Barycentric coordinates: " << barys.x << ", " << barys.y << ", " << barys.z << ", " << barys.w << std::endl;
-	std::cout << "Density: " << getDensity(dimGrid, dimBlock, d_density, d_oddPsis[0], dimensions, bodies, volume) << std::endl;
-
-	//expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
-	//expansion_p0 = compute_p0(expansionBlockScale, xsize, ysize, zsize);
-
-	auto newCenter = getPos(110, 111, 111, 3, expansion_p0, expansionBlockScale);
-
-	double maxDist = 0;
-	int argMax = 0;
-	for (int i = 0; i < 5; ++i)
-	{
-		double dist = mag(newCenter - others[i]);
-		if (dist > maxDist)
-		{
-			maxDist = dist;
-			argMax = i;
-		}
-	}
-
-	for (int i = 0; i < 5; ++i)
-	{
-		std::cout << "After scaling distance to " << i << ": " << mag(newCenter - others[i]) / expansionBlockScale << std::endl;
-	}
-
-	std::vector<int> closestIndices;
-	for (int i = 0; i < 5; ++i)
-	{
-		if (i != argMax)
-			closestIndices.push_back(i);
-	}
-	std::cout << "Closest distances size: " << closestIndices.size() << std::endl;
-	for (int i = 0; i < closestIndices.size(); ++i)
-	{
-		std::cout << "After scaling closest distance to " << i << ": " << mag(newCenter - others[closestIndices[i]]) / expansionBlockScale << std::endl;
-	}
-
-	{
-		auto newBarys = baryCoords(others[closestIndices[0]], others[closestIndices[1]], others[closestIndices[2]], others[closestIndices[3]], newCenter);
-		std::cout << "After scaling barycentric coordinates: " << newBarys.x << ", " << newBarys.y << ", " << newBarys.z << ", " << newBarys.w << std::endl;
-	}
-
 	uint32_t bufferIdx = 0;
-
-	double3 test_p0 = compute_p0(expansionBlockScale, xsize, ysize, zsize);
-	std::cout << "Real p0: " << expansion_p0.x << ", " << expansion_p0.y << ", " << expansion_p0.z << std::endl;
-	std::cout << "Test p0: " << test_p0.x << ", " << test_p0.y << ", " << test_p0.z << std::endl;
 
 	while (t < END_TIME)
 	{
@@ -1742,7 +1674,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		{
 			// update odd values
 			t += dt / omega_r * 1e3; // [ms]
-			//if (t >= OPT_TRAP_OFF)
+			if (t >= OPT_TRAP_OFF)
 			{
 				const double prevScale = expansionBlockScale;
 				const double3 prev_p0 = expansion_p0;
@@ -1766,7 +1698,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 			// update even values
 			t += dt / omega_r * 1e3; // [ms]
-			//if (t >= OPT_TRAP_OFF)
+			if (t >= OPT_TRAP_OFF)
 			{
 				const double prevScale = expansionBlockScale;
 				const double3 prev_p0 = expansion_p0;
@@ -1794,10 +1726,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 		// Measure wall clock time
 		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
-		//std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
-		const double expansionVolume = expansionBlockScale * expansionBlockScale * expansionBlockScale * VOLUME;
-		std::cout << "After expansion p0: " << expansion_p0.x << ", " << expansion_p0.y << ", " << expansion_p0.z << std::endl;
-		std::cout << "After expansion density: " << getDensity(dimGrid, dimBlock, d_density, d_oddPsis[0], dimensions, bodies, expansionVolume) << std::endl;
+		std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
 		prevTime = std::chrono::high_resolution_clock::now();
 
 		signal = getSignal(0);
