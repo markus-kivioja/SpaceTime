@@ -1469,7 +1469,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	Signal signal;
 	MagFields Bs{ 0 };
 
-	const double volume = block_scale * block_scale * block_scale * VOLUME;
+	double volume = block_scale * block_scale * block_scale * VOLUME;
 
 	if (loadGroundState)
 	{
@@ -1681,11 +1681,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 				expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
 				expansion_p0 = compute_p0(expansionBlockScale, xsize, ysize, zsize);
+				volume = expansionBlockScale * expansionBlockScale * block_scale * VOLUME;
 
 				const uint32_t nextBufferIdx = (bufferIdx + 1) % BUFFER_COUNT;
-					
+
 				interpolate << <dimGrid, dimBlock >> > (d_evenPsis[nextBufferIdx], d_evenPsis[bufferIdx], d_lapind, d_hodges, dimensions, prev_p0, expansion_p0, prevScale, expansionBlockScale);
+				normalize_h(dimGrid, dimBlock, d_density, d_evenPsis[nextBufferIdx], dimensions, bodies, volume);
 				interpolate << <dimGrid, dimBlock >> > (d_oddPsis[nextBufferIdx], d_oddPsis[bufferIdx], d_lapind, d_hodges, dimensions, prev_p0, expansion_p0, prevScale, expansionBlockScale);
+				normalize_h(dimGrid, dimBlock, d_density, d_oddPsis[nextBufferIdx], dimensions, bodies, volume);
 
 				bufferIdx = nextBufferIdx;
 			}
@@ -1705,11 +1708,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 				expansionBlockScale += dt / omega_r * 1e3 * k * block_scale;
 				expansion_p0 = compute_p0(expansionBlockScale, xsize, ysize, zsize);
+				volume = expansionBlockScale * expansionBlockScale * block_scale * VOLUME;
 
 				const uint32_t nextBufferIdx = (bufferIdx + 1) % BUFFER_COUNT;
 
 				interpolate << <dimGrid, dimBlock >> > (d_evenPsis[nextBufferIdx], d_evenPsis[bufferIdx], d_lapind, d_hodges, dimensions, prev_p0, expansion_p0, prevScale, expansionBlockScale);
+				normalize_h(dimGrid, dimBlock, d_density, d_evenPsis[nextBufferIdx], dimensions, bodies, volume);
 				interpolate << <dimGrid, dimBlock >> > (d_oddPsis[nextBufferIdx], d_oddPsis[bufferIdx], d_lapind, d_hodges, dimensions, prev_p0, expansion_p0, prevScale, expansionBlockScale);
+				normalize_h(dimGrid, dimBlock, d_density, d_oddPsis[nextBufferIdx], dimensions, bodies, volume);
 
 				bufferIdx = nextBufferIdx;
 			}
@@ -1721,6 +1727,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			leapfrog << <dimGrid, dimBlock >> > (d_evenPsis[bufferIdx], d_oddPsis[bufferIdx], d_lapind, d_hodges, Bs, dimensions, expansionBlockScale, expansion_p0, c0, c2, c4, alpha, t);
 		}
 #if SAVE_PICTURE
+		std::cout << "N = " << getDensity(dimGrid, dimBlock, d_density, d_oddPsis[0], dimensions, bodies, volume) << std::endl;
+
 		// Copy back from device memory to host memory
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParams));
 
