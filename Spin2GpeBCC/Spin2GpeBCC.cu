@@ -64,6 +64,7 @@ constexpr double OPT_TRAP_OFF_DELAY = 0.020;
 constexpr double OPT_TRAP_OFF = STATE_PREP_DURATION + CREATION_RAMP_DURATION + TOTAL_HOLD_TIME + OPT_TRAP_OFF_DELAY; // When the expansion starts in ms
 constexpr double GRADIENT_OFF_DELAY = 0.010;
 constexpr double GRADIENT_OFF_DUARATION = 0.034;
+constexpr double GRID_SCALING_START = 1.0; // ms
 
 //#include "AliceRingRamps.h"
 #include "KnotRamps.h"
@@ -1674,7 +1675,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		{
 			// update odd values
 			t += dt / omega_r * 1e3; // [ms]
-			if (t >= OPT_TRAP_OFF)
+			if (t >= GRID_SCALING_START)
 			{
 				const double prevScale = expansionBlockScale;
 				const double3 prev_p0 = expansion_p0;
@@ -1701,7 +1702,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 			// update even values
 			t += dt / omega_r * 1e3; // [ms]
-			if (t >= OPT_TRAP_OFF)
+			if (t >= GRID_SCALING_START)
 			{
 				const double prevScale = expansionBlockScale;
 				const double3 prev_p0 = expansion_p0;
