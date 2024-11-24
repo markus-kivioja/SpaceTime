@@ -82,6 +82,7 @@ constexpr double GRID_SCALING_START = 1.0; // ms
 #include "mesh.h"
 
 #define COMPUTE_GROUND_STATE 0
+#define GROUND_STATE_ITERATION_COUNT 10000
 
 #define USE_QUADRATIC_ZEEMAN 0
 #define USE_QUADRUPOLE_OFFSET 0
@@ -1520,7 +1521,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #if COMPUTE_GROUND_STATE
 	uint iter = 0;
 
-	normalize_h(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+	normalize_h(dimGrid, dimBlock, d_density, d_evenPsis[0], dimensions, bodies, volume);
 
 	while (true)
 	{
@@ -1532,14 +1533,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			signal = getSignal(0);
 			Bs.Bq = BqScale * signal.Bq;
 			Bs.Bb = BzScale * signal.Bb;
-			drawIandR("GS", h_evenPsi, dxsize, dysize, dzsize, iter, Bs, d_p0, block_scale);
-			printDensity(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+			drawIandR("GS", h_evenPsi, dxsize, dysize, dzsize, iter, Bs, d_original_p0, block_scale);
+			std::cout << "Normalized particle count: " << getDensity(dimGrid, dimBlock, d_density, d_evenPsis[0], dimensions, bodies, volume) << std::endl;
 
-			double3 com = centerOfMass(h_evenPsi, bsize, dxsize, dysize, dzsize, block_scale, d_p0);
+			double3 com = centerOfMass(h_evenPsi, bsize, dxsize, dysize, dzsize, block_scale, d_original_p0);
 			std::cout << "Center of mass: " << com.x << ", " << com.y << ", " << com.z << std::endl;
 		}
 #endif
-		if (iter == 10000)
+		if (iter == GROUND_STATE_ITERATION_COUNT)
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
 			std::ofstream fs(GROUND_STATE_FILENAME, std::ios::binary | std::ios_base::trunc);
@@ -1549,14 +1550,14 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			return 0;
 		}
 		// Take an imaginary time step
-		itp << <dimGrid, dimBlock >> > (d_oddPsi, d_evenPsi, d_lapind, d_hodges, { 0 }, dimensions, block_scale, d_p0, c0, c2, c4, t);
+		itp << <dimGrid, dimBlock >> > (d_oddPsis[0], d_evenPsis[0], d_lapind, d_hodges, {0}, dimensions, block_scale, d_original_p0, c0, c2, c4, t);
 		// Normalize
-		normalize_h(dimGrid, dimBlock, d_density, d_oddPsi, dimensions, bodies, volume);
+		normalize_h(dimGrid, dimBlock, d_density, d_oddPsis[0], dimensions, bodies, volume);
 
 		// Take an imaginary time step
-		itp << <dimGrid, dimBlock >> > (d_evenPsi, d_oddPsi, d_lapind, d_hodges, { 0 }, dimensions, block_scale, d_p0, c0, c2, c4, t);
+		itp << <dimGrid, dimBlock >> > (d_evenPsis[0], d_oddPsis[0], d_lapind, d_hodges, { 0 }, dimensions, block_scale, d_original_p0, c0, c2, c4, t);
 		// Normalize
-		normalize_h(dimGrid, dimBlock, d_density, d_evenPsi, dimensions, bodies, volume);
+		normalize_h(dimGrid, dimBlock, d_density, d_evenPsis[0], dimensions, bodies, volume);
 
 		//energy_h(dimGrid, dimBlock, d_energy, d_evenPsi, d_pot, d_lapind, d_hodges, g, dimensions, volume, bodies);
 		//double hDensity = 0;
@@ -1770,19 +1771,6 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 	}
 #endif
-	densityStr += "];";
-	tString += "];";
-	bqString += "];";
-	bbString += "];";
-	optTrapString += "];";
-
-	Text textFile;
-	textFile << densityStr << std::endl;
-	textFile << tString << std::endl;
-	textFile << bqString << std::endl;
-	textFile << bbString << std::endl;
-	textFile << optTrapString << std::endl;
-	textFile.save("experimental_field_ramps.m");
 
 	cudaError_t err = cudaGetLastError();
 	if (err != cudaSuccess)
