@@ -3,12 +3,10 @@
 #include <array>
 #include <iostream>
 
-#include "utils.h"
-
 struct Signal
 {
-	double Bq = 0;
-	double3 Bb = { 0, 0, 0 };
+	myFloat Bq = 0;
+	myFloat3 Bb = { 0, 0, 0 };
 };
 
 enum class RampType
@@ -20,25 +18,25 @@ enum class RampType
 
 // Experimentally realistic ramps
 //// Quadrupole ////
-const std::vector<double> Bqs = { 4.3, 0.0, 0.0 };
-const std::vector<double> BqDurations = { OPT_TRAP_OFF + GRADIENT_OFF_DELAY, GRADIENT_OFF_DUARATION, 100 };
+const std::vector<myFloat> Bqs = { 4.3, 0.0, 0.0 };
+const std::vector<myFloat> BqDurations = { OPT_TRAP_OFF + GRADIENT_OFF_DELAY, GRADIENT_OFF_DUARATION, 100 };
 const std::vector<RampType> BqTypes = { RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT };
 
 //// Bias ////
-const std::vector<double3> Bbs = { make_double3(0, 0, 0.219), make_double3(0, 0, 0), make_double3(0, 0, 0), make_double3(0, 0, 3.0) };
-const std::vector<double> BbDurations = { STATE_PREP_DURATION, CREATION_RAMP_DURATION, TOTAL_HOLD_TIME, 100 };
+const std::vector<myFloat3> Bbs = { {0, 0, 0.219}, {0, 0, 0}, {0, 0, 0}, {0, 0, 3.0} };
+const std::vector<myFloat> BbDurations = { STATE_PREP_DURATION, CREATION_RAMP_DURATION, TOTAL_HOLD_TIME, 100 };
 const std::vector<RampType> BbTypes = { RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT, RampType::FAST_EXTRACTION };
 
 // Start with the magnetic field zero being at the center of the condensate
 //// Quadrupole ////
-//std::array<double, 1> Bqs = { 4.3 };
-//std::array<double, 1> BqDurations = { 100.0 };
+//std::array<myFloat, 1> Bqs = { 4.3 };
+//std::array<myFloat, 1> BqDurations = { 100.0 };
 //std::array<RampType, 1> BqTypes = { RampType::CONSTANT };
 //
 ////// Bias ////
 //// Implement also the other basises, this is now only for z-quantized
-//std::array<double3, 1> Bbs = { make_double3(0, 0, 0) };
-//std::array<double, 1> BbDurations = { 100 };
+//std::array<myFloat3, 1> Bbs = { make_myFloat3(0, 0, 0) };
+//std::array<myFloat, 1> BbDurations = { 100 };
 //std::array<RampType, 1> BbTypes = { RampType::CONSTANT };
 
 void printRamp()
@@ -46,24 +44,24 @@ void printRamp()
 	std::cout << "Using knot/skyrmion creation ramp" << std::endl;
 }
 
-Signal getSignal(double t)
+Signal getSignal(myFloat t)
 {
 	Signal signal;
 
-	double tOrig = t;
+	myFloat tOrig = t;
 
 	/// Bq
 	uint32_t BqRampIdx = 0;
 	for (; BqRampIdx < Bqs.size(); ++BqRampIdx)
 	{
-		double tInRamp = t - BqDurations[BqRampIdx];
+		myFloat tInRamp = t - BqDurations[BqRampIdx];
 		if (tInRamp < 0)
 		{
 			break;
 		}
 		t = tInRamp;
 	}
-	double prevBq = (BqRampIdx > 0) ? Bqs[BqRampIdx - 1] : 0.0;
+	myFloat prevBq = (BqRampIdx > 0) ? Bqs[BqRampIdx - 1] : 0.0;
 	switch (BqTypes[BqRampIdx])
 	{
 	case RampType::CONSTANT:
@@ -87,14 +85,14 @@ Signal getSignal(double t)
 	uint32_t BbRampIdx = 0;
 	for (; BbRampIdx < Bbs.size(); ++BbRampIdx)
 	{
-		double tInRamp = t - BbDurations[BbRampIdx];
+		myFloat tInRamp = t - BbDurations[BbRampIdx];
 		if (tInRamp < 0)
 		{
 			break;
 		}
 		t = tInRamp;
 	}
-	double3 prevBb = (BbRampIdx > 0) ? Bbs[BbRampIdx - 1] : make_double3(0, 0, 0);
+	myFloat3 prevBb = (BbRampIdx > 0) ? Bbs[BbRampIdx - 1] : myFloat3{0, 0, 0};
 	switch (BbTypes[BbRampIdx])
 	{
 	case RampType::CONSTANT:

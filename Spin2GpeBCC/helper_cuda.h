@@ -699,8 +699,8 @@ static const char *_cudaGetErrorEnum(curandStatus_t error)
         case CURAND_STATUS_LENGTH_NOT_MULTIPLE:
             return "CURAND_STATUS_LENGTH_NOT_MULTIPLE";
 
-        case CURAND_STATUS_DOUBLE_PRECISION_REQUIRED:
-            return "CURAND_STATUS_DOUBLE_PRECISION_REQUIRED";
+        case CURAND_STATUS_myFloat_PRECISION_REQUIRED:
+            return "CURAND_STATUS_myFloat_PRECISION_REQUIRED";
 
         case CURAND_STATUS_LAUNCH_FAILURE:
             return "CURAND_STATUS_LAUNCH_FAILURE";
@@ -882,8 +882,8 @@ static const char *_cudaGetErrorEnum(NppStatus error)
         case NPP_AFFINE_QUAD_INCORRECT_WARNING:
             return "NPP_AFFINE_QUAD_INCORRECT_WARNING";
 
-        case NPP_DOUBLE_SIZE_WARNING:
-            return "NPP_DOUBLE_SIZE_WARNING";
+        case NPP_myFloat_SIZE_WARNING:
+            return "NPP_myFloat_SIZE_WARNING";
 
         case NPP_WRONG_INTERSECTION_ROI_WARNING:
             return "NPP_WRONG_INTERSECTION_ROI_WARNING";
@@ -1048,7 +1048,7 @@ inline void __printLastCudaError(const char *errorMessage, const char *file, con
 #define MAX(a,b) (a > b ? a : b)
 #endif
 
-// Float To Int conversion
+// float To Int conversion
 inline int ftoi(float value)
 {
     return (value >= 0 ? (int)(value + 0.5) : (int)(value - 0.5));

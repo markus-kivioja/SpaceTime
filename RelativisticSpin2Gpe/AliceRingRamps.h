@@ -5,8 +5,8 @@
 
 struct Signal
 {
-	double Bq = 0;
-	double Bz = 0;
+	myFloat Bq = 0;
+	myFloat Bz = 0;
 };
 
 enum class RampType
@@ -18,38 +18,38 @@ enum class RampType
 
 #define ENABLE_DECAY_BIAS 1
 
-std::array<double, 4> Bqs = { 4.3, 4.3, 0.0, 0.0 };
-std::array<double, 4> BqDurations = { 10.0, 192.03, 0.2, 2000.0 };
+std::array<myFloat, 4> Bqs = { 4.3, 4.3, 0.0, 0.0 };
+std::array<myFloat, 4> BqDurations = { 10.0, 192.03, 0.2, 2000.0 };
 std::array<RampType, 4> BqTypes = { RampType::LINEAR, RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT };
 
 #if ENABLE_DECAY_BIAS
-std::array<double, 6> Bzs = { 1.0, 0.045, 0.045, 0, 1.2, 1.2 };
-std::array<double, 6> BzDurations = { 10, 10, 2.02, 180, 0.5, 2000.0 };
+std::array<myFloat, 6> Bzs = { 1.0, 0.045, 0.045, 0, 1.2, 1.2 };
+std::array<myFloat, 6> BzDurations = { 10, 10, 2.02, 180, 0.5, 2000.0 };
 std::array<RampType, 6> BzTypes = { RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT, RampType::LINEAR, RampType::FAST_EXTRACTION, RampType::CONSTANT };
 #else
-std::array<double, 6> Bzs = { 1.0, 0.045, 0.045, 0, 0 };
-std::array<double, 6> BzDurations = { 10, 10, 2.02, 180, 2000.0 };
+std::array<myFloat, 6> Bzs = { 1.0, 0.045, 0.045, 0, 0 };
+std::array<myFloat, 6> BzDurations = { 10, 10, 2.02, 180, 2000.0 };
 std::array<RampType, 6> BzTypes = { RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT, RampType::LINEAR, RampType::CONSTANT };
 #endif
 
-Signal getSignal(double t)
+Signal getSignal(myFloat t)
 {
 	//Signal signal;
 	//
-	//double tOrig = t;
+	//myFloat tOrig = t;
 	//
 	///// Bq
 	//uint32_t BqRampIdx = 0;
 	//for (; BqRampIdx < Bqs.size(); ++BqRampIdx)
 	//{
-	//	double tInRamp = t - BqDurations[BqRampIdx];
+	//	myFloat tInRamp = t - BqDurations[BqRampIdx];
 	//	if (tInRamp < 0)
 	//	{
 	//		break;
 	//	}
 	//	t = tInRamp;
 	//}
-	//double prevBq = (BqRampIdx > 0) ? Bqs[BqRampIdx - 1] : 0.0;
+	//myFloat prevBq = (BqRampIdx > 0) ? Bqs[BqRampIdx - 1] : 0.0;
 	//switch (BqTypes[BqRampIdx])
 	//{
 	//case RampType::CONSTANT:
@@ -73,14 +73,14 @@ Signal getSignal(double t)
 	//uint32_t BzRampIdx = 0;
 	//for (; BzRampIdx < Bzs.size(); ++BzRampIdx)
 	//{
-	//	double tInRamp = t - BzDurations[BzRampIdx];
+	//	myFloat tInRamp = t - BzDurations[BzRampIdx];
 	//	if (tInRamp < 0)
 	//	{
 	//		break;
 	//	}
 	//	t = tInRamp;
 	//}
-	//double prevBz = (BzRampIdx > 0) ? Bzs[BzRampIdx - 1] : 0.0;
+	//myFloat prevBz = (BzRampIdx > 0) ? Bzs[BzRampIdx - 1] : 0.0;
 	//switch (BzTypes[BzRampIdx])
 	//{
 	//case RampType::CONSTANT:

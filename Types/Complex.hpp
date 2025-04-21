@@ -2,11 +2,29 @@
 #define _COMPLEX_HPP_INCLUDED_
 
 #include <cmath>
+#include <string>
 #include <stdio.h>
 #include <math.h>
 
-//typedef long double ddouble;
+#define USE_DOUBLE 0
+
+#if USE_DOUBLE
+#define myFloat double
+#define myFloat2 double2
+#define myFloat3 double3
+#define myFloat4 double4
+const std::string PRECISION = "double";
 typedef double ddouble;
+#else
+#define myFloat float
+#define myFloat2 float2
+#define myFloat3 float3
+#define myFloat4 float4
+const std::string PRECISION = "float";
+typedef float ddouble;
+#endif
+
+//typedef long double ddouble;
 
 class Complex
 {

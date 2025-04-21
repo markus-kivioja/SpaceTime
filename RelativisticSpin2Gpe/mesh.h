@@ -7,13 +7,13 @@
 #define EDGES_IN_BLOCK 24
 #define INDICES_PER_BLOCK 48
 const Vector3 BLOCK_WIDTH = Vector3(2.8284271247461903, 2.8284271247461903, 2.8284271247461903); // dimensions of unit block
-constexpr double BLOCK_WIDTH_X = 2.8284271247461903; // dimensions of unit block
-constexpr double BLOCK_WIDTH_Y = 2.8284271247461903; // dimensions of unit block
-constexpr double BLOCK_WIDTH_Z = 2.8284271247461903; // dimensions of unit block
-const ddouble VOLUME = 1.8856180831641269; // volume of body elements
+constexpr myFloat BLOCK_WIDTH_X = 2.8284271247461903; // dimensions of unit block
+constexpr myFloat BLOCK_WIDTH_Y = 2.8284271247461903; // dimensions of unit block
+constexpr myFloat BLOCK_WIDTH_Z = 2.8284271247461903; // dimensions of unit block
+const myFloat VOLUME = 1.8856180831641269; // volume of body elements
 const bool IS_3D = true; // 3-dimensional
 
-__constant__ double3 d_localPos[VALUES_IN_BLOCK] = {
+__constant__ myFloat3 d_localPos[VALUES_IN_BLOCK] = {
 	{ 0.35355339059327295, 1.0606601717798207, 2.4748737341529159 },
 	{2.4748737341529159, 0.35355339059327295, 1.0606601717798207 },
 	{2.4748737341529159, 1.0606601717798207, 0.35355339059327295 },
@@ -27,9 +27,9 @@ __constant__ double3 d_localPos[VALUES_IN_BLOCK] = {
 	 {1.0606601717798207, 1.7677669529663687, 2.4748737341529159 },
 	 {1.7677669529663687, 1.0606601717798207, 2.4748737341529159 } };
 
-double3 getLocalPos(int dualZeroCellIndex)
+myFloat3 getLocalPos(int dualZeroCellIndex)
 {
-	double3 pos[VALUES_IN_BLOCK];
+	myFloat3 pos[VALUES_IN_BLOCK];
 	pos[0] = { 0.35355339059327295, 1.0606601717798207, 2.4748737341529159 };
 	pos[1] = { 2.4748737341529159, 0.35355339059327295, 1.0606601717798207 };
 	pos[2] = { 2.4748737341529159, 1.0606601717798207, 0.35355339059327295 };
@@ -45,7 +45,7 @@ double3 getLocalPos(int dualZeroCellIndex)
 
 	return pos[dualZeroCellIndex];
 }
-ddouble getLaplacian(Buffer<ddouble>& hodges, Buffer<int3>& d0, Buffer<int2>& d1, const int d0x, const int d0y, const int d0z, const int d1x, const int d1y, const int d1z) // offsets in bytes
+myFloat getLaplacian(Buffer<myFloat>& hodges, Buffer<int3>& d0, Buffer<int2>& d1, const int d0x, const int d0y, const int d0z, const int d1x, const int d1y, const int d1z) // offsets in bytes
 {
 	d0.resize(EDGES_IN_BLOCK);
 	d0[0] = { make_int3(0, 0, 9) };

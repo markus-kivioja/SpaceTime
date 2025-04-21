@@ -1,6 +1,8 @@
 #ifndef UTILS
 #define UTILS
 
+#include <iostream>
+
 #include <cuda_runtime.h>
 #include "helper_cuda.h"
 
@@ -11,75 +13,75 @@
 #include "mesh.h"
 
 // Arithmetic operators for cuda vector types
-__host__ __device__ __inline__ double2 operator+(double2 a, double2 b)
+__host__ __device__ __inline__ myFloat2 operator+(myFloat2 a, myFloat2 b)
 {
 	return { a.x + b.x, a.y + b.y };
 }
-__host__ __device__ __inline__ double3 operator+(double3 a, double3 b)
+__host__ __device__ __inline__ myFloat3 operator+(myFloat3 a, myFloat3 b)
 {
 	return { a.x + b.x, a.y + b.y, a.z + b.z };
 }
-__host__ __device__ __inline__ double2 operator-(double2 a, double2 b)
+__host__ __device__ __inline__ myFloat2 operator-(myFloat2 a, myFloat2 b)
 {
 	return { a.x - b.x, a.y - b.y };
 }
-__host__ __device__ __inline__ double3 operator-(double3 a, double3 b)
+__host__ __device__ __inline__ myFloat3 operator-(myFloat3 a, myFloat3 b)
 {
 	return { a.x - b.x, a.y - b.y, a.z - b.z };
 }
-__host__ __device__ __inline__ double2 operator-(double2 a)
+__host__ __device__ __inline__ myFloat2 operator-(myFloat2 a)
 {
 	return { -a.x, -a.y };
 }
-__host__ __device__ __inline__ void operator+=(double2& a, double2 b)
+__host__ __device__ __inline__ void operator+=(myFloat2& a, myFloat2 b)
 {
 	a.x += b.x;
 	a.y += b.y;
 }
-__host__ __device__ __inline__ void operator+=(double3& a, double3 b)
+__host__ __device__ __inline__ void operator+=(myFloat3& a, myFloat3 b)
 {
 	a.x += b.x;
 	a.y += b.y;
 	a.z += b.z;
 }
-__host__ __device__ __inline__ void operator-=(double2& a, double2 b)
+__host__ __device__ __inline__ void operator-=(myFloat2& a, myFloat2 b)
 {
 	a.x -= b.x;
 	a.y -= b.y;
 }
-__host__ __device__ __inline__ double2 operator*(double b, double2 a)
+__host__ __device__ __inline__ myFloat2 operator*(myFloat b, myFloat2 a)
 {
 	return { b * a.x, b * a.y };
 }
-__host__ __device__ __inline__ double2 operator*(double2 a, double b)
+__host__ __device__ __inline__ myFloat2 operator*(myFloat2 a, myFloat b)
 {
 	return { b * a.x, b * a.y };
 }
-__host__ __device__ __inline__ double3 operator*(double b, double3 a)
+__host__ __device__ __inline__ myFloat3 operator*(myFloat b, myFloat3 a)
 {
 	return { b * a.x, b * a.y, b * a.z };
 }
-__host__ __device__ __inline__ double3 operator*(double3 a, double b)
+__host__ __device__ __inline__ myFloat3 operator*(myFloat3 a, myFloat b)
 {
 	return { b * a.x, b * a.y, b * a.z };
 }
-__host__ __device__ __inline__ double3 operator/(double3 a, double b)
+__host__ __device__ __inline__ myFloat3 operator/(myFloat3 a, myFloat b)
 {
 	return { a.x / b, a.y / b, a.z / b };
 }
-__host__ __device__ __inline__ double2 operator/(double2 a, double b)
+__host__ __device__ __inline__ myFloat2 operator/(myFloat2 a, myFloat b)
 {
 	return { a.x / b, a.y / b };
 }
-__host__ __device__ __inline__ double2 conj(double2 a) // Complex conjugate
+__host__ __device__ __inline__ myFloat2 conj(myFloat2 a) // Complex conjugate
 {
 	return { a.x, -a.y };
 }
-__host__ __device__ __inline__ double dot(double3 a, double3 b) // Complex conjugate
+__host__ __device__ __inline__ myFloat dot(myFloat3 a, myFloat3 b) // Complex conjugate
 {
 	return a.x * b.x + a.y * b.y + a.z * b.z;
 }
-__host__ __device__ __inline__ double3 cross(double3 a, double3 b)
+__host__ __device__ __inline__ myFloat3 cross(myFloat3 a, myFloat3 b)
 {
 	return {
 		a.y * b.z - a.z * b.y,
@@ -87,42 +89,42 @@ __host__ __device__ __inline__ double3 cross(double3 a, double3 b)
 		a.x * b.y - a.y * b.x
 	};
 }
-__host__ __device__ __inline__ double mag(double3 a) // Complex conjugate
+__host__ __device__ __inline__ myFloat mag(myFloat3 a) // Complex conjugate
 {
 	return sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
 }
-__host__ __device__ __inline__ double2 operator*(double2 a, double2 b) // Complex number multiplication
+__host__ __device__ __inline__ myFloat2 operator*(myFloat2 a, myFloat2 b) // Complex number multiplication
 {
 	return { a.x * b.x - a.y * b.y, a.y * b.x + a.x * b.y };
 }
 
-__host__ __device__ __inline__ double scalarTripleProd(double3 a, double3 b, double3 c)
+__host__ __device__ __inline__ myFloat scalarTripleProd(myFloat3 a, myFloat3 b, myFloat3 c)
 {
 	return dot(a, cross(b, c));
 }
 
-__host__ __device__ __inline__  double4 baryCoords(double3 a, double3 b, double3 c, double3 d, double3 p)
+__host__ __device__ __inline__  myFloat4 baryCoords(myFloat3 a, myFloat3 b, myFloat3 c, myFloat3 d, myFloat3 p)
 {
-	double3 vap = p - a;
-	double3 vbp = p - b;
+	myFloat3 vap = p - a;
+	myFloat3 vbp = p - b;
 
-	double3 vab = b - a;
-	double3 vac = c - a;
-	double3 vad = d - a;
+	myFloat3 vab = b - a;
+	myFloat3 vac = c - a;
+	myFloat3 vad = d - a;
 
-	double3 vbc = c - b;
-	double3 vbd = d - b;
+	myFloat3 vbc = c - b;
+	myFloat3 vbd = d - b;
 
-	double va6 = scalarTripleProd(vbp, vbd, vbc);
-	double vb6 = scalarTripleProd(vap, vac, vad);
-	double vc6 = scalarTripleProd(vap, vad, vab);
-	double vd6 = scalarTripleProd(vap, vab, vac);
-	double v6 = 1 / scalarTripleProd(vab, vac, vad);
+	myFloat va6 = scalarTripleProd(vbp, vbd, vbc);
+	myFloat vb6 = scalarTripleProd(vap, vac, vad);
+	myFloat vc6 = scalarTripleProd(vap, vad, vab);
+	myFloat vd6 = scalarTripleProd(vap, vab, vac);
+	myFloat v6 = 1 / scalarTripleProd(vab, vac, vad);
 
-	return make_double4(va6 * v6, vb6 * v6, vc6 * v6, vd6 * v6);
+	return { va6 * v6, vb6 * v6, vc6 * v6, vd6 * v6 };
 }
 
-__host__ __device__ __inline__ double subscript(double4 vec, int idx)
+__host__ __device__ __inline__ myFloat subscript(myFloat4 vec, int idx)
 {
 	switch (idx)
 	{
@@ -140,11 +142,11 @@ __host__ __device__ __inline__ double subscript(double4 vec, int idx)
 
 struct Complex5Vec
 {
-	double2 s2 = {0, 0};
-	double2 s1 = { 0, 0 };
-	double2 s0 = { 0, 0 };
-	double2 s_1 = { 0, 0 };
-	double2 s_2 = { 0, 0 };
+	myFloat2 s2 = {0, 0};
+	myFloat2 s1 = { 0, 0 };
+	myFloat2 s0 = { 0, 0 };
+	myFloat2 s_1 = { 0, 0 };
+	myFloat2 s_2 = { 0, 0 };
 };
 
 struct BlockPsis
@@ -161,13 +163,13 @@ struct PitchedPtr
 
 struct MagFields
 {
-	double Bq{};
-	double3 Bb{};
-	double BqQuad{};
-	double3 BbQuad{};
+	myFloat Bq{};
+	myFloat3 Bb{};
+	myFloat BqQuad{};
+	myFloat3 BbQuad{};
 };
 
-std::string toString(const double value, int precision = 18)
+std::string toString(const myFloat value, int precision = 18)
 {
 	std::ostringstream out;
 	out.precision(precision);
@@ -186,11 +188,11 @@ void printBasis()
 #endif
 }
 
-void drawIandR(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t, MagFields Bs, const double3 p0, double block_scale)
+void drawIandR(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, myFloat t, MagFields Bs, const myFloat3 p0, myFloat block_scale)
 {
 	const int SIZE = 2;
-	const double INTENSITY = 1;
-	const double MAG_ZERO = 0.195;
+	const myFloat INTENSITY = 1;
+	const myFloat MAG_ZERO = 0.195;
 	const int width = dxsize * SIZE, height = dysize * SIZE, depth = dzsize * SIZE;
 	Picture pic1(width * 5, height * 2);
 
@@ -199,12 +201,12 @@ void drawIandR(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, s
 	{
 		for (uint i = 0; i < width; i++)
 		{
-			double2 norm_s2 =  {0, 0};
-			double2 norm_s1 =  {0, 0};
-			double2 norm_s0 =  {0, 0};
-			double2 norm_s_1 = {0, 0};
-			double2 norm_s_2 = {0, 0};
-			double minB = 99999999999999.9;
+			myFloat2 norm_s2 =  {0, 0};
+			myFloat2 norm_s1 =  {0, 0};
+			myFloat2 norm_s0 =  {0, 0};
+			myFloat2 norm_s_1 = {0, 0};
+			myFloat2 norm_s_2 = {0, 0};
+			myFloat minB = 99999999999999.9;
 			for (uint j = 0; j < height; j++)
 			{
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
@@ -218,12 +220,12 @@ void drawIandR(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, s
 
 					//if ((j / SIZE) == dysize / 2)
 					{
-						double3 localPos = getLocalPos(dualNode);
-						const double3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
+						myFloat3 localPos = getLocalPos(dualNode);
+						const myFloat3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
 													p0.y + block_scale * (((j - 1) / SIZE) * BLOCK_WIDTH_Y + localPos.y),
 													p0.z + block_scale * (((k - 1) / SIZE) * BLOCK_WIDTH_Z + localPos.z) };
 
-						//double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
+						//myFloat3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
 						//minB = min(minB, sqrt(B.x * B.x + B.y * B.y + B.z * B.z));
 					}
 				}
@@ -237,11 +239,11 @@ void drawIandR(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, s
 			}
 			else
 			{
-				const double2 s2 = INTENSITY * norm_s2;
-				const double2 s1 = INTENSITY * norm_s1;
-				const double2 s0 = INTENSITY * norm_s0;
-				const double2 s_1 = INTENSITY * norm_s_1;
-				const double2 s_2 = INTENSITY * norm_s_2;
+				const myFloat2 s2 = INTENSITY * norm_s2;
+				const myFloat2 s1 = INTENSITY * norm_s1;
+				const myFloat2 s0 = INTENSITY * norm_s0;
+				const myFloat2 s_1 = INTENSITY * norm_s_1;
+				const myFloat2 s_2 = INTENSITY * norm_s_2;
 				pic1.setColor(i, k, Vector4(s2.x, s2.y, 0.0, 1.0));
 				pic1.setColor(width + i, k, Vector4(s1.x, s1.y, 0.0, 1.0));
 				pic1.setColor(2 * width + i, k, Vector4(s0.x, s0.y, 0.0, 1.0));
@@ -256,12 +258,12 @@ void drawIandR(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, s
 	{
 		for (uint i = 0; i < width; i++)
 		{
-			double2 norm_s2 = { 0, 0 };
-			double2 norm_s1 = { 0, 0 };
-			double2 norm_s0 = { 0, 0 };
-			double2 norm_s_1 = { 0, 0 };
-			double2 norm_s_2 = { 0, 0 };
-			double minB = 99999999999999.9;
+			myFloat2 norm_s2 = { 0, 0 };
+			myFloat2 norm_s1 = { 0, 0 };
+			myFloat2 norm_s0 = { 0, 0 };
+			myFloat2 norm_s_1 = { 0, 0 };
+			myFloat2 norm_s_2 = { 0, 0 };
+			myFloat minB = 99999999999999.9;
 			for (uint k = 0; k < depth; ++k)
 			{
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
@@ -275,12 +277,12 @@ void drawIandR(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, s
 
 					//if ((k / SIZE) == dzsize / 2)
 					{
-						double3 localPos = getLocalPos(dualNode);
-						const double3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
+						myFloat3 localPos = getLocalPos(dualNode);
+						const myFloat3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
 													p0.y + block_scale * (((j - 1) / SIZE) * BLOCK_WIDTH_Y + localPos.y),
 													p0.z + block_scale * (((k - 1) / SIZE) * BLOCK_WIDTH_Z + localPos.z) };
 
-						//double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
+						//myFloat3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
 						//minB = min(minB, sqrt(B.x * B.x + B.y * B.y + B.z * B.z));
 					}
 				}
@@ -293,11 +295,11 @@ void drawIandR(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, s
 			}
 			else
 			{
-				const double2 s2 = INTENSITY * norm_s2;
-				const double2 s1 = INTENSITY * norm_s1;
-				const double2 s0 = INTENSITY * norm_s0;
-				const double2 s_1 = INTENSITY * norm_s_1;
-				const double2 s_2 = INTENSITY * norm_s_2;
+				const myFloat2 s2 = INTENSITY * norm_s2;
+				const myFloat2 s1 = INTENSITY * norm_s1;
+				const myFloat2 s0 = INTENSITY * norm_s0;
+				const myFloat2 s_1 = INTENSITY * norm_s_1;
+				const myFloat2 s_2 = INTENSITY * norm_s_2;
 
 				pic1.setColor(i, height + j, Vector4(s2.x, s2.y, 0.0, 1.0));
 				pic1.setColor(width + i, height + j, Vector4(s1.x, s1.y, 0.0, 1.0));
@@ -342,44 +344,44 @@ void drawIandR(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, s
 	//pic1.save("mag_pos.bmp", false);
 }
 
-void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, double t, MagFields /*Bs*/, const double3 /*p0*/, double /*block_scale*/)
+void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize, size_t dysize, size_t dzsize, myFloat t, MagFields /*Bs*/, const myFloat3 /*p0*/, myFloat /*block_scale*/)
 {
 	const int SIZE = 2;
-	double INTENSITY = 1;
-	const double MAG_ZERO = 0.195;
+	myFloat INTENSITY = 1;
+	const myFloat MAG_ZERO = 0.195;
 	const int width = dxsize * SIZE, height = dysize * SIZE, depth = dzsize * SIZE;
 	Picture pic1(width * 5, height * 3);
 
-	double maxVal = 0;
+	myFloat maxVal = 0;
 	// XZ-plane
 	for (uint k = 0; k < depth; ++k)
 	{
 		for (uint i = 0; i < width; i++)
 		{
-			double norm_s2 = 0;
-			double norm_s1 = 0;
-			double norm_s0 = 0;
-			double norm_s_1 = 0;
-			double norm_s_2 = 0;
-			double minB = 99999999999999.9;
+			myFloat norm_s2 = 0;
+			myFloat norm_s1 = 0;
+			myFloat norm_s0 = 0;
+			myFloat norm_s_1 = 0;
+			myFloat norm_s_2 = 0;
+			myFloat minB = 99999999999999.9;
 			for (uint j = 0; j < height; j++)
 			{
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = h_evenPsi[idx].values[dualNode].s2;
-					double2 s1 = h_evenPsi[idx].values[dualNode].s1;
-					double2 s0 = h_evenPsi[idx].values[dualNode].s0;
-					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
-					double2 s_2 = h_evenPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = h_evenPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = h_evenPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = h_evenPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = h_evenPsi[idx].values[dualNode].s_2;
 
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2 = 0.25 * s2 + 0.5 * s1 + c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1 = -0.5 * s2 - 0.5 * s1 + 0.5 * s_1 + 0.5 * s_2;
-					double2 x_s0 = c * s2 - 0.5 * s0 + c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1 - 0.5 * s_1 + 0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 + c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2 = 0.25 * s2 + 0.5 * s1 + c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1 = -0.5 * s2 - 0.5 * s1 + 0.5 * s_1 + 0.5 * s_2;
+					myFloat2 x_s0 = c * s2 - 0.5 * s0 + c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1 - 0.5 * s_1 + 0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 + c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 					s1 = x_s1;
@@ -387,13 +389,13 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2 = 0.25 * s2 - im * 0.5 * s1 - c * s0 + im * 0.5 * s_1 + 0.25 * s_2;
-					double2 y_s1 = -im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0 = -c * s2 - 0.5 * s0 - c * s_2;
-					double2 y_s_1 = im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 = 0.25 * s2 + im * 0.5 * s1 - c * s0 - im * 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2 = 0.25 * s2 - im * 0.5 * s1 - c * s0 + im * 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 y_s1 = -im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0 = -c * s2 - 0.5 * s0 - c * s_2;
+					myFloat2 y_s_1 = im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 = 0.25 * s2 + im * 0.5 * s1 - c * s0 - im * 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = y_s2;
 					s1 = y_s1;
@@ -419,30 +421,30 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 	{
 		for (uint i = 0; i < width; i++)
 		{
-			double norm_s2 = 0;
-			double norm_s1 = 0;
-			double norm_s0 = 0;
-			double norm_s_1 = 0;
-			double norm_s_2 = 0;
-			double minB = 99999999999999.9;
+			myFloat norm_s2 = 0;
+			myFloat norm_s1 = 0;
+			myFloat norm_s0 = 0;
+			myFloat norm_s_1 = 0;
+			myFloat norm_s_2 = 0;
+			myFloat minB = 99999999999999.9;
 			for (uint j = 0; j < height; j++)
 			{
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2  = h_evenPsi[idx].values[dualNode].s2;
-					double2 s1  = h_evenPsi[idx].values[dualNode].s1;
-					double2 s0  = h_evenPsi[idx].values[dualNode].s0;
-					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
-					double2 s_2 = h_evenPsi[idx].values[dualNode].s_2;
+					myFloat2 s2  = h_evenPsi[idx].values[dualNode].s2;
+					myFloat2 s1  = h_evenPsi[idx].values[dualNode].s1;
+					myFloat2 s0  = h_evenPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = h_evenPsi[idx].values[dualNode].s_2;
 
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 =  x_s2;
 					s1 =  x_s1;
@@ -450,13 +452,13 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
-					double2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
-					double2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
+					myFloat2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
 
 					s2 =  y_s2;
 					s1 =  y_s1;
@@ -473,12 +475,12 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 
 					//if ((j / SIZE) == dysize / 2)
 					{
-						//double3 localPos = getLocalPos(dualNode);
-						//const double3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
+						//myFloat3 localPos = getLocalPos(dualNode);
+						//const myFloat3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
 						//							p0.y + block_scale * (((j - 1) / SIZE) * BLOCK_WIDTH_Y + localPos.y),
 						//							p0.z + block_scale * (((k - 1) / SIZE) * BLOCK_WIDTH_Z + localPos.z) };
 
-						//double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
+						//myFloat3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
 						//minB = min(minB, sqrt(B.x * B.x + B.y * B.y + B.z * B.z));
 					}
 				}	
@@ -492,11 +494,11 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 			}
 			else
 			{
-				const double s2 = INTENSITY * norm_s2;
-				const double s1 = INTENSITY * norm_s1;
-				const double s0 = INTENSITY * norm_s0;
-				const double s_1 = INTENSITY * norm_s_1;
-				const double s_2 = INTENSITY * norm_s_2;
+				const myFloat s2 = INTENSITY * norm_s2;
+				const myFloat s1 = INTENSITY * norm_s1;
+				const myFloat s0 = INTENSITY * norm_s0;
+				const myFloat s_1 = INTENSITY * norm_s_1;
+				const myFloat s_2 = INTENSITY * norm_s_2;
 				pic1.setColor(i,             k, Vector4(s2, s2, s2, 1.0));
 				pic1.setColor(width + i,     k, Vector4(s1, s1, s1, 1.0));
 				pic1.setColor(2 * width + i, k, Vector4(s0, s0, s0, 1.0));
@@ -512,30 +514,30 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 	{
 		for (uint j = 0; j < height; j++)
 		{
-			double norm_s2 = 0;
-			double norm_s1 = 0;
-			double norm_s0 = 0;
-			double norm_s_1 = 0;
-			double norm_s_2 = 0;
-			double minB = 99999999999999.9;
+			myFloat norm_s2 = 0;
+			myFloat norm_s1 = 0;
+			myFloat norm_s0 = 0;
+			myFloat norm_s_1 = 0;
+			myFloat norm_s_2 = 0;
+			myFloat minB = 99999999999999.9;
 			for (uint i = 0; i < width; i++)
 			{
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = h_evenPsi[idx].values[dualNode].s2;
-					double2 s1 = h_evenPsi[idx].values[dualNode].s1;
-					double2 s0 = h_evenPsi[idx].values[dualNode].s0;
-					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
-					double2 s_2 = h_evenPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = h_evenPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = h_evenPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = h_evenPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = h_evenPsi[idx].values[dualNode].s_2;
 
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2 = 0.25 * s2 + 0.5 * s1 + c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1 = -0.5 * s2 - 0.5 * s1 + 0.5 * s_1 + 0.5 * s_2;
-					double2 x_s0 = c * s2 - 0.5 * s0 + c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1 - 0.5 * s_1 + 0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 + c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2 = 0.25 * s2 + 0.5 * s1 + c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1 = -0.5 * s2 - 0.5 * s1 + 0.5 * s_1 + 0.5 * s_2;
+					myFloat2 x_s0 = c * s2 - 0.5 * s0 + c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1 - 0.5 * s_1 + 0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 + c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 					s1 = x_s1;
@@ -543,13 +545,13 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2 = 0.25 * s2 - im * 0.5 * s1 - c * s0 + im * 0.5 * s_1 + 0.25 * s_2;
-					double2 y_s1 = -im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0 = -c * s2 - 0.5 * s0 - c * s_2;
-					double2 y_s_1 = im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 = 0.25 * s2 + im * 0.5 * s1 - c * s0 - im * 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2 = 0.25 * s2 - im * 0.5 * s1 - c * s0 + im * 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 y_s1 = -im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0 = -c * s2 - 0.5 * s0 - c * s_2;
+					myFloat2 y_s_1 = im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 = 0.25 * s2 + im * 0.5 * s1 - c * s0 - im * 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = y_s2;
 					s1 = y_s1;
@@ -575,30 +577,30 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 	{
 		for (uint j = 0; j < height; j++)
 		{
-			double norm_s2 = 0;
-			double norm_s1 = 0;
-			double norm_s0 = 0;
-			double norm_s_1 = 0;
-			double norm_s_2 = 0;
-			double minB = 99999999999999.9;
+			myFloat norm_s2 = 0;
+			myFloat norm_s1 = 0;
+			myFloat norm_s0 = 0;
+			myFloat norm_s_1 = 0;
+			myFloat norm_s_2 = 0;
+			myFloat minB = 99999999999999.9;
 			for (uint i = 0; i < width; i++)
 			{
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = h_evenPsi[idx].values[dualNode].s2;
-					double2 s1 = h_evenPsi[idx].values[dualNode].s1;
-					double2 s0 = h_evenPsi[idx].values[dualNode].s0;
-					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
-					double2 s_2 = h_evenPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = h_evenPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = h_evenPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = h_evenPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = h_evenPsi[idx].values[dualNode].s_2;
 
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 					s1 = x_s1;
@@ -606,13 +608,13 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
-					double2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
-					double2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
+					myFloat2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
 
 					s2 = y_s2;
 					s1 = y_s1;
@@ -629,12 +631,12 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 
 					//if ((j / SIZE) == dysize / 2)
 					{
-						//double3 localPos = getLocalPos(dualNode);
-						//const double3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
+						//myFloat3 localPos = getLocalPos(dualNode);
+						//const myFloat3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
 						//							p0.y + block_scale * (((j - 1) / SIZE) * BLOCK_WIDTH_Y + localPos.y),
 						//							p0.z + block_scale * (((k - 1) / SIZE) * BLOCK_WIDTH_Z + localPos.z) };
 
-						//double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
+						//myFloat3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
 						//minB = min(minB, sqrt(B.x * B.x + B.y * B.y + B.z * B.z));
 					}
 				}
@@ -648,11 +650,11 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 			}
 			else
 			{
-				const double s2 = INTENSITY * norm_s2;
-				const double s1 = INTENSITY * norm_s1;
-				const double s0 = INTENSITY * norm_s0;
-				const double s_1 = INTENSITY * norm_s_1;
-				const double s_2 = INTENSITY * norm_s_2;
+				const myFloat s2 = INTENSITY * norm_s2;
+				const myFloat s1 = INTENSITY * norm_s1;
+				const myFloat s0 = INTENSITY * norm_s0;
+				const myFloat s_1 = INTENSITY * norm_s_1;
+				const myFloat s_2 = INTENSITY * norm_s_2;
 				pic1.setColor(j,             height + k, Vector4(s2, s2, s2, 1.0));
 				pic1.setColor(width + j,     height + k, Vector4(s1, s1, s1, 1.0));
 				pic1.setColor(2 * width + j, height + k, Vector4(s0, s0, s0, 1.0));
@@ -668,30 +670,30 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 	{
 		for (uint i = 0; i < width; i++)
 		{
-			double norm_s2 = 0;
-			double norm_s1 = 0;
-			double norm_s0 = 0;
-			double norm_s_1 = 0;
-			double norm_s_2 = 0;
-			double minB = 99999999999999.9;
+			myFloat norm_s2 = 0;
+			myFloat norm_s1 = 0;
+			myFloat norm_s0 = 0;
+			myFloat norm_s_1 = 0;
+			myFloat norm_s_2 = 0;
+			myFloat minB = 99999999999999.9;
 			for (uint k = 0; k < depth; ++k)
 			{
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = h_evenPsi[idx].values[dualNode].s2;
-					double2 s1 = h_evenPsi[idx].values[dualNode].s1;
-					double2 s0 = h_evenPsi[idx].values[dualNode].s0;
-					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
-					double2 s_2 = h_evenPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = h_evenPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = h_evenPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = h_evenPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = h_evenPsi[idx].values[dualNode].s_2;
 
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 					s1 = x_s1;
@@ -699,13 +701,13 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
-					double2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
-					double2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
+					myFloat2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
 
 					s2 = y_s2;
 					s1 = y_s1;
@@ -731,30 +733,30 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 	{
 		for (uint i = 0; i < width; i++)
 		{
-			double norm_s2 = 0;
-			double norm_s1 = 0;
-			double norm_s0 = 0;
-			double norm_s_1 = 0;
-			double norm_s_2 = 0;
-			double minB = 99999999999999.9;
+			myFloat norm_s2 = 0;
+			myFloat norm_s1 = 0;
+			myFloat norm_s0 = 0;
+			myFloat norm_s_1 = 0;
+			myFloat norm_s_2 = 0;
+			myFloat minB = 99999999999999.9;
 			for (uint k = 0; k < depth; ++k)
 			{
 				const uint idx = (k / SIZE) * dxsize * dysize + (j / SIZE) * dxsize + i / SIZE;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = h_evenPsi[idx].values[dualNode].s2;
-					double2 s1 = h_evenPsi[idx].values[dualNode].s1;
-					double2 s0 = h_evenPsi[idx].values[dualNode].s0;
-					double2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
-					double2 s_2 = h_evenPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = h_evenPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = h_evenPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = h_evenPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = h_evenPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = h_evenPsi[idx].values[dualNode].s_2;
 
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 					s1 = x_s1;
@@ -762,13 +764,13 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
-					double2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
-					double2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
+					myFloat2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
 
 					s2 = y_s2;
 					s1 = y_s1;
@@ -785,12 +787,12 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 
 					//if ((k / SIZE) == dzsize / 2)
 					{
-						//double3 localPos = getLocalPos(dualNode);
-						//const double3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
+						//myFloat3 localPos = getLocalPos(dualNode);
+						//const myFloat3 globalPos = { p0.x + block_scale * (((i - 1) / SIZE) * BLOCK_WIDTH_X + localPos.x),
 						//							p0.y + block_scale * (((j - 1) / SIZE) * BLOCK_WIDTH_Y + localPos.y),
 						//							p0.z + block_scale * (((k - 1) / SIZE) * BLOCK_WIDTH_Z + localPos.z) };
 
-						//double3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
+						//myFloat3 B = magneticField(globalPos, Bs.Bq, Bs.Bz);
 						//minB = min(minB, sqrt(B.x * B.x + B.y * B.y + B.z * B.z));
 					}
 				}
@@ -803,11 +805,11 @@ void drawDensity(const std::string& folder, BlockPsis* h_evenPsi, size_t dxsize,
 			}
 			else
 			{
-				const double s2 = INTENSITY * norm_s2;
-				const double s1 = INTENSITY * norm_s1;
-				const double s0 = INTENSITY * norm_s0;
-				const double s_1 = INTENSITY * norm_s_1;
-				const double s_2 = INTENSITY * norm_s_2;
+				const myFloat s2 = INTENSITY * norm_s2;
+				const myFloat s1 = INTENSITY * norm_s1;
+				const myFloat s0 = INTENSITY * norm_s0;
+				const myFloat s_1 = INTENSITY * norm_s_1;
+				const myFloat s_2 = INTENSITY * norm_s_2;
 
 				pic1.setColor(i,             2 * height + j, Vector4(s2, s2, s2, 1.0));
 				pic1.setColor(width + i,     2 * height + j, Vector4(s1, s1, s1, 1.0));
@@ -861,10 +863,10 @@ void swapEnd(T& var)
 		std::swap(varArray[sizeof(var) - 1 - i], varArray[i]);
 }
 
-constexpr double DENSITY_THRESHOLD = 0.0001;
-constexpr double DISTANCE_THRESHOLD = 4;
+constexpr myFloat DENSITY_THRESHOLD = 0.0001;
+constexpr myFloat DISTANCE_THRESHOLD = 4;
 
-void saveVolume(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, double block_scale, double3 p0, double t)
+void saveVolume(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, myFloat block_scale, myFloat3 p0, myFloat t)
 {
 	std::ofstream file;
 	file.open(folder + "/" + std::to_string(t) + ".vtk", std::ios::out | std::ios::binary);
@@ -876,7 +878,7 @@ void saveVolume(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 
 	uint64_t pointCount = dxsize * dysize * dzsize * bsize;
 
-	file << "DATASET POLYDATA" << std::endl << "POINTS " << pointCount << " float" << std::endl;
+	file << "DATASET POLYDATA" << std::endl << "POINTS " << pointCount << " myFloat" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
 	{
@@ -886,26 +888,26 @@ void saveVolume(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 			{
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double3 localPos = getLocalPos(dualNode);
-					double3 doubleGlobalPos = { p0.x + block_scale * (x * BLOCK_WIDTH_X + localPos.x),
+					myFloat3 localPos = getLocalPos(dualNode);
+					myFloat3 myFloatGlobalPos = { p0.x + block_scale * (x * BLOCK_WIDTH_X + localPos.x),
 						p0.y + block_scale * (y * BLOCK_WIDTH_Y + localPos.y),
 						p0.z + block_scale * (z * BLOCK_WIDTH_Z + localPos.z) };
-					float3 globalPos = float3{ (float)doubleGlobalPos.x, (float)doubleGlobalPos.y, (float)doubleGlobalPos.z };
+					myFloat3 globalPos = myFloat3{ (myFloat)myFloatGlobalPos.x, (myFloat)myFloatGlobalPos.y, (myFloat)myFloatGlobalPos.z };
 
 					swapEnd(globalPos.x);
 					swapEnd(globalPos.y);
 					swapEnd(globalPos.z);
 					
-					file.write((char*)&globalPos.x, sizeof(float));
-					file.write((char*)&globalPos.y, sizeof(float));
-					file.write((char*)&globalPos.z, sizeof(float));
+					file.write((char*)&globalPos.x, sizeof(myFloat));
+					file.write((char*)&globalPos.y, sizeof(myFloat));
+					file.write((char*)&globalPos.z, sizeof(myFloat));
 				}
 			}
 		}
 	}
 
 	file << std::endl << "POINT_DATA " << pointCount << std::endl;
-	file << "SCALARS m=2 float 1" << std::endl;
+	file << "SCALARS m=2 myFloat 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
@@ -917,35 +919,35 @@ void saveVolume(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 =  pPsi[idx].values[dualNode].s2;
-					double2 s1 =  pPsi[idx].values[dualNode].s1;
-					double2 s0 =  pPsi[idx].values[dualNode].s0;
-					double2 s_1 = pPsi[idx].values[dualNode].s_1;
-					double2 s_2 = pPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 =  pPsi[idx].values[dualNode].s2;
+					myFloat2 s1 =  pPsi[idx].values[dualNode].s1;
+					myFloat2 s0 =  pPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = pPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = pPsi[idx].values[dualNode].s_2;
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
 
 					s2 = y_s2;
 #endif
 
-					double dens_m2 = s2.x * s2.x + s2.y * s2.y;
+					myFloat dens_m2 = s2.x * s2.x + s2.y * s2.y;
 	
-					float density = (float)(dens_m2);
+					myFloat density = (myFloat)(dens_m2);
 					swapEnd(density);
-					file.write((char*)&density, sizeof(float));
+					file.write((char*)&density, sizeof(myFloat));
 				}
 			}
 		}
 	}
 	
-	file << std::endl << "SCALARS m=1 float 1" << std::endl;
+	file << std::endl << "SCALARS m=1 myFloat 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
 	
 	for (uint z = 0; z < dzsize; ++z)
@@ -957,38 +959,38 @@ void saveVolume(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = pPsi[idx].values[dualNode].s2;
-					double2 s1 = pPsi[idx].values[dualNode].s1;
-					double2 s0 = pPsi[idx].values[dualNode].s0;
-					double2 s_1 = pPsi[idx].values[dualNode].s_1;
-					double2 s_2 = pPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = pPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = pPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = pPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = pPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = pPsi[idx].values[dualNode].s_2;
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
+					myFloat c = sqrt(6) * 0.25;
 
-					double2 x_s1 = -0.5 * s2 - 0.5 * s1 + 0.5 * s_1 + 0.5 * s_2;
+					myFloat2 x_s1 = -0.5 * s2 - 0.5 * s1 + 0.5 * s_1 + 0.5 * s_2;
 
 
 					s1 = x_s1;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
 
-					double2 y_s1 = -im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s1 = -im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 + im * 0.5 * s_2;
 
 					s1 = y_s1;
 #endif
 
-					double dens_m1 = s1.x * s1.x + s1.y * s1.y;
+					myFloat dens_m1 = s1.x * s1.x + s1.y * s1.y;
 	
-					float density = (float)(dens_m1);
+					myFloat density = (myFloat)(dens_m1);
 					swapEnd(density);
-					file.write((char*)&density, sizeof(float));
+					file.write((char*)&density, sizeof(myFloat));
 				}
 			}
 		}
 	}
 
-	file << std::endl << "SCALARS m=0 float 1" << std::endl;
+	file << std::endl << "SCALARS m=0 myFloat 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
@@ -1000,37 +1002,37 @@ void saveVolume(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = pPsi[idx].values[dualNode].s2;
-					double2 s1 = pPsi[idx].values[dualNode].s1;
-					double2 s0 = pPsi[idx].values[dualNode].s0;
-					double2 s_1 = pPsi[idx].values[dualNode].s_1;
-					double2 s_2 = pPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = pPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = pPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = pPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = pPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = pPsi[idx].values[dualNode].s_2;
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
+					myFloat c = sqrt(6) * 0.25;
 
-					double2 x_s0 = c * s2 - 0.5 * s0 + c * s_2;
+					myFloat2 x_s0 = c * s2 - 0.5 * s0 + c * s_2;
 
 					s0 = x_s0;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
 
-					double2 y_s0 = -c * s2 - 0.5 * s0 - c * s_2;
+					myFloat2 y_s0 = -c * s2 - 0.5 * s0 - c * s_2;
 
 					s0 = y_s0;
 #endif
 
-					double dens_m0 = s0.x * s0.x + s0.y * s0.y;
+					myFloat dens_m0 = s0.x * s0.x + s0.y * s0.y;
 
-					float density = (float)(dens_m0);
+					myFloat density = (myFloat)(dens_m0);
 					swapEnd(density);
-					file.write((char*)&density, sizeof(float));
+					file.write((char*)&density, sizeof(myFloat));
 				}
 			}
 		}
 	}
 
-	file << std::endl << "SCALARS m=-1 float 1" << std::endl;
+	file << std::endl << "SCALARS m=-1 myFloat 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
@@ -1042,37 +1044,37 @@ void saveVolume(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = pPsi[idx].values[dualNode].s2;
-					double2 s1 = pPsi[idx].values[dualNode].s1;
-					double2 s0 = pPsi[idx].values[dualNode].s0;
-					double2 s_1 = pPsi[idx].values[dualNode].s_1;
-					double2 s_2 = pPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = pPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = pPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = pPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = pPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = pPsi[idx].values[dualNode].s_2;
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
+					myFloat c = sqrt(6) * 0.25;
 
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1 - 0.5 * s_1 + 0.5 * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1 - 0.5 * s_1 + 0.5 * s_2;
 
 					s_1 = x_s_1;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
 
-					double2 y_s_1 = im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_1 = im * 0.5 * s2 - 0.5 * s1 - 0.5 * s_1 - im * 0.5 * s_2;
 
 					s_1 = y_s_1;
 #endif
 
-					double dens_m_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					myFloat dens_m_1 = s_1.x * s_1.x + s_1.y * s_1.y;
 
-					float density = (float)(dens_m_1);
+					myFloat density = (myFloat)(dens_m_1);
 					swapEnd(density);
-					file.write((char*)&density, sizeof(float));
+					file.write((char*)&density, sizeof(myFloat));
 				}
 			}
 		}
 	}
 
-	file << std::endl << "SCALARS m=-2 float 1" << std::endl;
+	file << std::endl << "SCALARS m=-2 myFloat 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
@@ -1084,31 +1086,31 @@ void saveVolume(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = pPsi[idx].values[dualNode].s2;
-					double2 s1 = pPsi[idx].values[dualNode].s1;
-					double2 s0 = pPsi[idx].values[dualNode].s0;
-					double2 s_1 = pPsi[idx].values[dualNode].s_1;
-					double2 s_2 = pPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = pPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = pPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = pPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = pPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = pPsi[idx].values[dualNode].s_2;
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
+					myFloat c = sqrt(6) * 0.25;
 
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 + c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 + c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
 
-					double2 y_s_2 = 0.25 * s2 + im * 0.5 * s1 - c * s0 - im * 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 y_s_2 = 0.25 * s2 + im * 0.5 * s1 - c * s0 - im * 0.5 * s_1 + 0.25 * s_2;
 
 					s_2 = y_s_2;
 #endif
 
-					double dens_m_2 = s_2.x * s_2.x + s_2.y * s_2.y;
+					myFloat dens_m_2 = s_2.x * s_2.x + s_2.y * s_2.y;
 
-					float density = (float)(dens_m_2);
+					myFloat density = (myFloat)(dens_m_2);
 					swapEnd(density);
-					file.write((char*)&density, sizeof(float));
+					file.write((char*)&density, sizeof(myFloat));
 				}
 			}
 		}
@@ -1126,7 +1128,7 @@ void saveVolume(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 	file.close();
 }
 
-void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, double block_scale, double3 p0, double t)
+void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, myFloat block_scale, myFloat3 p0, myFloat t)
 {
 	std::ofstream file;
 	file.open(folder + "/" + std::to_string(t) + ".vtk", std::ios::out | std::ios::binary);
@@ -1138,7 +1140,7 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 
 	uint64_t pointCount = dxsize * dysize * dzsize * bsize;
 
-	file << "DATASET POLYDATA" << std::endl << "POINTS " << pointCount << " float" << std::endl;
+	file << "DATASET POLYDATA" << std::endl << "POINTS " << pointCount << " myFloat" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
 	{
@@ -1148,26 +1150,26 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 			{
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double3 localPos = getLocalPos(dualNode);
-					double3 doubleGlobalPos = { p0.x + block_scale * (x * BLOCK_WIDTH_X + localPos.x),
+					myFloat3 localPos = getLocalPos(dualNode);
+					myFloat3 myFloatGlobalPos = { p0.x + block_scale * (x * BLOCK_WIDTH_X + localPos.x),
 						p0.y + block_scale * (y * BLOCK_WIDTH_Y + localPos.y),
 						p0.z + block_scale * (z * BLOCK_WIDTH_Z + localPos.z) };
-					float3 globalPos = float3{ (float)doubleGlobalPos.x, (float)doubleGlobalPos.y, (float)doubleGlobalPos.z };
+					myFloat3 globalPos = myFloat3{ (myFloat)myFloatGlobalPos.x, (myFloat)myFloatGlobalPos.y, (myFloat)myFloatGlobalPos.z };
 
 					swapEnd(globalPos.x);
 					swapEnd(globalPos.y);
 					swapEnd(globalPos.z);
 
-					file.write((char*)&globalPos.x, sizeof(float));
-					file.write((char*)&globalPos.y, sizeof(float));
-					file.write((char*)&globalPos.z, sizeof(float));
+					file.write((char*)&globalPos.x, sizeof(myFloat));
+					file.write((char*)&globalPos.y, sizeof(myFloat));
+					file.write((char*)&globalPos.z, sizeof(myFloat));
 				}
 			}
 		}
 	}
 
 	file << std::endl << "POINT_DATA " << pointCount << std::endl;
-	file << "SCALARS r_m=2 float 1" << std::endl;
+	file << "SCALARS r_m=2 myFloat 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
@@ -1179,19 +1181,19 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = pPsi[idx].values[dualNode].s2;
-					double2 s1 = pPsi[idx].values[dualNode].s1;
-					double2 s0 = pPsi[idx].values[dualNode].s0;
-					double2 s_1 = pPsi[idx].values[dualNode].s_1;
-					double2 s_2 = pPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = pPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = pPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = pPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = pPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = pPsi[idx].values[dualNode].s_2;
 
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 					s1 = x_s1;
@@ -1199,13 +1201,13 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
-					double2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
-					double2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
+					myFloat2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
 
 					s2 = y_s2;
 					s1 = y_s1;
@@ -1214,23 +1216,23 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_2 = y_s_2;
 #endif
 
-					double dens_s2 = s2.x * s2.x + s2.y * s2.y;
-					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
-					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
-					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
-					double dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
-					double dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
+					myFloat dens_s2 = s2.x * s2.x + s2.y * s2.y;
+					myFloat dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					myFloat dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					myFloat dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					myFloat dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
+					myFloat dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
 					
-					float s2_r = 0;
+					myFloat s2_r = 0;
 					if (DENSITY_THRESHOLD < dens)
-						s2_r = (float)(s2.x / sqrt(dens));
+						s2_r = (myFloat)(s2.x / sqrt(dens));
 					swapEnd(s2_r);
-					file.write((char*)&s2_r, sizeof(float));
+					file.write((char*)&s2_r, sizeof(myFloat));
 				}
 			}
 		}
 	}
-	file << std::endl << "SCALARS i_m=2 float 1" << std::endl;
+	file << std::endl << "SCALARS i_m=2 myFloat 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
@@ -1242,18 +1244,18 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = pPsi[idx].values[dualNode].s2;
-					double2 s1 = pPsi[idx].values[dualNode].s1;
-					double2 s0 = pPsi[idx].values[dualNode].s0;
-					double2 s_1 = pPsi[idx].values[dualNode].s_1;
-					double2 s_2 = pPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = pPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = pPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = pPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = pPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = pPsi[idx].values[dualNode].s_2;
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 					s1 = x_s1;
@@ -1261,13 +1263,13 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
-					double2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
-					double2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
+					myFloat2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
 
 					s2 = y_s2;
 					s1 = y_s1;
@@ -1276,24 +1278,24 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_2 = y_s_2;
 #endif
 
-					double dens_s2 = s2.x * s2.x + s2.y * s2.y;
-					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
-					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
-					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
-					double dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
-					double dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
+					myFloat dens_s2 = s2.x * s2.x + s2.y * s2.y;
+					myFloat dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					myFloat dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					myFloat dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					myFloat dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
+					myFloat dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
 
-					float s2_i = 0;
+					myFloat s2_i = 0;
 					if (DENSITY_THRESHOLD < dens)
-						s2_i = (float)(s2.y / sqrt(dens));
+						s2_i = (myFloat)(s2.y / sqrt(dens));
 					swapEnd(s2_i);
-					file.write((char*)&s2_i, sizeof(float));
+					file.write((char*)&s2_i, sizeof(myFloat));
 				}
 			}
 		}
 	}
 
-	file << std::endl << "SCALARS r_m=1 float 1" << std::endl;
+	file << std::endl << "SCALARS r_m=1 myFloat 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
@@ -1305,18 +1307,18 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = pPsi[idx].values[dualNode].s2;
-					double2 s1 = pPsi[idx].values[dualNode].s1;
-					double2 s0 = pPsi[idx].values[dualNode].s0;
-					double2 s_1 = pPsi[idx].values[dualNode].s_1;
-					double2 s_2 = pPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = pPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = pPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = pPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = pPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = pPsi[idx].values[dualNode].s_2;
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 					s1 = x_s1;
@@ -1324,13 +1326,13 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
-					double2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
-					double2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
+					myFloat2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
 
 					s2 = y_s2;
 					s1 = y_s1;
@@ -1339,23 +1341,23 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_2 = y_s_2;
 #endif
 
-					double dens_s2 = s2.x * s2.x + s2.y * s2.y;
-					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
-					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
-					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
-					double dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
-					double dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
+					myFloat dens_s2 = s2.x * s2.x + s2.y * s2.y;
+					myFloat dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					myFloat dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					myFloat dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					myFloat dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
+					myFloat dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
 
-					float s1_r = 0;
+					myFloat s1_r = 0;
 					if (DENSITY_THRESHOLD < dens)
-						s1_r = (float)(s1.x / sqrt(dens));
+						s1_r = (myFloat)(s1.x / sqrt(dens));
 					swapEnd(s1_r);
-					file.write((char*)&s1_r, sizeof(float));
+					file.write((char*)&s1_r, sizeof(myFloat));
 				}
 			}
 		}
 	}
-	file << std::endl << "SCALARS i_m=1 float 1" << std::endl;
+	file << std::endl << "SCALARS i_m=1 myFloat 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
@@ -1367,18 +1369,18 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = pPsi[idx].values[dualNode].s2;
-					double2 s1 = pPsi[idx].values[dualNode].s1;
-					double2 s0 = pPsi[idx].values[dualNode].s0;
-					double2 s_1 = pPsi[idx].values[dualNode].s_1;
-					double2 s_2 = pPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = pPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = pPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = pPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = pPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = pPsi[idx].values[dualNode].s_2;
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 					s1 = x_s1;
@@ -1386,13 +1388,13 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
-					double2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
-					double2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
+					myFloat2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
 
 					s2 = y_s2;
 					s1 = y_s1;
@@ -1401,24 +1403,24 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_2 = y_s_2;
 #endif
 
-					double dens_s2 = s2.x * s2.x + s2.y * s2.y;
-					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
-					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
-					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
-					double dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
-					double dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
+					myFloat dens_s2 = s2.x * s2.x + s2.y * s2.y;
+					myFloat dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					myFloat dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					myFloat dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					myFloat dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
+					myFloat dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
 
-					float s1_i = 0;
+					myFloat s1_i = 0;
 					if (DENSITY_THRESHOLD < dens)
-						s1_i = (float)(s1.y / sqrt(dens));
+						s1_i = (myFloat)(s1.y / sqrt(dens));
 					swapEnd(s1_i);
-					file.write((char*)&s1_i, sizeof(float));
+					file.write((char*)&s1_i, sizeof(myFloat));
 				}
 			}
 		}
 	}
 
-	file << std::endl << "SCALARS r_m=0 float 1" << std::endl;
+	file << std::endl << "SCALARS r_m=0 myFloat 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
@@ -1430,18 +1432,18 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = pPsi[idx].values[dualNode].s2;
-					double2 s1 = pPsi[idx].values[dualNode].s1;
-					double2 s0 = pPsi[idx].values[dualNode].s0;
-					double2 s_1 = pPsi[idx].values[dualNode].s_1;
-					double2 s_2 = pPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = pPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = pPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = pPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = pPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = pPsi[idx].values[dualNode].s_2;
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 					s1 = x_s1;
@@ -1449,13 +1451,13 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
-					double2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
-					double2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
+					myFloat2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
 
 					s2 = y_s2;
 					s1 = y_s1;
@@ -1464,23 +1466,23 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_2 = y_s_2;
 #endif
 
-					double dens_s2 = s2.x * s2.x + s2.y * s2.y;
-					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
-					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
-					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
-					double dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
-					double dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
+					myFloat dens_s2 = s2.x * s2.x + s2.y * s2.y;
+					myFloat dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					myFloat dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					myFloat dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					myFloat dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
+					myFloat dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
 
-					float s0_r = 0;
+					myFloat s0_r = 0;
 					if (DENSITY_THRESHOLD < dens)
-						s0_r = (float)(s0.x / sqrt(dens));
+						s0_r = (myFloat)(s0.x / sqrt(dens));
 					swapEnd(s0_r);
-					file.write((char*)&s0_r, sizeof(float));
+					file.write((char*)&s0_r, sizeof(myFloat));
 				}
 			}
 		}
 	}
-	file << std::endl << "SCALARS i_m=0 float 1" << std::endl;
+	file << std::endl << "SCALARS i_m=0 myFloat 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
@@ -1492,18 +1494,18 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = pPsi[idx].values[dualNode].s2;
-					double2 s1 = pPsi[idx].values[dualNode].s1;
-					double2 s0 = pPsi[idx].values[dualNode].s0;
-					double2 s_1 = pPsi[idx].values[dualNode].s_1;
-					double2 s_2 = pPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = pPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = pPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = pPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = pPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = pPsi[idx].values[dualNode].s_2;
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 					s1 = x_s1;
@@ -1511,13 +1513,13 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
-					double2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
-					double2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
+					myFloat2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
 
 					s2 = y_s2;
 					s1 = y_s1;
@@ -1526,24 +1528,24 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_2 = y_s_2;
 #endif
 
-					double dens_s2 = s2.x * s2.x + s2.y * s2.y;
-					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
-					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
-					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
-					double dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
-					double dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
+					myFloat dens_s2 = s2.x * s2.x + s2.y * s2.y;
+					myFloat dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					myFloat dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					myFloat dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					myFloat dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
+					myFloat dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
 
-					float s0_i = 0;
+					myFloat s0_i = 0;
 					if (DENSITY_THRESHOLD < dens)
-						s0_i = (float)(s0.y / sqrt(dens));
+						s0_i = (myFloat)(s0.y / sqrt(dens));
 					swapEnd(s0_i);
-					file.write((char*)&s0_i, sizeof(float));
+					file.write((char*)&s0_i, sizeof(myFloat));
 				}
 			}
 		}
 	}
 
-	file << std::endl << "SCALARS r_m=-1 float 1" << std::endl;
+	file << std::endl << "SCALARS r_m=-1 myFloat 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
@@ -1555,18 +1557,18 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = pPsi[idx].values[dualNode].s2;
-					double2 s1 = pPsi[idx].values[dualNode].s1;
-					double2 s0 = pPsi[idx].values[dualNode].s0;
-					double2 s_1 = pPsi[idx].values[dualNode].s_1;
-					double2 s_2 = pPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = pPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = pPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = pPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = pPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = pPsi[idx].values[dualNode].s_2;
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 					s1 = x_s1;
@@ -1574,13 +1576,13 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
-					double2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
-					double2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
+					myFloat2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
 
 					s2 = y_s2;
 					s1 = y_s1;
@@ -1589,23 +1591,23 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_2 = y_s_2;
 #endif
 
-					double dens_s2 = s2.x * s2.x + s2.y * s2.y;
-					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
-					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
-					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
-					double dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
-					double dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
+					myFloat dens_s2 = s2.x * s2.x + s2.y * s2.y;
+					myFloat dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					myFloat dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					myFloat dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					myFloat dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
+					myFloat dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
 
-					float s_1_r = 0;
+					myFloat s_1_r = 0;
 					if (DENSITY_THRESHOLD < dens)
-						s_1_r = (float)(s_1.x / sqrt(dens));
+						s_1_r = (myFloat)(s_1.x / sqrt(dens));
 					swapEnd(s_1_r);
-					file.write((char*)&s_1_r, sizeof(float));
+					file.write((char*)&s_1_r, sizeof(myFloat));
 				}
 			}
 		}
 	}
-	file << std::endl << "SCALARS i_m=-1 float 1" << std::endl;
+	file << std::endl << "SCALARS i_m=-1 myFloat 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
@@ -1617,18 +1619,18 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = pPsi[idx].values[dualNode].s2;
-					double2 s1 = pPsi[idx].values[dualNode].s1;
-					double2 s0 = pPsi[idx].values[dualNode].s0;
-					double2 s_1 = pPsi[idx].values[dualNode].s_1;
-					double2 s_2 = pPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = pPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = pPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = pPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = pPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = pPsi[idx].values[dualNode].s_2;
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 					s1 = x_s1;
@@ -1636,13 +1638,13 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
-					double2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
-					double2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
+					myFloat2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
 
 					s2 = y_s2;
 					s1 = y_s1;
@@ -1651,24 +1653,24 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_2 = y_s_2;
 #endif
 
-					double dens_s2 = s2.x * s2.x + s2.y * s2.y;
-					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
-					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
-					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
-					double dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
-					double dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
+					myFloat dens_s2 = s2.x * s2.x + s2.y * s2.y;
+					myFloat dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					myFloat dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					myFloat dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					myFloat dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
+					myFloat dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
 
-					float s_1_i = 0;
+					myFloat s_1_i = 0;
 					if (DENSITY_THRESHOLD < dens)
-						s_1_i = (float)(s_1.y / sqrt(dens));
+						s_1_i = (myFloat)(s_1.y / sqrt(dens));
 					swapEnd(s_1_i);
-					file.write((char*)&s_1_i, sizeof(float));
+					file.write((char*)&s_1_i, sizeof(myFloat));
 				}
 			}
 		}
 	}
 
-	file << std::endl << "SCALARS r_m=-2 float 1" << std::endl;
+	file << std::endl << "SCALARS r_m=-2 myFloat 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
@@ -1680,18 +1682,18 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = pPsi[idx].values[dualNode].s2;
-					double2 s1 = pPsi[idx].values[dualNode].s1;
-					double2 s0 = pPsi[idx].values[dualNode].s0;
-					double2 s_1 = pPsi[idx].values[dualNode].s_1;
-					double2 s_2 = pPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = pPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = pPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = pPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = pPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = pPsi[idx].values[dualNode].s_2;
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 					s1 = x_s1;
@@ -1699,13 +1701,13 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
-					double2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
-					double2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
+					myFloat2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
 
 					s2 = y_s2;
 					s1 = y_s1;
@@ -1714,23 +1716,23 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_2 = y_s_2;
 #endif
 
-					double dens_s2 = s2.x * s2.x + s2.y * s2.y;
-					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
-					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
-					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
-					double dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
-					double dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
+					myFloat dens_s2 = s2.x * s2.x + s2.y * s2.y;
+					myFloat dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					myFloat dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					myFloat dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					myFloat dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
+					myFloat dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
 
-					float s_2_r = 0;
+					myFloat s_2_r = 0;
 					if (DENSITY_THRESHOLD < dens)
-						s_2_r = (float)(s_2.x / sqrt(dens));
+						s_2_r = (myFloat)(s_2.x / sqrt(dens));
 					swapEnd(s_2_r);
-					file.write((char*)&s_2_r, sizeof(float));
+					file.write((char*)&s_2_r, sizeof(myFloat));
 				}
 			}
 		}
 	}
-	file << std::endl << "SCALARS i_m=-2 float 1" << std::endl;
+	file << std::endl << "SCALARS i_m=-2 myFloat 1" << std::endl;
 	file << "LOOKUP_TABLE default" << std::endl;
 
 	for (uint z = 0; z < dzsize; ++z)
@@ -1742,18 +1744,18 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double2 s2 = pPsi[idx].values[dualNode].s2;
-					double2 s1 = pPsi[idx].values[dualNode].s1;
-					double2 s0 = pPsi[idx].values[dualNode].s0;
-					double2 s_1 = pPsi[idx].values[dualNode].s_1;
-					double2 s_2 = pPsi[idx].values[dualNode].s_2;
+					myFloat2 s2 = pPsi[idx].values[dualNode].s2;
+					myFloat2 s1 = pPsi[idx].values[dualNode].s1;
+					myFloat2 s0 = pPsi[idx].values[dualNode].s0;
+					myFloat2 s_1 = pPsi[idx].values[dualNode].s_1;
+					myFloat2 s_2 = pPsi[idx].values[dualNode].s_2;
 #if BASIS == X_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
-					double2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
-					double2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
-					double2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 x_s2  = 0.25 * s2 + 0.5 * s1 +   c * s0 + 0.5 * s_1 + 0.25 * s_2;
+					myFloat2 x_s1  = -0.5 * s2 - 0.5 * s1            + 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s0  =    c * s2            - 0.5 * s0             +    c * s_2;
+					myFloat2 x_s_1 = -0.5 * s2 + 0.5 * s1            - 0.5 * s_1 +  0.5 * s_2;
+					myFloat2 x_s_2 = 0.25 * s2 - 0.5 * s1 +   c * s0 - 0.5 * s_1 + 0.25 * s_2;
 
 					s2 = x_s2;
 					s1 = x_s1;
@@ -1761,13 +1763,13 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_1 = x_s_1;
 					s_2 = x_s_2;
 #elif BASIS == Y_QUANTIZED
-					double c = sqrt(6) * 0.25;
-					double2 im = { 0, 1 };
-					double2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
-					double2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
-					double2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
-					double2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
-					double2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat c = sqrt(6) * 0.25;
+					myFloat2 im = { 0, 1 };
+					myFloat2 y_s2  =      0.25 * s2 - im * 0.5 * s1 -   c * s0 + im * 0.5 * s_1 +     0.25 * s_2;
+					myFloat2 y_s1  = -im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 + im * 0.5 * s_2;
+					myFloat2 y_s0  =        -c * s2                 - 0.5 * s0                  -        c * s_2;
+					myFloat2 y_s_1 =  im * 0.5 * s2 -      0.5 * s1            -      0.5 * s_1 - im * 0.5 * s_2;
+					myFloat2 y_s_2 =      0.25 * s2 + im * 0.5 * s1 -   c * s0 - im * 0.5 * s_1 +     0.25 * s_2;
 
 					s2 = y_s2;
 					s1 = y_s1;
@@ -1776,18 +1778,18 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 					s_2 = y_s_2;
 #endif
 
-					double dens_s2 = s2.x * s2.x + s2.y * s2.y;
-					double dens_s1 = s1.x * s1.x + s1.y * s1.y;
-					double dens_s0 = s0.x * s0.x + s0.y * s0.y;
-					double dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
-					double dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
-					double dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
+					myFloat dens_s2 = s2.x * s2.x + s2.y * s2.y;
+					myFloat dens_s1 = s1.x * s1.x + s1.y * s1.y;
+					myFloat dens_s0 = s0.x * s0.x + s0.y * s0.y;
+					myFloat dens_s_1 = s_1.x * s_1.x + s_1.y * s_1.y;
+					myFloat dens_s_2 = s_2.x * s_2.x + s_2.y * s_2.y;
+					myFloat dens = dens_s2 + dens_s1 + dens_s0 + dens_s_1 + dens_s_2;
 
-					float s_2_i = 0;
+					myFloat s_2_i = 0;
 					if (DENSITY_THRESHOLD < dens)
-						s_2_i = (float)(s_2.y / sqrt(dens));
+						s_2_i = (myFloat)(s_2.y / sqrt(dens));
 					swapEnd(s_2_i);
-					file.write((char*)&s_2_i, sizeof(float));
+					file.write((char*)&s_2_i, sizeof(myFloat));
 				}
 			}
 		}
@@ -1805,11 +1807,11 @@ void saveSpinor(const std::string& folder, BlockPsis* pPsi, size_t bsize, size_t
 	file.close();
 }
 
-double3 centerOfMass(BlockPsis* h_evenPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, double block_scale, double3 p0)
+myFloat3 centerOfMass(BlockPsis* h_evenPsi, size_t bsize, size_t dxsize, size_t dysize, size_t dzsize, myFloat block_scale, myFloat3 p0)
 {
-	double3 com{};
+	myFloat3 com{};
 
-	double totDens = 0;
+	myFloat totDens = 0;
 
 	for (uint z = 0; z < dzsize; ++z)
 	{
@@ -1820,15 +1822,15 @@ double3 centerOfMass(BlockPsis* h_evenPsi, size_t bsize, size_t dxsize, size_t d
 				const uint idx = z * dxsize * dysize + y * dxsize + x;
 				for (uint dualNode = 0; dualNode < VALUES_IN_BLOCK; ++dualNode)
 				{
-					double3 localPos = getLocalPos(dualNode);
-					double3 globalPos = { p0.x + block_scale * ((x - 1.0) * BLOCK_WIDTH_X + localPos.x),
+					myFloat3 localPos = getLocalPos(dualNode);
+					myFloat3 globalPos = { p0.x + block_scale * ((x - 1.0) * BLOCK_WIDTH_X + localPos.x),
 										  p0.y + block_scale * ((y - 1.0) * BLOCK_WIDTH_Y + localPos.y),
 										  p0.z + block_scale * ((z - 1.0) * BLOCK_WIDTH_Z + localPos.z) };
 
-					double normSq_s1 = h_evenPsi[idx].values[dualNode].s1.x * h_evenPsi[idx].values[dualNode].s1.x + h_evenPsi[idx].values[dualNode].s1.y * h_evenPsi[idx].values[dualNode].s1.y;
-					double normSq_s0 = h_evenPsi[idx].values[dualNode].s0.x * h_evenPsi[idx].values[dualNode].s0.x + h_evenPsi[idx].values[dualNode].s0.y * h_evenPsi[idx].values[dualNode].s0.y;
-					double normSq_s_1 = h_evenPsi[idx].values[dualNode].s_1.x * h_evenPsi[idx].values[dualNode].s_1.x + h_evenPsi[idx].values[dualNode].s_1.y * h_evenPsi[idx].values[dualNode].s_1.y;
-					double density = normSq_s1 + normSq_s0 + normSq_s_1;
+					myFloat normSq_s1 = h_evenPsi[idx].values[dualNode].s1.x * h_evenPsi[idx].values[dualNode].s1.x + h_evenPsi[idx].values[dualNode].s1.y * h_evenPsi[idx].values[dualNode].s1.y;
+					myFloat normSq_s0 = h_evenPsi[idx].values[dualNode].s0.x * h_evenPsi[idx].values[dualNode].s0.x + h_evenPsi[idx].values[dualNode].s0.y * h_evenPsi[idx].values[dualNode].s0.y;
+					myFloat normSq_s_1 = h_evenPsi[idx].values[dualNode].s_1.x * h_evenPsi[idx].values[dualNode].s_1.x + h_evenPsi[idx].values[dualNode].s_1.y * h_evenPsi[idx].values[dualNode].s_1.y;
+					myFloat density = normSq_s1 + normSq_s0 + normSq_s_1;
 
 					com += density * globalPos;
 					totDens += density;
