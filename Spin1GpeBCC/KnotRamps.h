@@ -13,10 +13,13 @@
 
 #define DISABLE 1
 
+constexpr myFloat CREATION_RAMP_START = 0.0;
+constexpr myFloat EXPANSION_START = CREATION_RAMP_START + 10.5; // When the expansion starts in ms
+
 struct Signal
 {
-	double Bq = 0;
-	double3 Bb = { 0, 0, 0 };
+	myFloat Bq = 0;
+	myFloat3 Bb = { 0, 0, 0 };
 };
 
 enum class RampType
@@ -28,26 +31,26 @@ enum class RampType
 
 // Experimentally realistic ramps
 //// Quadrupole ////
-std::array<double, 2> Bqs = { 4.3, 0.0 };
-std::array<double, 2> BqDurations = { EXPANSION_START, 100 };
-std::array<RampType, 2> BqTypes = { RampType::CONSTANT, RampType::CONSTANT };
-
-//// Bias ////
-std::array<double3, 2> Bbs = { make_double3(0, 0, 0.205), make_double3(0, 0, 0) };
-std::array<double, 2> BbDurations = { CREATION_RAMP_START, 100 };
-std::array<RampType, 2> BbTypes = { RampType::CONSTANT, RampType::CONSTANT };
+//std::array<myFloat, 2> Bqs = { 4.3, 0.0 };
+//std::array<myFloat, 2> BqDurations = { EXPANSION_START, 100 };
+//std::array<RampType, 2> BqTypes = { RampType::CONSTANT, RampType::CONSTANT };
+//
+////// Bias ////
+//std::array<myFloat3, 2> Bbs = { myFloat3{0, 0, 0.205}, myFloat3{0, 0, 0} };
+//std::array<myFloat, 2> BbDurations = { CREATION_RAMP_START, 100 };
+//std::array<RampType, 2> BbTypes = { RampType::CONSTANT, RampType::CONSTANT };
 
 // Start with the magnetic field zero being at the center of the condensate
 //// Quadrupole ////
-//std::array<double, 1> Bqs = { 4.3 };
-//std::array<double, 1> BqDurations = { 100.0 };
-//std::array<RampType, 1> BqTypes = { RampType::CONSTANT };
-//
-////// Bias ////
-//// Implement also the other basises, this is now only for z-quantized
-//std::array<double3, 1> Bbs = { make_double3(0, 0, 0) };
-//std::array<double, 1> BbDurations = { 100 };
-//std::array<RampType, 1> BbTypes = { RampType::CONSTANT };
+std::array<myFloat, 1> Bqs = { 4.3 };
+std::array<myFloat, 1> BqDurations = { 100.0 };
+std::array<RampType, 1> BqTypes = { RampType::CONSTANT };
+
+//// Bias ////
+// Implement also the other basises, this is now only for z-quantized
+std::array<myFloat3, 1> Bbs = { {0, 0, 0} };
+std::array<myFloat, 1> BbDurations = { 100 };
+std::array<RampType, 1> BbTypes = { RampType::CONSTANT };
 
 void printBasis()
 {
@@ -61,27 +64,27 @@ void printBasis()
 #endif
 }
 
-Signal getSignal(double t)
+Signal getSignal(myFloat t)
 {
 #if DISABLE
 	return {};
 #else
 	Signal signal;
 
-	double tOrig = t;
+	myFloat tOrig = t;
 
 	/// Bq
 	uint32_t BqRampIdx = 0;
 	for (; BqRampIdx < Bqs.size(); ++BqRampIdx)
 	{
-		double tInRamp = t - BqDurations[BqRampIdx];
+		myFloat tInRamp = t - BqDurations[BqRampIdx];
 		if (tInRamp < 0)
 		{
 			break;
 		}
 		t = tInRamp;
 	}
-	double prevBq = (BqRampIdx > 0) ? Bqs[BqRampIdx - 1] : 0.0;
+	myFloat prevBq = (BqRampIdx > 0) ? Bqs[BqRampIdx - 1] : 0.0;
 	switch (BqTypes[BqRampIdx])
 	{
 	case RampType::CONSTANT:
@@ -105,14 +108,14 @@ Signal getSignal(double t)
 	uint32_t BbRampIdx = 0;
 	for (; BbRampIdx < Bbs.size(); ++BbRampIdx)
 	{
-		double tInRamp = t - BbDurations[BbRampIdx];
+		myFloat tInRamp = t - BbDurations[BbRampIdx];
 		if (tInRamp < 0)
 		{
 			break;
 		}
 		t = tInRamp;
 	}
-	double3 prevBb = (BbRampIdx > 0) ? Bbs[BbRampIdx - 1] : make_double3(0, 0, 0);
+	myFloat3 prevBb = (BbRampIdx > 0) ? Bbs[BbRampIdx - 1] : make_myFloat3(0, 0, 0);
 	switch (BbTypes[BbRampIdx])
 	{
 	case RampType::CONSTANT:

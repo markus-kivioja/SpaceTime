@@ -4,8 +4,8 @@ from tvtk.api import tvtk
 from scipy.special import sph_harm
 
 filename = 'spin1_0.500201.vtk'
-#pre_image_filename = 'pre_image_0.500201.vtk'
-pre_image_filename = 'hyper_pre_image_0.500201.vtk'
+pre_image_filename = 'C:\\Users\\marku\\SpaceTime\\pre_image_0.500044.vtk'
+#pre_image_filename = 'hyper_pre_image_0.500201.vtk'
 
 figure(1, bgcolor=(1, 1, 1))
 clf()
@@ -96,18 +96,7 @@ def draw_sph_harm(psi, location, spin):
     #    colormap="bwr"
     #)
 
-reader = tvtk.PolyDataReader( file_name=filename )
-reader.read_all_scalars = True
-poly_data = reader.get_output()
-reader.update()
 
-positions = poly_data.points
-m1_r =  poly_data.point_data.get_array(0)
-m1_i =  poly_data.point_data.get_array(1)
-m0_r =  poly_data.point_data.get_array(2)
-m0_i =  poly_data.point_data.get_array(3)
-m_1_r = poly_data.point_data.get_array(4)
-m_1_i = poly_data.point_data.get_array(5)
 
 pre_image_reader = tvtk.PolyDataReader( file_name=pre_image_filename )
 pre_image_reader.read_all_scalars = True
@@ -142,6 +131,19 @@ spin_dirs_y = []
 spin_dirs_z = []
 
 def draw_on_axis():
+    reader = tvtk.PolyDataReader( file_name=filename )
+    reader.read_all_scalars = True
+    poly_data = reader.get_output()
+    reader.update()
+
+    positions = poly_data.points
+    m1_r =  poly_data.point_data.get_array(0)
+    m1_i =  poly_data.point_data.get_array(1)
+    m0_r =  poly_data.point_data.get_array(2)
+    m0_i =  poly_data.point_data.get_array(3)
+    m_1_r = poly_data.point_data.get_array(4)
+    m_1_i = poly_data.point_data.get_array(5)
+
     for x_idx in range(int(BLOCK_COUNT_X / 2), BLOCK_COUNT_X):
         if x_idx % 4 == 0:
             block_offset = 0

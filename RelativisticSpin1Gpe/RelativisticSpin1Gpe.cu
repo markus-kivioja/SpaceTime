@@ -32,8 +32,10 @@ std::string getProjectionString()
 
 #define HYPERBOLIC 1
 #define PARABOLIC 0
-#define ANALYTIC 0
-#define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
+#define ANALYTIC 1
+#define COMPUTE_STABLE_DT 0
+#define COMPUTE_ERROR ((HYPERBOLIC && PARABOLIC) || (ANALYTIC && PARABOLIC) || (HYPERBOLIC && ANALYTIC))
+#define COMPUTE_COM 0
 
 #define SAVE_STATES 0
 #define SAVE_PICTURE 0
@@ -42,76 +44,92 @@ std::string getProjectionString()
 #define THREAD_BLOCK_Y 2
 #define THREAD_BLOCK_Z 1
 
-constexpr double F = 1; // Hyperfine spin
+constexpr myFloat F = 1; // Hyperfine spin
 
-constexpr double DOMAIN_SIZE_X = 16.0; //24.0;
-constexpr double DOMAIN_SIZE_Y = 16.0; //24.0;
-constexpr double DOMAIN_SIZE_Z = 16.0; //24.0;
+constexpr myFloat DOMAIN_SIZE_X = 20.0; //24.0;
+constexpr myFloat DOMAIN_SIZE_Y = 20.0; //24.0;
+constexpr myFloat DOMAIN_SIZE_Z = 20.0; //24.0;
 
-double REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 0 * 6.0;
-//constexpr double REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
-//constexpr double REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
+myFloat REPLICABLE_STRUCTURE_COUNT_X = 112.0; // 58.0 + 9 * 6.0;
+//constexpr myFloat REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
+//constexpr myFloat REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
 
-constexpr double N = 2e5; // Number of atoms in the condensate
+constexpr myFloat N = 2e5; // Number of atoms in the condensate
 
-constexpr double trapFreq_r = 126; // Cloud oscillates at 125.91 Hz in sims
-constexpr double trapFreq_z = 166;
+constexpr myFloat trapFreq_r = 126; // Cloud oscillates at 125.91 Hz in sims
+constexpr myFloat trapFreq_z = 166;
 
-constexpr double omega_r = trapFreq_r * 2 * PI;
-constexpr double omega_z = trapFreq_z * 2 * PI;
-constexpr double lambda_x = 1.0;
-constexpr double lambda_y = 1.0;
-constexpr double lambda_z = omega_z / omega_r;
+constexpr myFloat omega_r = trapFreq_r * 2 * PI;
+constexpr myFloat omega_z = trapFreq_z * 2 * PI;
+constexpr myFloat lambda_x = 1.0;
+constexpr myFloat lambda_y = 1.0;
+constexpr myFloat lambda_z = omega_z / omega_r;
 
-constexpr double a_bohr = 5.2917721092e-11; //[m] Bohr radius
-constexpr double a_0 = 101.8;
-constexpr double a_2 = 100.4;
+constexpr myFloat a_bohr = 5.2917721092e-11; //[m] Bohr radius
+constexpr myFloat a_0 = 101.8;
+constexpr myFloat a_2 = 100.4;
 
-constexpr double atomMass = 1.44316060e-25;
-constexpr double hbar = 1.05457148e-34; // [m^2 kg / s]
-const double a_r = sqrt(hbar / (atomMass * omega_r)); //[m]
+constexpr myFloat atomMass = 1.44316060e-25;
+constexpr myFloat hbar = 1.05457148e-34; // [m^2 kg / s]
+const myFloat a_r = sqrt(hbar / (atomMass * omega_r)); //[m]
 
-const double c0 = 4 * PI * N * (a_0 + 2 * a_2) * a_bohr / (3 * a_r);
-const double c2 = 4 * PI * N * (a_2 - a_0) * a_bohr / (3 * a_r);
+const myFloat c0 = 4 * PI * N * (a_0 + 2 * a_2) * a_bohr / (3 * a_r);
+const myFloat c2 = 4 * PI * N * (a_2 - a_0) * a_bohr / (3 * a_r);
 
-constexpr double muB = 9.27400968e-24; // [m^2 kg / s^2 T^-1] Bohr magneton
+constexpr myFloat muB = 9.27400968e-24; // [m^2 kg / s^2 T^-1] Bohr magneton
 
-const double BqScale = -(0.5 * muB / (hbar * omega_r) * a_r) / 100.; // [cm/Gauss]
-constexpr double BzScale = -(0.5 * muB / (hbar * omega_r)) / 10000.; // [1/Gauss]
+const myFloat BqScale = -(0.5 * muB / (hbar * omega_r) * a_r) / 100.; // [cm/Gauss]
+constexpr myFloat BzScale = -(0.5 * muB / (hbar * omega_r)) / 10000.; // [1/Gauss]
 
-constexpr double A_hfs = 3.41734130545215;
-const double BqQuadScale = 100 * a_r * sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (trapFreq_r * 2 * A_hfs)); //[cm/Gauss]
-const double BzQuadScale = sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (trapFreq_r * 2 * A_hfs)); //[1/Gauss]  \sqrt{g_q}
+constexpr myFloat A_hfs = 3.41734130545215;
+const myFloat BqQuadScale = 100 * a_r * sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (trapFreq_r * 2 * A_hfs)); //[cm/Gauss]
+const myFloat BzQuadScale = sqrt(0.25 * 1000 * (1.399624624 * 1.399624624) / (trapFreq_r * 2 * A_hfs)); //[1/Gauss]  \sqrt{g_q}
 
-constexpr double SQRT_2 = 1.41421356237309;
-constexpr double INV_SQRT_2 = 0.70710678118655;
+constexpr myFloat SQRT_2 = 1.41421356237309;
+constexpr myFloat INV_SQRT_2 = 0.70710678118655;
 
-//double dt = 3.9e-4; // For parabolic eq and 112^3 domain
-//double dt = 6.9e-4; // For hyperbolic eq and 112^3 domain
-//double dt = 1e-4; // Default
-double dt = 1.5e-3;
-double dt_decrese = 1e-4;
-double dt_increse = 1e-5;
+//myFloat dt = 3.9e-4; // For parabolic eq and 112^3 domain
+//myFloat dt = 6.9e-4; // For hyperbolic eq and 112^3 domain
+//myFloat dt = 1e-4; // Default
+//myFloat dt = 1.2e-3;
+myFloat dt = 5e-5;
+myFloat dt_decrese = 1e-4;
+myFloat dt_increse = 1e-5;
 
-const double IMAGE_SAVE_INTERVAL = 0.1; // 0.2; //0.01; // ms
+const myFloat IMAGE_SAVE_INTERVAL = 0.01; //0.01; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
-double t = 0; // Start time in ms
-double END_TIME = 1; // 70.5; // End time in ms
+myFloat t = 0; // Start time in ms
+#if COMPUTE_COM
+myFloat END_TIME = 10.0; // End time in ms
+#else
+myFloat END_TIME = 1.0; // End time in ms
+#endif
 
 #if COMPUTE_GROUND_STATE
-double sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
+myFloat sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
 #else
-double sigma = 0.0025; // 0.01; // Coefficient for the relativistic term
+myFloat sigma = 0.004; // 0.01; // Coefficient for the relativistic term
 #endif
-double dt_per_sigma = dt / sigma;
+myFloat dt_per_sigma = dt / sigma;
 static int dtIncreaseCount = 0;
 
-//constexpr double E = 126.7; // Adjusted by hand to match the parabolic equation
-//constexpr double E = 127.346; // Computed with the hyperbolic ITP
-//constexpr double E = 127.295; // Computed with the parabolic ITP
+//constexpr myFloat E = 126.7; // Adjusted by hand to match the parabolic equation
+//constexpr myFloat E = 127.346; // Computed with the hyperbolic ITP
+constexpr myFloat E = 127.333; // Computed with the hyperbolic ITP
+//constexpr myFloat E = 127.295; // Computed with the parabolic ITP
+
+/// Hyperbolic
+/// Energy was -127.333
+/// Parabolic
+/// 
+/// /// Parabolic
+/// Energy was -127.297
+/// Energy was - 127.302
+/// Energy was - 127.294
+/// Parabolic
 
 enum class Phase
 {
@@ -123,7 +141,7 @@ enum class Phase
 constexpr Phase initPhase = Phase::Polar;
 //constexpr Phase initPhase = Phase::Ferromagnetic;
 
-std::string toStringShort(const double value)
+std::string toStringShort(const myFloat value)
 {
 	std::ostringstream out;
 	out.precision(2);
@@ -150,7 +168,7 @@ std::string phaseToString(Phase phase)
 #include "para_kernels.h"
 #include "common_kernels.h"
 
-void normalize_h(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, double volume)
+void normalize_h(dim3 dimGrid, dim3 dimBlock, myFloat* densityPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, myFloat volume)
 {
 	density << <dimGrid, dimBlock >> > (densityPtr, psi, dimensions);
 	int prevStride = bodies;
@@ -164,7 +182,7 @@ void normalize_h(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr psi
 	normalize << < dimGrid, dimBlock >> > (densityPtr, psi, dimensions);
 }
 
-double getDensity(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, double volume)
+myFloat getDensity(dim3 dimGrid, dim3 dimBlock, myFloat* densityPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, myFloat volume)
 {
 	density << <dimGrid, dimBlock >> > (densityPtr, psi, dimensions);
 	int prevStride = bodies;
@@ -174,36 +192,36 @@ double getDensity(dim3 dimGrid, dim3 dimBlock, double* densityPtr, PitchedPtr ps
 		integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (densityPtr, newStride, ((newStride * 2) != prevStride), volume);
 		prevStride = newStride;
 	}
-	double hDensity = 0;
-	checkCudaErrors(cudaMemcpy(&hDensity, densityPtr, sizeof(double), cudaMemcpyDeviceToHost));
+	myFloat hDensity = 0;
+	checkCudaErrors(cudaMemcpy(&hDensity, densityPtr, sizeof(myFloat), cudaMemcpyDeviceToHost));
 
 	return hDensity;
 }
 
-double3 centerOfMass(dim3 dimGrid, dim3 dimBlock, double3* comPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, const double volume, const double block_scale, const double3 p0)
+myFloat3 centerOfMass(dim3 dimGrid, dim3 dimBlock, myFloat3* comPtr, PitchedPtr psi, uint3 dimensions, size_t bodies, const myFloat volume, const myFloat block_scale, const myFloat3 p0)
 {
 	com << <dimGrid, dimBlock >> > (comPtr, psi, dimensions, block_scale, p0);
 	int prevStride = bodies;
 	while (prevStride > 1)
 	{
 		int newStride = prevStride / 2;
-		integrateVec << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (comPtr, newStride, ((newStride * 2) != prevStride), volume);
+		integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (comPtr, newStride, ((newStride * 2) != prevStride), volume);
 		prevStride = newStride;
 	}
-	double3 hCom = { 0, 0, 0 };
-	checkCudaErrors(cudaMemcpy(&hCom, comPtr, sizeof(double), cudaMemcpyDeviceToHost));
+	myFloat3 hCom = { 0, 0, 0 };
+	checkCudaErrors(cudaMemcpy(&hCom, comPtr, sizeof(myFloat), cudaMemcpyDeviceToHost));
 
 	return hCom;
 }
 
 struct SpinMagDens
 {
-	double spin;
-	double3 magnetization;
-	double density;
+	myFloat spin;
+	myFloat3 magnetization;
+	myFloat density;
 };
 
-SpinMagDens integrateSpinAndDensity(dim3 dimGrid, dim3 dimBlock, double* spinNormPtr, double3* localAvgSpinPtr, double* densityPtr, size_t bodies, double volume)
+SpinMagDens integrateSpinAndDensity(dim3 dimGrid, dim3 dimBlock, myFloat* spinNormPtr, myFloat3* localAvgSpinPtr, myFloat* densityPtr, size_t bodies, myFloat volume)
 {
 	int prevStride = bodies;
 	while (prevStride > 1)
@@ -215,25 +233,25 @@ SpinMagDens integrateSpinAndDensity(dim3 dimGrid, dim3 dimBlock, double* spinNor
 		}
 		else
 		{
-			integrateVec << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (localAvgSpinPtr, newStride, ((newStride * 2) != prevStride), volume);
+			integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (localAvgSpinPtr, newStride, ((newStride * 2) != prevStride), volume);
 		}
 		integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (spinNormPtr, newStride, ((newStride * 2) != prevStride), volume);
 		integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (densityPtr, newStride, ((newStride * 2) != prevStride), volume);
 		prevStride = newStride;
 	}
-	double3 hMagnetization = { 0, 0, 0 };
-	checkCudaErrors(cudaMemcpy(&hMagnetization, localAvgSpinPtr, sizeof(double3), cudaMemcpyDeviceToHost));
+	myFloat3 hMagnetization = { 0, 0, 0 };
+	checkCudaErrors(cudaMemcpy(&hMagnetization, localAvgSpinPtr, sizeof(myFloat3), cudaMemcpyDeviceToHost));
 
-	double hSpinNorm = 0;
-	checkCudaErrors(cudaMemcpy(&hSpinNorm, spinNormPtr, sizeof(double), cudaMemcpyDeviceToHost));
+	myFloat hSpinNorm = 0;
+	checkCudaErrors(cudaMemcpy(&hSpinNorm, spinNormPtr, sizeof(myFloat), cudaMemcpyDeviceToHost));
 
-	double hDensity = 0;
-	checkCudaErrors(cudaMemcpy(&hDensity, densityPtr, sizeof(double), cudaMemcpyDeviceToHost));
+	myFloat hDensity = 0;
+	checkCudaErrors(cudaMemcpy(&hDensity, densityPtr, sizeof(myFloat), cudaMemcpyDeviceToHost));
 
 	return { hSpinNorm, hMagnetization, hDensity };
 }
 
-double getMaxHamilton(dim3 dimGrid, dim3 dimBlock, double* maxHamlPtr, PitchedPtr psi, MagFields Bs, uint3 dimensions, size_t bodies, double block_scale, double3 p0)
+myFloat getMaxHamilton(dim3 dimGrid, dim3 dimBlock, myFloat* maxHamlPtr, PitchedPtr psi, MagFields Bs, uint3 dimensions, size_t bodies, myFloat block_scale, myFloat3 p0)
 {
 	maxHamilton << <dimGrid, dimBlock >> > (maxHamlPtr, psi, Bs, dimensions, block_scale, p0, c0, c2);
 	int prevStride = bodies;
@@ -244,8 +262,8 @@ double getMaxHamilton(dim3 dimGrid, dim3 dimBlock, double* maxHamlPtr, PitchedPt
 		prevStride = newStride;
 	}
 
-	double maxHaml = 0;
-	checkCudaErrors(cudaMemcpy(&maxHaml, maxHamlPtr, sizeof(double), cudaMemcpyDeviceToHost));
+	myFloat maxHaml = 0;
+	checkCudaErrors(cudaMemcpy(&maxHaml, maxHamlPtr, sizeof(myFloat), cudaMemcpyDeviceToHost));
 
 	return maxHaml;
 }
@@ -316,11 +334,11 @@ void loadFromFile(const std::string& filename, char* dst, size_t size)
 	psi_fs.close();
 }
 
-uint integrateInTime(const double block_scale, const Vector3& minp, const Vector3& maxp)
+uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vector3& maxp)
 {
-	const std::string EXTRA_INFORMATION = toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X) + "_" + phaseToString(initPhase);
-	const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + EXTRA_INFORMATION + ".dat";
-	const std::string GROUND_STATE_Q_FILENAME = "ground_state_q_" + EXTRA_INFORMATION + ".dat";
+	const std::string EXTRA_INFORMATION = toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X);
+	const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + EXTRA_INFORMATION + "_" + PRECISION + ".dat";
+	const std::string GROUND_STATE_Q_FILENAME = "ground_state_q_" + EXTRA_INFORMATION + "_" + PRECISION + ".dat";
 
 	// find dimensions
 	const Vector3 domain = maxp - minp;
@@ -328,8 +346,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	const uint ysize = uint(domain.y / (block_scale * BLOCK_WIDTH.y)); // + 1;
 	const uint zsize = uint(domain.z / (block_scale * BLOCK_WIDTH.z)); // + 1;
 	const Vector3 p0 = 0.5 * (minp + maxp - block_scale * Vector3(BLOCK_WIDTH.x * xsize, BLOCK_WIDTH.y * ysize, BLOCK_WIDTH.z * zsize));
-	const double3 d_p0 = { p0.x, p0.y, p0.z };
-	//const double3 d_p0 = { p0.x + 0.18 * maxp.x, p0.y, p0.z };
+#if COMPUTE_COM
+	const myFloat3 d_p0 = { p0.x + 0.14 * maxp.x, p0.y, p0.z };
+#else
+	const myFloat3 d_p0 = { p0.x, p0.y, p0.z };
+#endif
 
 	// compute discrete dimensions
 	const uint bsize = VALUES_IN_BLOCK; // bpos.size(); // number of values inside a block
@@ -364,8 +385,8 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 
 #if COMPUTE_ERROR || ANALYTIC
-	//double2* d_error = allocDevice<double2>(bodies);
-	double* d_error = allocDevice<double>(bodies);
+	myFloat2* d_error = allocDevice<myFloat2>(bodies);
+	//myFloat* d_error = allocDevice<myFloat>(bodies);
 #endif
 
 #if COMPUTE_GROUND_STATE
@@ -373,11 +394,11 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaPitchedPtr d_cudaHPsi = allocDevice3D(edgeExtent);
 #endif
 
-	//double* d_spinNorm = allocDevice<double>(bodies);
-	double* d_density = allocDevice<double>(bodies);
-	//double3* d_com = allocDevice<double3>(bodies);
+	//myFloat* d_spinNorm = allocDevice<myFloat>(bodies);
+	myFloat* d_density = allocDevice<myFloat>(bodies);
+	myFloat3* d_com = allocDevice<myFloat3>(bodies);
 #if COMPUTE_GROUND_STATE
-	double* d_energy = allocDevice<double>(bodies);
+	myFloat* d_energy = allocDevice<myFloat>(bodies);
 #endif
 
 	// Calculate pointers to the start of the real computational domain (jumping over the zero buffer at the edges)
@@ -410,7 +431,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	// find terms for laplacian
 	Buffer<int3> d0;
 	Buffer<int2> d1;
-	Buffer<double> hodges;
+	Buffer<myFloat> hodges;
 #if HYPERBOLIC
 	getLaplacian(hodges, d0, d1, sizeof(BlockPsis), d_evenPsiHyper.pitch, d_evenPsiHyper.slicePitch, sizeof(BlockEdges), d_evenQHyper.pitch, d_evenQHyper.slicePitch);
 #endif
@@ -424,7 +445,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	int3* d_d0 = allocDevice<int3>(d0.size());
 	int2* d_d1 = allocDevice<int2>(d1.size());
-	double* d_hodges = allocDevice<double>(hodges.size());
+	myFloat* d_hodges = allocDevice<myFloat>(hodges.size());
 
 	// Initialize host memory
 	size_t hostSize = dxsize * dysize * dzsize;
@@ -443,7 +464,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #if ANALYTIC
 	BlockPsis* h_analyticPsi = allocHost<BlockPsis>(hostSize);
 #endif
-	double* h_density = allocHost<double>(bodies);
+	myFloat* h_density = allocHost<myFloat>(bodies);
 
 #if COMPUTE_GROUND_STATE
 	// Initialize discrete field
@@ -474,7 +495,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		std::cout << "Initialized ground state with random noise." << std::endl;
 
 		std::default_random_engine generator;
-		std::normal_distribution<double> distribution(0.0, 1.0);
+		std::normal_distribution<myFloat> distribution(0.0, 1.0);
 		for (uint k = 0; k < zsize; k++)
 		{
 			for (uint j = 0; j < ysize; j++)
@@ -484,9 +505,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 					for (uint l = 0; l < bsize; l++)
 					{
 						const uint dstI = (k + 1) * dxsize * dysize + (j + 1) * dxsize + (i + 1);
-						const double2 s1{ distribution(generator), distribution(generator) };
-						const double2 s0{ distribution(generator), distribution(generator) };
-						const double2 s_1{ distribution(generator), distribution(generator) };
+						const myFloat2 s1{ distribution(generator), distribution(generator) };
+						const myFloat2 s0{ distribution(generator), distribution(generator) };
+						const myFloat2 s_1{ distribution(generator), distribution(generator) };
 						h_evenPsiHyper[dstI].values[l].s1 = s1;
 						h_evenPsiHyper[dstI].values[l].s0 = s0;
 						h_evenPsiHyper[dstI].values[l].s_1 = s_1;
@@ -509,6 +530,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #if PARABOLIC
 	loadFromFile(psi_filename, (char*)&h_oddPsiPara[0], hostSize * sizeof(BlockPsis));
 #endif
+#if ANALYTIC
+	loadFromFile(psi_filename, (char*)&h_analyticPsi[0], hostSize * sizeof(BlockPsis));
+#endif
 
 	bool doForward = true;
 #endif
@@ -524,10 +548,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaPitchedPtr h_cudaEvenQPara = copyHostToDevice3D(h_evenQPara, d_cudaEvenQPara, edgeExtent);
 	cudaPitchedPtr h_cudaOddQPara = copyHostToDevice3D(h_oddQPara, d_cudaOddQPara, edgeExtent);
 #endif
+#if ANALYTIC
+	cudaPitchedPtr h_cudaAnalyticPsi = copyHostToDevice3D(h_analyticPsi, d_cudaGroundPsi, psiExtent);
+#endif
 
 	checkCudaErrors(cudaMemcpy(d_d0, &d0[0], d0.size() * sizeof(int3), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_d1, &d1[0], d1.size() * sizeof(int2), cudaMemcpyHostToDevice));
-	checkCudaErrors(cudaMemcpy(d_hodges, &hodges[0], hodges.size() * sizeof(double), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpy(d_hodges, &hodges[0], hodges.size() * sizeof(myFloat), cudaMemcpyHostToDevice));
 
 	// Clear host memory after data has been copied to devices
 	cudaDeviceSynchronize();
@@ -547,6 +574,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	cudaMemcpy3DParms evenQBackParamsPara = createDeviceToHostParams(d_cudaEvenQPara, h_cudaEvenQPara, edgeExtent);
 	cudaMemcpy3DParms oddQBackParamsPara = createDeviceToHostParams(d_cudaOddQPara, h_cudaOddQPara, edgeExtent);
 #endif
+#if ANALYTIC
+	cudaMemcpy3DParms analyticPsiBackParams = createDeviceToHostParams(d_cudaAnalyticPsi, h_cudaAnalyticPsi, psiExtent);
+#endif
 	// Integrate in time
 	uint3 dimensions = make_uint3(xsize, ysize, zsize);
 	dim3 psiDimBlock(THREAD_BLOCK_X * VALUES_IN_BLOCK, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
@@ -558,42 +588,55 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 	Signal signal;
 	MagFields Bs{};
 
-	const double volume = block_scale * block_scale * block_scale * VOLUME;
+	const myFloat volume = block_scale * block_scale * block_scale * VOLUME;
 
-#if COMPUTE_GROUND_STATE
-	if (continueFromEarlier)
+#if !COMPUTE_GROUND_STATE
+#if HYPERBOLIC
+	switch (initPhase)
 	{
-		switch (initPhase)
-		{
-		case Phase::Polar:
-			std::cout << "Transform ground state to polar phase" << std::endl;
-			polarState << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, dimensions);
-			break;
-		case Phase::Ferromagnetic:
-			std::cout << "Transform ground state to ferromagnetic phase" << std::endl;
-			ferromagneticState << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, dimensions);
-			break;
-		default:
-			break;
-		}
-		std::cout << "Total density: " << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume) << std::endl;
+	case Phase::Polar:
+		//std::cout << "Transform ground state to polar phase" << std::endl;
+		polarState << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, dimensions);
+		break;
+	case Phase::Ferromagnetic:
+		//std::cout << "Transform ground state to ferromagnetic phase" << std::endl;
+		ferromagneticState << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, dimensions);
+		break;
+	default:
+		break;
+	}
+#endif
+#if PARABOLIC
+	switch (initPhase)
+	{
+	case Phase::Polar:
+		//std::cout << "Transform ground state to polar phase" << std::endl;
+		polarState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions);
+		break;
+	case Phase::Ferromagnetic:
+		//std::cout << "Transform ground state to ferromagnetic phase" << std::endl;
+		ferromagneticState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions);
+		break;
+	default:
+		break;
+	}
+#endif
+#if ANALYTIC
+	switch (initPhase)
+	{
+	case Phase::Polar:
+		//std::cout << "Transform ground state to polar phase" << std::endl;
+		polarState << <dimGrid, psiDimBlock >> > (d_groundPsi, dimensions);
+		break;
+	case Phase::Ferromagnetic:
+		//std::cout << "Transform ground state to ferromagnetic phase" << std::endl;
+		ferromagneticState << <dimGrid, psiDimBlock >> > (d_groundPsi, dimensions);
+		break;
+	default:
+		break;
 	}
 #endif
 
-#if ANALYTIC
-	cudaMemcpy3DParms groundPsiParams = { 0 };
-#if HYPERBOLIC
-	groundPsiParams.srcPtr = d_cudaOddPsiHyper;
-#elif PARABOLIC
-	groundPsiParams.srcPtr = d_cudaOddPsiPara;
-#endif
-	groundPsiParams.dstPtr = d_cudaGroundPsi;
-	groundPsiParams.extent = psiExtent;
-	groundPsiParams.kind = cudaMemcpyDeviceToDevice;
-	checkCudaErrors(cudaMemcpy3D(&groundPsiParams));
-#endif
-
-#if !COMPUTE_GROUND_STATE
 	// Take one forward Euler step if starting from the ground state or time step changed
 	if (doForward)
 	{
@@ -605,14 +648,12 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
 #if HYPERBOLIC
-		polarState << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, dimensions);
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_oddPsiHyper, d_d0, dimensions);
 		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true, sigma);
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_evenPsiHyper, d_d0, dimensions);
 		//forwardEuler_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
 #endif
 #if PARABOLIC
-		polarState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions);
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddPsiPara, d_d0, dimensions);
 		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false, sigma);
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenPsiPara, d_d0, dimensions);
@@ -641,12 +682,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 
 	while (true)
 	{
-		if ((iter % 1000) == 0) std::cout << "Iteration " << iter << std::endl;
+		constexpr int ITERS_PER_IMAGE = 10000;
+		if ((iter % ITERS_PER_IMAGE) == 0) std::cout << "Iteration " << iter << std::endl;
 #if SAVE_PICTURE
-		if ((iter % 1000) == 0)
+		if ((iter % ITERS_PER_IMAGE) == 0)
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParamsHyper));
-			drawDensity("hyper", h_evenPsiHyper, dxsize, dysize, dzsize, iter, folder);
+			drawIandR(folder, h_evenPsiHyper, dxsize, dysize, dzsize, iter, Bs, d_p0, block_scale);
 			std::cout << "Total density: " << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume) << std::endl;
 
 			// Compute energy/chemical potential
@@ -658,13 +700,13 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 				integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_energy, newStride, ((newStride * 2) != prevStride), volume);
 				prevStride = newStride;
 			}
-			double hEnergy = 0;
-			checkCudaErrors(cudaMemcpy(&hEnergy, d_energy, sizeof(double), cudaMemcpyDeviceToHost));
+			myFloat hEnergy = 0;
+			checkCudaErrors(cudaMemcpy(&hEnergy, d_energy, sizeof(myFloat), cudaMemcpyDeviceToHost));
 			std::setprecision(15);
 			std::cout << "Energy: " << hEnergy << std::endl;
 		}
 #endif
-		if (iter == 500000)
+		if (iter == 100000)
 		{
 			// Psi
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParamsHyper));
@@ -701,18 +743,23 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #else
 	int lastSaveTime = 0;
 
-	std::string dens_folder = "dens_images_" + EXTRA_INFORMATION + "_" + getBasisString();
+	std::string dens_folder = "dens_images_" + EXTRA_INFORMATION + "_" + getBasisString() + "_" + phaseToString(initPhase);
 	std::string vtks_folder = "vtks_" + EXTRA_INFORMATION;
-
+#if !COMPUTE_COM
 	std::string createResultsDirCommand = "mkdir " + dens_folder;
 	std::string createVtksDirCommand = "mkdir " + vtks_folder;
-	//system(createResultsDirCommand.c_str());
-	//system(createVtksDirCommand.c_str());
-#if ANALYTIC
-	double phaseTime = 0;
+	system(createResultsDirCommand.c_str());
+	system(createVtksDirCommand.c_str());
+#endif
+#if 1// ANALYTIC
+	myFloat phaseTime = 0;
 #endif
 	int iterCount = 0;
+#if COMPUTE_ERROR
+	std::cout << "e_F1 = [";
+#endif
 	while (t < END_TIME)
+	//while (iterCount < 2000)
 	{
 		// Measure wall clock time
 		static auto prevTime = std::chrono::high_resolution_clock::now();
@@ -723,28 +770,34 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #if SAVE_PICTURE
 #if HYPERBOLIC
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
-		drawDensity("hyper", h_oddPsiHyper, dxsize, dysize, dzsize, t, dens_folder);
+		drawDensityRI("hyper", h_oddPsiHyper, dxsize, dysize, dzsize, t, dens_folder);
+		savePreImageSpinor(vtks_folder, h_oddPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t);
 #endif
 #if PARABOLIC
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsPara));
-		drawDensity("para", h_oddPsiPara, dxsize, dysize, dzsize, t, dens_folder);
+		drawDensityRI("para", h_oddPsiPara, dxsize, dysize, dzsize, t, dens_folder);
+		savePreImageSpinor(vtks_folder, h_oddPsiPara, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t);
+#endif
+#if ANALYTIC
+		checkCudaErrors(cudaMemcpy3D(&analyticPsiBackParams));
+		drawDensityRI("analytic_", h_analyticPsi, dxsize, dysize, dzsize, t, dens_folder);
 #endif
 #endif
 
 
 		// For checking the numerical stability
-#if 1 // Disable / enable numerical stability measurement
+#if 0 // Disable / enable numerical stability measurement
 #if !COMPUTE_ERROR
 #if HYPERBOLIC
-		double dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
+		myFloat dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
 #endif
 #if PARABOLIC
-		double dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume);
+		myFloat dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume);
 #endif
-		static double prevDens = dens;
+		static myFloat prevDens = dens;
 		//std::cout << "At " << t << " ms density is " << dens << std::endl;
-		constexpr double RELATIVE_MARGIN = 0.1; // 0.02;
-		constexpr double ABSOLUTE_MARGIN = 1.1; // 0.02;
+		constexpr myFloat RELATIVE_MARGIN = 0.1; // 0.02;
+		constexpr myFloat ABSOLUTE_MARGIN = 1.1; // 0.02;
 		//if (t > 0 && (abs(dens - prevDens) > RELATIVE_MARGIN || isnan(dens)))
 		
 		if (t > 0 && dens > ABSOLUTE_MARGIN || isnan(dens))
@@ -800,23 +853,27 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		prevDens = dens;
 #endif
 #else
-#if !COMPUTE_ERROR
+#if COMPUTE_COM
 #if HYPERBOLIC
-		double3 comHyper = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiHyper, dimensions, bodies, volume, block_scale, d_p0);
+		myFloat3 comHyper = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiHyper, dimensions, bodies, volume, block_scale, d_p0);
 		std::cout << comHyper.x << ", ";
 #endif
 #if PARABOLIC
-		double3 comPara = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiPara, dimensions, bodies, volume, block_scale, d_p0);
+		myFloat3 comPara = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiPara, dimensions, bodies, volume, block_scale, d_p0);
 		std::cout << comPara.x << ", "; // << std::endl;
 #endif
 #endif
 #endif
 
 		// integrate one iteration
+#if COMPUTE_STABLE_DT
+		for (uint step = 0; step < 200; step++) // For checking the numerical stability (not dependent on dt)
+#else
 		for (uint step = 0; step < IMAGE_SAVE_FREQUENCY; step++)
+#endif
 		{
 			// update odd values (imaginary terms)
-#if ANALYTIC
+#if 1// ANALYTIC
 			phaseTime += dt;
 #endif
 			t += dt / omega_r * 1e3; // [ms]
@@ -835,7 +892,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddPsiPara, d_d0, dimensions);
 #endif
 			// update even values (real terms)
-#if ANALYTIC
+#if 1// ANALYTIC
 			phaseTime += dt;
 #endif
 			t += dt / omega_r * 1e3; // [ms]
@@ -855,7 +912,7 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 #endif
 			iterCount += 2;
 		}
-#if COMPUTE_ERROR
+#if 0
 		// Compute error
 		//innerProduct << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiHyper, dimensions);
 		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiHyper, dimensions);
@@ -866,19 +923,17 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_error, newStride, ((newStride * 2) != prevStride), volume);
 			prevStride = newStride;
 		}
-		//double2 hError = { 0 };
-		double hError = { 0 };
-		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(double2), cudaMemcpyDeviceToHost));
+		myFloat2 hError = { 0 };
+		//myFloat hError = { 0 };
+		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(myFloat2), cudaMemcpyDeviceToHost));
 		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - sqrt((conj(hError) * hError).x) << ", ";
-		std::cout << hError << ", " << std::endl;
+		std::cout << hError.x << ", " << hError.y << "; ";
 		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - hError.x << ", ";
 #endif
 #if ANALYTIC
 		// Compute error
-		double2 phaseShift = double2{ cos(-phaseTime * E), sin(-phaseTime * E) };
+		myFloat2 phaseShift = myFloat2{ cos(-phaseTime * E), sin(-phaseTime * E) };
 		analyticStep << <dimGrid, psiDimBlock >> > (d_analyticPsi, d_groundPsi, dimensions, phaseShift);
-		//checkCudaErrors(cudaMemcpy3D(&analyticPsiBackParams));
-		//drawDensityRI("analytic_", h_analyticPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, resultsDir);
 
 #if HYPERBOLIC
 		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_analyticPsi, d_oddPsiHyper, dimensions);
@@ -892,18 +947,24 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 			integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_error, newStride, ((newStride * 2) != prevStride), volume);
 			prevStride = newStride;
 		}
-		double hError = { 0 };
-		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(double), cudaMemcpyDeviceToHost));
-		std::cout << hError << ", ";
+		myFloat2 hError = { 0 };
+		//myFloat hError = { 0 };
+		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(myFloat2), cudaMemcpyDeviceToHost));
+		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - sqrt((conj(hError) * hError).x) << ", ";
+		std::cout << hError.x << ", " << hError.y << "; ";
+		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - hError.x << ", ";
 #endif
 
 #if COMPUTE_GROUND_STATE
 		// Copy back from device memory to host memory
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
 
-		temp = h_oddPsiHyper[centerIdx].values[5].s0;
-		double endPhase = atan2(temp.y, temp.x);
-		double phaseDiff = endPhase - startPhase;
+		myFloat2 start = { 1, 0 };
+		myFloat startPhase = atan2(start.y, start.x);
+
+		myFloat2 temp = h_oddPsiHyper[xsize * ysize * zsize / 2].values[5].s0;
+		myFloat endPhase = atan2(temp.y, temp.x);
+		myFloat phaseDiff = endPhase - startPhase;
 		std::cout << "Energy was " << phaseDiff / phaseTime << std::endl;
 #endif
 #if SAVE_STATES
@@ -931,6 +992,9 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		}
 #endif
 	}
+#endif
+#if COMPUTE_ERROR
+	std::cout << "]';" << std::endl;
 #endif
 	//std::cout << iterCount << " iterations" << std::endl;
 #if HYPERBOLIC
@@ -976,10 +1040,10 @@ uint integrateInTime(const double block_scale, const Vector3& minp, const Vector
 		fprintf(stderr, "Failed to launch kernels (error code %s)!\n", cudaGetErrorString(err));
 		exit(EXIT_FAILURE);
 	}
-
+#if COMPUTE_STABLE_DT
 	dt += dt_increse;
 	dtIncreaseCount++;
-
+#endif
 	return 0;
 }
 
@@ -1032,7 +1096,6 @@ int main(int argc, char** argv)
 	std::cout << "Start simulating from t = " << t << " ms." << std::endl;
 	std::cout << "The simulation will end at " << END_TIME << " ms." << std::endl;
 	//std::cout << "Block scale = " << blockScale << std::endl;
-	//std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
 	std::cout << "dt = " << dt << " = " << dt / omega_r * 1e3 << " ms." << std::endl;
 	std::cout << "sigma = " << sigma << std::endl;
 	std::cout << "dt / sigma = " << dt_per_sigma << std::endl;
@@ -1041,12 +1104,13 @@ int main(int argc, char** argv)
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
 
-	//integrateInTime(blockScale, domainMin, domainMax);
+#if COMPUTE_STABLE_DT
+	integrateInTime(blockScale, domainMin, domainMax);
 	for (int i = 0; i < 10; ++i)
 	{
 		REPLICABLE_STRUCTURE_COUNT_X = 58.0 + i * 6.0;
-		const double blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
-
+		const myFloat blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
+	
 		while (!integrateInTime(blockScale, domainMin, domainMax))
 		{
 			dt_per_sigma = dt / sigma;
@@ -1059,6 +1123,23 @@ int main(int argc, char** argv)
 		
 		dtIncreaseCount = 0;
 	}
-
+#else
+	const myFloat blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
+	std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
+#if COMPUTE_COM
+	std::cout << "corrected_F1_com = [";
+	while (sigma < 0.0031)
+	{
+		t = 0;
+		integrateInTime(blockScale, domainMin, domainMax);
+		std::cout << ";";
+		sigma += 0.00025;
+		dt_per_sigma = dt / sigma;
+	}
+	std::cout << "];" << std::endl;
+#else
+	integrateInTime(blockScale, domainMin, domainMax);
+#endif
+#endif
 	return 0;
 }

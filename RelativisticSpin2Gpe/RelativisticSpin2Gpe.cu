@@ -14,6 +14,8 @@ enum class Phase {
 	CYCLIC
 };
 constexpr Phase initPhase = Phase::UN;
+//constexpr Phase initPhase = Phase::BN_VERT;
+//constexpr Phase initPhase = Phase::CYCLIC;
 
 std::string phaseToString(Phase phase)
 {
@@ -59,15 +61,15 @@ std::string getProjectionString()
 
 #include "mesh.h"
 
-#define COMPUTE_GROUND_STATE 1
+#define COMPUTE_GROUND_STATE 0
 
 #define HYPERBOLIC 1
-#define PARABOLIC 0
+#define PARABOLIC 1
 #define ANALYTIC 0
 #define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
 
 #define SAVE_STATES 0
-#define SAVE_PICTURE 1
+#define SAVE_PICTURE 0
 
 #define THREAD_BLOCK_X 16
 #define THREAD_BLOCK_Y 2
@@ -79,7 +81,7 @@ constexpr myFloat DOMAIN_SIZE_X = 20.0; //24.0;
 constexpr myFloat DOMAIN_SIZE_Y = 20.0; //24.0;
 constexpr myFloat DOMAIN_SIZE_Z = 20.0; //24.0;
 
-myFloat REPLICABLE_STRUCTURE_COUNT_X = 58.0 + 8 * 6.0;
+myFloat REPLICABLE_STRUCTURE_COUNT_X = 112.0; // 58.0 + 9 * 6.0;
 //constexpr myFloat REPLICABLE_STRUCTURE_COUNT_Y = 112.0;
 //constexpr myFloat REPLICABLE_STRUCTURE_COUNT_Z = 112.0;
 
@@ -124,23 +126,24 @@ constexpr myFloat NOISE_AMPLITUDE = 0;
 //myFloat dt = 1e-4; // 5e-5;
 //myFloat dt_increse = 1e-5;
 
-myFloat dt = 5e-4;
+//myFloat dt = 5e-4;
 //myFloat dt = 1.5e-3; // 5e-5;
+myFloat dt = 5e-5;
 myFloat dt_decrese = 1e-4;
 myFloat dt_increse = 1e-5;
 
-const myFloat IMAGE_SAVE_INTERVAL = 0.1; // 0.2; // ms
+const myFloat IMAGE_SAVE_INTERVAL = 0.01; // 0.2; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 myFloat t = 0; // Start time in ms
-constexpr myFloat END_TIME = 1; // 7.4; // End time in ms
+constexpr myFloat END_TIME = 1.0; // 7.4; // End time in ms
 
 #if COMPUTE_GROUND_STATE
 myFloat sigma = 0.1;
 #else
-myFloat sigma = 0.00225; // 0.01; // Coefficient for the relativistic term
+myFloat sigma = 0.002; // 0.01; // Coefficient for the relativistic term
 #endif
 myFloat dt_per_sigma = dt / sigma;
 static int dtIncreaseCount = 0;
@@ -221,7 +224,7 @@ __global__ void com(myFloat3* com, PitchedPtr prevStep, uint3 dimensions, const 
 	com[idx] = dens * globalPos;
 }
 
-__global__ void weightedDiff(myFloat* result, PitchedPtr pLeft, PitchedPtr pRight, uint3 dimensions)
+__global__ void weightedDiff(myFloat2* result, PitchedPtr pLeft, PitchedPtr pRight, uint3 dimensions)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -240,15 +243,32 @@ __global__ void weightedDiff(myFloat* result, PitchedPtr pLeft, PitchedPtr pRigh
 	Complex5Vec right = ((BlockPsis*)(pRight.ptr + pRight.slicePitch * zid + pRight.pitch * yid) + dataXid)->values[dualNodeId];
 
 	Complex5Vec diff = { right.s2 - left.s2, right.s1 - left.s1, right.s0 - left.s0, right.s_1 - left.s_1, right.s_2 - left.s_2 };
+	myFloat diffSqr = (conj(diff.s2) * diff.s2).x + (conj(diff.s1) * diff.s1).x + (conj(diff.s0) * diff.s0).x + (conj(diff.s_1) * diff.s_1).x + (conj(diff.s_2) * diff.s_2).x;
 
 	myFloat leftSqr = (conj(left.s2) * left.s2).x + (conj(left.s1) * left.s1).x + (conj(left.s0) * left.s0).x + (conj(left.s_1) * left.s_1).x + (conj(left.s_2) * left.s_2).x;
 	myFloat rightSqr = (conj(right.s2) * right.s2).x + (conj(right.s1) * right.s1).x + (conj(right.s0) * right.s0).x + (conj(right.s_1) * right.s_1).x + (conj(right.s_2) * right.s_2).x;
-	myFloat diffSqr = (conj(diff.s2) * diff.s2).x + (conj(diff.s1) * diff.s1).x + (conj(diff.s0) * diff.s0).x + (conj(diff.s_1) * diff.s_1).x + (conj(diff.s_2) * diff.s_2).x;
+	myFloat densDiff = leftSqr - rightSqr;
+
+	//myFloat leftDenses[5] = { (conj(left.s2) * left.s2).x, (conj(left.s1) * left.s1).x, (conj(left.s0) * left.s0).x, (conj(left.s_1) * left.s_1).x, (conj(left.s_2) * left.s_2).x };
+	//myFloat rightDenses[5] = { (conj(right.s2) * right.s2).x, (conj(right.s1) * right.s1).x, (conj(right.s0) * right.s0).x, (conj(right.s_1) * right.s_1).x, (conj(right.s_2) * right.s_2).x };
+	//myFloat densesDiff = 0;
+	//for (int i = 0; i < 5; ++i)
+	//	densesDiff += (leftDenses[i] - rightDenses[i]) * (leftDenses[i] - rightDenses[i]);
 
 	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
 	//result[idx] = leftSqr * diffSqr;
-	result[idx] = diffSqr;
+	result[idx].x = diffSqr; // Takes the phase into account
+	result[idx].y = densDiff * densDiff; // Doesn't count phase, only magnitude
 	//result[idx] = abs(leftSqr - rightSqr);
+
+	//result[idx].x = atan2(right.s0.y, right.s0.x) - atan2(left.s0.y, left.s0.x); // Phase diff
+	//result[idx].y = (conj(right.s0) * right.s0).x - (conj(left.s0) * left.s0).x; // Mag diff
+
+	//result[idx].x *= result[idx].x;
+	//result[idx].y *= result[idx].y;
+
+	//result[idx].x = diff.s0.x;
+	//result[idx].y = diff.s0.y;
 }
 
 __global__ void analyticStep(PitchedPtr nextStep, PitchedPtr prevStep, uint3 dimensions, const myFloat2 phaseShift)
@@ -299,29 +319,8 @@ __global__ void innerProductReal(myFloat* result, PitchedPtr pLeft, PitchedPtr p
 	result[idx] = (conj(left.s2) * right.s2).x + (conj(left.s1) * right.s1).x + (conj(left.s0) * right.s0).x + (conj(left.s_1) * right.s_1).x + (conj(left.s_2) * right.s_2).x;
 }
 
-__global__ void integrate(myFloat* dataVec, size_t stride, bool addLast, myFloat dv)
-{
-	size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-
-	if (idx >= stride)
-	{
-		return;
-	}
-
-	dataVec[idx] += dataVec[idx + stride];
-
-	if ((idx == (stride - 1)) && addLast)
-	{
-		dataVec[idx] += dataVec[idx + stride + 1];
-	}
-
-	if (stride == 1)
-	{
-		dataVec[0] *= dv;
-	}
-}
-
-__global__ void integrateVec(myFloat3* dataVec, size_t stride, bool addLast, myFloat dv)
+template<typename T>
+__global__ void integrate(T* dataVec, size_t stride, bool addLast, myFloat dv)
 {
 	size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -1177,7 +1176,7 @@ myFloat3 centerOfMass(dim3 dimGrid, dim3 dimBlock, myFloat3* comPtr, PitchedPtr 
 	while (prevStride > 1)
 	{
 		int newStride = prevStride / 2;
-		integrateVec << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (comPtr, newStride, ((newStride * 2) != prevStride), volume);
+		integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (comPtr, newStride, ((newStride * 2) != prevStride), volume);
 		prevStride = newStride;
 	}
 	myFloat3 hCom = { 0, 0, 0 };
@@ -1205,7 +1204,7 @@ SpinMagDens integrateSpinAndDensity(dim3 dimGrid, dim3 dimBlock, myFloat* spinNo
 		}
 		else
 		{
-			integrateVec << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (localAvgSpinPtr, newStride, ((newStride * 2) != prevStride), volume);
+			integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (localAvgSpinPtr, newStride, ((newStride * 2) != prevStride), volume);
 		}
 		integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (spinNormPtr, newStride, ((newStride * 2) != prevStride), volume);
 		integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (densityPtr, newStride, ((newStride * 2) != prevStride), volume);
@@ -1237,10 +1236,13 @@ cudaPitchedPtr allocDevice3D(cudaExtent extent)
 	checkCudaErrors(cudaMalloc3D(&ptr, extent));
 	return ptr;
 }
-
+size_t totalAmount = 0;
 template<typename T>
 T* allocHost(size_t count)
 {
+	totalAmount += count * sizeof(T);
+	std::cout << totalAmount / 1024 / 1024 / 1024 << std::endl;
+
 	T* ptr;
 	checkCudaErrors(cudaMallocHost(&ptr, count * sizeof(T)));
 	memset(ptr, 0, count * sizeof(T));
@@ -1337,8 +1339,8 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #endif
 
 #if COMPUTE_ERROR || ANALYTIC
-	//myFloat2* d_error = allocDevice<myFloat2>(bodies);
-	myFloat* d_error = allocDevice<myFloat>(bodies);
+	myFloat2* d_error = allocDevice<myFloat2>(bodies);
+	//myFloat* d_error = allocDevice<myFloat>(bodies);
 #endif
 
 #if COMPUTE_GROUND_STATE
@@ -1417,7 +1419,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 	BlockPsis* h_analyticPsi = allocHost<BlockPsis>(hostSize);
 #endif
 	myFloat* h_density = allocHost<myFloat>(bodies);
-
+	std::cout << totalAmount << std::endl;
 	const std::string EXTRA_INFORMATION = toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X);
 	const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + EXTRA_INFORMATION + "_" + PRECISION + ".dat";
 	const std::string GROUND_STATE_Q_FILENAME = "ground_state_q_" + EXTRA_INFORMATION + "_" + PRECISION + ".dat";
@@ -1761,12 +1763,15 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 	std::string createVtksDirCommand = "mkdir " + mkdirOptions + vtksDir;
 	std::string createSpinorVtksDirCommand = "mkdir " + mkdirOptions + spinorVtksDir;
 	std::string createDatsDirCommand = "mkdir " + mkdirOptions + datsDir;
-	//system(createResultsDirCommand.c_str());
-	//system(createVtksDirCommand.c_str());
-	//system(createSpinorVtksDirCommand.c_str());
-	//system(createDatsDirCommand.c_str());
+	system(createResultsDirCommand.c_str());
+	system(createVtksDirCommand.c_str());
+	system(createSpinorVtksDirCommand.c_str());
+	system(createDatsDirCommand.c_str());
 #if ANALYTIC
 	myFloat phaseTime = 0;
+#endif
+#if COMPUTE_ERROR
+	std::cout << "e_F2 = [";
 #endif
 	while (t < END_TIME)
 	{
@@ -1899,6 +1904,20 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 			update_q << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions, dt_per_sigma, false);
 #endif
 		}
+#if SAVE_PICTURE
+		signal = getSignal(0);
+		Bs.Bq = BqScale * signal.Bq;
+		Bs.Bb = BzScale * signal.Bb;
+#if HYPERBOLIC
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
+		drawDensity("hyper", densDir, h_oddPsiHyper, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
+#endif
+#if PARABOLIC
+		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsPara));
+		drawDensity("para", densDir, h_oddPsiPara, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
+#endif
+#endif
+
 #if COMPUTE_ERROR
 		// Compute error
 		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiHyper, dimensions);
@@ -1909,10 +1928,10 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 			integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_error, newStride, ((newStride * 2) != prevStride), volume);
 			prevStride = newStride;
 		}
-		//myFloat2 hError = { 0 };
-		myFloat hError = { 0 };
+		myFloat2 hError = { 0 };
+		//myFloat hError = { 0 };
 		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(myFloat2), cudaMemcpyDeviceToHost));
-		std::cout << hError << ", " << std::endl;
+		std::cout << hError.x << ", " << hError.y << "; ";
 #endif
 #if ANALYTIC
 		// Compute error
@@ -1957,6 +1976,9 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #endif
 #endif
 	}
+#endif
+#if COMPUTE_ERROR
+	std::cout << "]';" << std::endl;
 #endif
 #if HYPERBOLIC
 	checkCudaErrors(cudaFree(d_cudaEvenPsiHyper.ptr));
@@ -2016,36 +2038,28 @@ int main(int argc, char** argv)
 	std::cout << "Start simulating from t = " << t << " ms, with a time step size of " << dt << "." << std::endl;
 	std::cout << "The simulation will end at " << END_TIME << " ms." << std::endl;
 	//std::cout << "Block scale = " << blockScale << std::endl;
-	//std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
-	std::cout << "c0: " << c0 << ", c2: " << c2 << ", c4: " << c4 << std::endl;
-#if USE_QUADRATIC_ZEEMAN
-	std::cout << "Taking the quadratic Zeeman term into account" << std::endl;
-#else
-	std::cout << "No quadratic Zeeman term" << std::endl;
-#endif
-	std::cout << "Relativistic sigma = " << sigma << std::endl;
+	//std::cout << "c0: " << c0 << ", c2: " << c2 << ", c4: " << c4 << std::endl;
+	std::cout << "dt = " << dt << " = " << dt / omega_r * 1e3 << " ms." << std::endl;
+	std::cout << "sigma = " << sigma << std::endl;
+	std::cout << "dt / sigma = " << dt_per_sigma << std::endl;
 
-#if CREATE_KNOT
-	std::cout << "Create knot" << std::endl;
-#elif CREATE_SKYRMION
-	std::cout << "Create skyrmion" << std::endl;
-#endif
 	printBasis();
 
 	// integrate in time using DEC
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
 
-#if COMPUTE_GROUND_STATE
+#if COMPUTE_GROUND_STATE || COMPUTE_ERROR
 	const myFloat blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
+	std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
 	integrateInTime(blockScale, domainMin, domainMax);
-#else	
+#else
 	//integrateInTime(blockScale, domainMin, domainMax);+	for (int i = 0; i < 10; ++i)
 	for (int i = 0; i < 10; ++i)
 	{
 		REPLICABLE_STRUCTURE_COUNT_X = 58.0 + i * 6.0;
 		const myFloat blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
-
+		
 		while (!integrateInTime(blockScale, domainMin, domainMax))
 		{
 			dt_per_sigma = dt / sigma;
@@ -2055,9 +2069,11 @@ int main(int argc, char** argv)
 		dt_per_sigma = dt / sigma;
 		IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 		t = 0;
-
+		
 		dtIncreaseCount = 0;
 	}
+
+	std::cout << std::endl;
 #endif
 	return 0;
 }

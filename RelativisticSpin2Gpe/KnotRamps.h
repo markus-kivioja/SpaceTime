@@ -94,7 +94,7 @@ Signal getSignal(myFloat t)
 		}
 		t = tInRamp;
 	}
-	myFloat3 prevBb = (BbRampIdx > 0) ? Bbs[BbRampIdx - 1] : {0, 0, 0};
+	myFloat3 prevBb = (BbRampIdx > 0) ? Bbs[BbRampIdx - 1] : myFloat3{0, 0, 0};
 	switch (BbTypes[BbRampIdx])
 	{
 	case RampType::CONSTANT:
