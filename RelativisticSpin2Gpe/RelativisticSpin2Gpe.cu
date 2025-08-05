@@ -64,9 +64,9 @@ std::string getProjectionString()
 #define COMPUTE_GROUND_STATE 0
 
 #define HYPERBOLIC 1
-#define PARABOLIC 1
-#define ANALYTIC 0
-#define COMPUTE_ERROR (HYPERBOLIC && PARABOLIC)
+#define PARABOLIC 0
+#define ANALYTIC 1
+#define COMPUTE_ERROR ((HYPERBOLIC && PARABOLIC) || (ANALYTIC && PARABOLIC) || (HYPERBOLIC && ANALYTIC))
 
 #define SAVE_STATES 0
 #define SAVE_PICTURE 0
@@ -148,8 +148,8 @@ myFloat sigma = 0.002; // 0.01; // Coefficient for the relativistic term
 myFloat dt_per_sigma = dt / sigma;
 static int dtIncreaseCount = 0;
 
-//constexpr myFloat E = 126.621; // Computed with ITP
-//constexpr myFloat E = 112.5; // Adjusted by hand to match the parabolic equation
+//constexpr myFloat E = 126.621; // The energy given by the ITP method
+constexpr myFloat E = 126.592; // This procudes a constant error with hyperbolic
 
 std::string toStringShort(const myFloat value)
 {
@@ -246,29 +246,11 @@ __global__ void weightedDiff(myFloat2* result, PitchedPtr pLeft, PitchedPtr pRig
 	myFloat diffSqr = (conj(diff.s2) * diff.s2).x + (conj(diff.s1) * diff.s1).x + (conj(diff.s0) * diff.s0).x + (conj(diff.s_1) * diff.s_1).x + (conj(diff.s_2) * diff.s_2).x;
 
 	myFloat leftSqr = (conj(left.s2) * left.s2).x + (conj(left.s1) * left.s1).x + (conj(left.s0) * left.s0).x + (conj(left.s_1) * left.s_1).x + (conj(left.s_2) * left.s_2).x;
-	myFloat rightSqr = (conj(right.s2) * right.s2).x + (conj(right.s1) * right.s1).x + (conj(right.s0) * right.s0).x + (conj(right.s_1) * right.s_1).x + (conj(right.s_2) * right.s_2).x;
-	myFloat densDiff = leftSqr - rightSqr;
-
-	//myFloat leftDenses[5] = { (conj(left.s2) * left.s2).x, (conj(left.s1) * left.s1).x, (conj(left.s0) * left.s0).x, (conj(left.s_1) * left.s_1).x, (conj(left.s_2) * left.s_2).x };
-	//myFloat rightDenses[5] = { (conj(right.s2) * right.s2).x, (conj(right.s1) * right.s1).x, (conj(right.s0) * right.s0).x, (conj(right.s_1) * right.s_1).x, (conj(right.s_2) * right.s_2).x };
-	//myFloat densesDiff = 0;
-	//for (int i = 0; i < 5; ++i)
-	//	densesDiff += (leftDenses[i] - rightDenses[i]) * (leftDenses[i] - rightDenses[i]);
 
 	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
-	//result[idx] = leftSqr * diffSqr;
+
 	result[idx].x = diffSqr; // Takes the phase into account
-	result[idx].y = densDiff * densDiff; // Doesn't count phase, only magnitude
-	//result[idx] = abs(leftSqr - rightSqr);
-
-	//result[idx].x = atan2(right.s0.y, right.s0.x) - atan2(left.s0.y, left.s0.x); // Phase diff
-	//result[idx].y = (conj(right.s0) * right.s0).x - (conj(left.s0) * left.s0).x; // Mag diff
-
-	//result[idx].x *= result[idx].x;
-	//result[idx].y *= result[idx].y;
-
-	//result[idx].x = diff.s0.x;
-	//result[idx].y = diff.s0.y;
+	result[idx].y = (atan2(left.s0.y, left.s0.x) - atan2(right.s0.y, right.s0.x)); // Doesn't count phase, only magnitude
 }
 
 __global__ void analyticStep(PitchedPtr nextStep, PitchedPtr prevStep, uint3 dimensions, const myFloat2 phaseShift)
@@ -1492,6 +1474,9 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #if PARABOLIC
 	loadFromFile(psi_filename, (char*)&h_oddPsiPara[0], hostSize * sizeof(BlockPsis));
 #endif
+#if ANALYTIC
+	loadFromFile(psi_filename, (char*)&h_analyticPsi[0], hostSize * sizeof(BlockPsis));
+#endif
 
 	bool doForward = true;
 #endif
@@ -1507,6 +1492,10 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 	cudaPitchedPtr h_cudaEvenQPara = copyHostToDevice3D(h_evenQPara, d_cudaEvenQPara, edgeExtent);
 	cudaPitchedPtr h_cudaOddQPara = copyHostToDevice3D(h_oddQPara, d_cudaOddQPara, edgeExtent);
 #endif
+#if ANALYTIC
+	cudaPitchedPtr h_cudaAnalyticPsi = copyHostToDevice3D(h_analyticPsi, d_cudaGroundPsi, psiExtent);
+#endif
+
 	checkCudaErrors(cudaMemcpy(d_d0, &d0[0], d0.size() * sizeof(int3), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_d1, &d1[0], d1.size() * sizeof(int2), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_hodges, &hodges[0], hodges.size() * sizeof(myFloat), cudaMemcpyHostToDevice));
@@ -1529,7 +1518,9 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 	cudaMemcpy3DParms evenQBackParamsPara = createDeviceToHostParams(d_cudaEvenQPara, h_cudaEvenQPara, edgeExtent);
 	cudaMemcpy3DParms oddQBackParamsPara = createDeviceToHostParams(d_cudaOddQPara, h_cudaOddQPara, edgeExtent);
 #endif
-
+#if ANALYTIC
+	cudaMemcpy3DParms analyticPsiBackParams = createDeviceToHostParams(d_cudaAnalyticPsi, h_cudaAnalyticPsi, psiExtent);
+#endif
 	// Integrate in time
 	uint3 dimensions = make_uint3(xsize, ysize, zsize);
 	dim3 psiDimBlock(THREAD_BLOCK_X* VALUES_IN_BLOCK, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
@@ -1591,6 +1582,32 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 		case Phase::CYCLIC:
 			//std::cout << "Transform ground state to cyclic phase with a phase of " << PHASE << "." << std::endl;
 			cyclicState << <dimGrid, psiDimBlock >> > (d_oddPsiPara, dimensions, PHASE);
+			break;
+		default:
+			//std::cout << "Initial phase " << (int)initPhase << " is not supported!";
+			break;
+		}
+
+		//std::cout << "Parabolic density after init phase transform: " << getDensity(dimGrid, psiDimBlock, d_density, d_oddPsiPara, dimensions, bodies, volume) << std::endl;
+#endif
+#if ANALYTIC
+		switch (initPhase)
+		{
+		case Phase::UN:
+			//std::cout << "Transform ground state to uniaxial nematic phase." << std::endl;
+			unState << <dimGrid, psiDimBlock >> > (d_groundPsi, dimensions);
+			break;
+		case Phase::BN_VERT:
+			//std::cout << "Transform ground state to vertically oriented biaxial nematic phase with a phase of " << PHASE << "." << std::endl;
+			verticalBnState << <dimGrid, psiDimBlock >> > (d_groundPsi, dimensions, PHASE);
+			break;
+		case Phase::BN_HORI:
+			//std::cout << "Transform ground state to horizontally oriented biaxial nematic phase with a phase of " << PHASE << "." << std::endl;
+			horizontalBnState << <dimGrid, psiDimBlock >> > (d_groundPsi, dimensions, PHASE);
+			break;
+		case Phase::CYCLIC:
+			//std::cout << "Transform ground state to cyclic phase with a phase of " << PHASE << "." << std::endl;
+			cyclicState << <dimGrid, psiDimBlock >> > (d_groundPsi, dimensions, PHASE);
 			break;
 		default:
 			//std::cout << "Initial phase " << (int)initPhase << " is not supported!";
@@ -1773,6 +1790,32 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #if COMPUTE_ERROR
 	std::cout << "e_F2 = [";
 #endif
+
+#if ANALYTIC
+	// Compute error
+	myFloat2 phaseShift = myFloat2{ cos(-phaseTime * E), sin(-phaseTime * E) };
+	analyticStep << <dimGrid, psiDimBlock >> > (d_analyticPsi, d_groundPsi, dimensions, phaseShift);
+
+#if HYPERBOLIC
+	weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_analyticPsi, d_oddPsiHyper, dimensions);
+#elif PARABOLIC
+	weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_analyticPsi, d_oddPsiPara, dimensions);
+#endif
+	int prevStride = bodies;
+	while (prevStride > 1)
+	{
+		int newStride = prevStride / 2;
+		integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_error, newStride, ((newStride * 2) != prevStride), volume);
+		prevStride = newStride;
+	}
+	myFloat2 hError = { 0 };
+	//myFloat hError = { 0 };
+	checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(myFloat2), cudaMemcpyDeviceToHost));
+	//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - sqrt((conj(hError) * hError).x) << ", ";
+	std::cout << hError.x << ", " << hError.y << "; ";
+	//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - hError.x << ", ";
+#endif
+
 	while (t < END_TIME)
 	{
 		// Measure wall clock time
@@ -1782,7 +1825,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 		prevTime = std::chrono::high_resolution_clock::now();
 
 		// For checking the numerical stability
-#if 1 // Disable / enable numerical stability measurement
+#if 0 // Disable / enable numerical stability measurement
 #if !COMPUTE_ERROR
 #if HYPERBOLIC
 		myFloat dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
@@ -1916,9 +1959,13 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 		checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsPara));
 		drawDensity("para", densDir, h_oddPsiPara, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
 #endif
+#if ANALYTIC
+		checkCudaErrors(cudaMemcpy3D(&analyticPsiBackParams));
+		drawDensity("analytic", densDir, h_analyticPsi, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
+#endif
 #endif
 
-#if COMPUTE_ERROR
+#if 0 // COMPUTE_ERROR
 		// Compute error
 		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiHyper, dimensions);
 		int prevStride = bodies;
@@ -1935,17 +1982,13 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #endif
 #if ANALYTIC
 		// Compute error
-		//constexpr myFloat E = 126.621; // Computed with ITP
-		constexpr myFloat E = 126.421; // Computed with ITP
 		myFloat2 phaseShift = myFloat2{ cos(-phaseTime * E), sin(-phaseTime * E) };
 		analyticStep << <dimGrid, psiDimBlock >> > (d_analyticPsi, d_groundPsi, dimensions, phaseShift);
-		//checkCudaErrors(cudaMemcpy3D(&analyticPsiBackParams));
-		//drawDensityRI("analytic_", h_analyticPsi, dxsize, dysize, dzsize, t - CREATION_RAMP_START, resultsDir);
 
 #if HYPERBOLIC
-		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_groundPsi, d_oddPsiHyper, dimensions);
+		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_analyticPsi, d_oddPsiHyper, dimensions);
 #elif PARABOLIC
-		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_groundPsi, d_oddPsiPara, dimensions);
+		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_analyticPsi, d_oddPsiPara, dimensions);
 #endif
 		int prevStride = bodies;
 		while (prevStride > 1)
@@ -1954,9 +1997,12 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 			integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_error, newStride, ((newStride * 2) != prevStride), volume);
 			prevStride = newStride;
 		}
-		myFloat hError = { 0 };
-		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(myFloat), cudaMemcpyDeviceToHost));
-		std::cout << hError << ", ";
+		myFloat2 hError = { 0 };
+		//myFloat hError = { 0 };
+		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(myFloat2), cudaMemcpyDeviceToHost));
+		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - sqrt((conj(hError) * hError).x) << ", ";
+		std::cout << hError.x << ", " << hError.y << "; ";
+		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - hError.x << ", ";
 #endif
 
 #if SAVE_STATES

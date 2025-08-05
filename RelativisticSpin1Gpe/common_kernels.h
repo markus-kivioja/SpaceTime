@@ -472,9 +472,11 @@ __global__ void weightedDiff(myFloat2* result, PitchedPtr pLeft, PitchedPtr pRig
 	Complex3Vec diff = { right.s1 - left.s1, right.s0 - left.s0, right.s_1 - left.s_1};
 	myFloat diffSqr = (conj(diff.s1) * diff.s1).x + (conj(diff.s0) * diff.s0).x + (conj(diff.s_1) * diff.s_1).x;
 
+	myFloat leftSqr = (conj(left.s1) * left.s1).x + (conj(left.s0) * left.s0).x + (conj(left.s_1) * left.s_1).x;
+
 	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
 
-	result[idx].x = diffSqr; // Takes the phase into account
+	result[idx].x = diffSqr * leftSqr; // Takes the phase into account
 	result[idx].y = diffSqr; // Doesn't count phase, only magnitude
 }
 

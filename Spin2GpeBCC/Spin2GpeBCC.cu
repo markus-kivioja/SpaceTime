@@ -81,7 +81,7 @@ constexpr myFloat GRID_SCALING_START = 1.0; // ms
 #include <chrono>
 #include <random>
 
-#define COMPUTE_GROUND_STATE 0
+#define COMPUTE_GROUND_STATE 1
 #define GROUND_STATE_ITERATION_COUNT 100000
 
 #define USE_QUADRATIC_ZEEMAN 0
@@ -211,6 +211,28 @@ __global__ void density(myFloat* density, PitchedPtr prevStep, uint3 dimensions)
 
 	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
 	density[idx] = (psi.s2 * conj(psi.s2)).x + (psi.s1 * conj(psi.s1)).x + (psi.s0 * conj(psi.s0)).x + (psi.s_1 * conj(psi.s_1)).x + (psi.s_2 * conj(psi.s_2)).x;
+}
+
+__global__ void innerProduct(myFloat* result, PitchedPtr pLeft, PitchedPtr pRight, uint3 dimensions)
+{
+	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
+	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
+	size_t dataXid = xid / VALUES_IN_BLOCK; // One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	// Exit leftover threads
+	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	{
+		return;
+	}
+
+	size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
+
+	Complex5Vec left = ((BlockPsis*)(pLeft.ptr + pLeft.slicePitch * zid + pLeft.pitch * yid) + dataXid)->values[dualNodeId];
+	Complex5Vec right = ((BlockPsis*)(pRight.ptr + pRight.slicePitch * zid + pRight.pitch * yid) + dataXid)->values[dualNodeId];
+
+	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
+	result[idx] = (conj(left.s2) * right.s2).x + (conj(left.s1) * right.s1).x + (conj(left.s0) * right.s0).x + (conj(left.s_1) * right.s_1).x + (conj(left.s_2) * right.s_2).x;
 }
 
 __global__ void localAvgSpinAndDensity(myFloat* pSpinNorm, myFloat3* pLocalAvgSpin, myFloat* pDensity, PitchedPtr prevStep, uint3 dimensions)
@@ -560,7 +582,7 @@ __global__ void cyclicState(PitchedPtr psi, uint3 dimensions, myFloat phase = 0)
 };
 
 #if COMPUTE_GROUND_STATE
-__global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __restrict__ laplace, const myFloat* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const myFloat block_scale, const myFloat3 p0, const myFloat c0, const myFloat c2, const myFloat c4, myFloat t)
+__global__ void itp(PitchedPtr HPsiPtr, PitchedPtr nextStep, PitchedPtr prevStep, const int4* __restrict__ laplace, const myFloat* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const myFloat block_scale, const myFloat3 p0, const myFloat c0, const myFloat c2, const myFloat c4, myFloat t)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -582,6 +604,9 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __rest
 	// Calculate the pointers for this block
 	char* prevPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
 	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + dataXid;
+
+	// For computing the energy/chemical potential
+	BlockPsis* HPsi = (BlockPsis*)(HPsiPtr.ptr + HPsiPtr.slicePitch * zid + HPsiPtr.pitch * yid) + dataXid;
 
 	// Update psi
 	const Complex5Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
@@ -686,6 +711,12 @@ __global__ void itp(PitchedPtr nextStep, PitchedPtr prevStep, const int4* __rest
 	H.s0  += (conj(c13) * prev.s2 + c35 * prev.s_2 + c34 * prev.s_1 + conj(c23) * prev.s1);
 	H.s_1 += (conj(c34) * prev.s0 + c45 * prev.s_2);
 	H.s_2 += (conj(c35) * prev.s0 + conj(c45) * prev.s_1);
+
+	HPsi->values[dualNodeId].s2 = H.s2;
+	HPsi->values[dualNodeId].s1 = H.s1;
+	HPsi->values[dualNodeId].s0 = H.s0;
+	HPsi->values[dualNodeId].s_1 = H.s_1;
+	HPsi->values[dualNodeId].s_2 = H.s_2;
 
 	nextPsi->values[dualNodeId].s2 = prev.s2 - dt * H.s2;
 	nextPsi->values[dualNodeId].s1 = prev.s1 - dt * H.s1;
@@ -1246,15 +1277,17 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 		checkCudaErrors(cudaMalloc3D(&d_cudaEvenPsis[i], psiExtent));
 		checkCudaErrors(cudaMalloc3D(&d_cudaOddPsis[i], psiExtent));
 	}
+	cudaPitchedPtr d_cudaHPsi;
+	checkCudaErrors(cudaMalloc3D(&d_cudaHPsi, psiExtent));
 
-	//myFloat* d_energy;
+	myFloat* d_energy;
 	myFloat* d_spinNorm;
 	myFloat* d_density;
 	myFloat3* d_localAvgSpin;
 	myFloat3* d_u;
 	myFloat3* d_v;
 	myFloat* d_theta;
-	//checkCudaErrors(cudaMalloc(&d_energy, bodies * sizeof(myFloat)));
+	checkCudaErrors(cudaMalloc(&d_energy, bodies * sizeof(myFloat)));
 	checkCudaErrors(cudaMalloc(&d_spinNorm, bodies * sizeof(myFloat)));
 	checkCudaErrors(cudaMalloc(&d_density, bodies * sizeof(myFloat)));
 	checkCudaErrors(cudaMalloc(&d_localAvgSpin, bodies * sizeof(myFloat3)));
@@ -1269,6 +1302,9 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 		d_evenPsis[i] = { (char*)d_cudaEvenPsis[i].ptr + offset, d_cudaEvenPsis[i].pitch, d_cudaEvenPsis[i].pitch * dysize };
 		d_oddPsis[i]= { (char*)d_cudaOddPsis[i].ptr + offset, d_cudaOddPsis[i].pitch, d_cudaOddPsis[i].pitch * dysize };
 	}
+	size_t offset = d_cudaHPsi.pitch * dysize + d_cudaHPsi.pitch + sizeof(BlockPsis);
+	PitchedPtr d_HPsi = { (char*)d_cudaHPsi.ptr + offset, d_cudaHPsi.pitch, d_cudaHPsi.pitch * dysize };
+
 	// find terms for laplacian
 	Buffer<int4> lapind;
 	Buffer<myFloat> hodges;
@@ -1527,7 +1563,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 	{
 		if ((iter % 10000) == 0) std::cout << "Iteration " << iter << std::endl;
 #if SAVE_PICTURE
-		if ((iter % 10000) == 0)
+		if ((iter % 100) == 0)
 		{
 			checkCudaErrors(cudaMemcpy3D(&evenPsiBackParams));
 			signal = getSignal(0);
@@ -1538,6 +1574,21 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 
 			myFloat3 com = centerOfMass(h_evenPsi, bsize, dxsize, dysize, dzsize, block_scale, d_original_p0);
 			std::cout << "Center of mass: " << com.x << ", " << com.y << ", " << com.z << std::endl;
+
+#if 1
+			// Compute energy/chemical potential // Alice ring experimen E = 127.295
+			innerProduct << <dimGrid, dimBlock >> > (d_energy, d_evenPsis[0], d_HPsi, dimensions);
+			int prevStride = bodies;
+			while (prevStride > 1)
+			{
+				int newStride = prevStride / 2;
+				integrate << <dim3(std::ceil(newStride / 32.0), 1, 1), dim3(32, 1, 1) >> > (d_energy, newStride, ((newStride * 2) != prevStride), volume);
+				prevStride = newStride;
+			}
+			myFloat hEnergy = 0;
+			checkCudaErrors(cudaMemcpy(&hEnergy, d_energy, sizeof(myFloat), cudaMemcpyDeviceToHost));
+			std::cout << "Energy: " << hEnergy << std::endl;
+#endif
 		}
 #endif
 		if (iter == GROUND_STATE_ITERATION_COUNT)
@@ -1550,12 +1601,12 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 			return 0;
 		}
 		// Take an imaginary time step
-		itp << <dimGrid, dimBlock >> > (d_oddPsis[0], d_evenPsis[0], d_lapind, d_hodges, {0}, dimensions, block_scale, d_original_p0, c0, c2, c4, t);
+		itp << <dimGrid, dimBlock >> > (d_HPsi, d_oddPsis[0], d_evenPsis[0], d_lapind, d_hodges, {0}, dimensions, block_scale, d_original_p0, c0, c2, c4, t);
 		// Normalize
 		normalize_h(dimGrid, dimBlock, d_density, d_oddPsis[0], dimensions, bodies, volume);
 
 		// Take an imaginary time step
-		itp << <dimGrid, dimBlock >> > (d_evenPsis[0], d_oddPsis[0], d_lapind, d_hodges, { 0 }, dimensions, block_scale, d_original_p0, c0, c2, c4, t);
+		itp << <dimGrid, dimBlock >> > (d_HPsi, d_evenPsis[0], d_oddPsis[0], d_lapind, d_hodges, { 0 }, dimensions, block_scale, d_original_p0, c0, c2, c4, t);
 		// Normalize
 		normalize_h(dimGrid, dimBlock, d_density, d_evenPsis[0], dimensions, bodies, volume);
 

@@ -912,7 +912,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #endif
 			iterCount += 2;
 		}
-#if 0
+#if 0 // COMPUTE_ERROR
 		// Compute error
 		//innerProduct << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiHyper, dimensions);
 		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiHyper, dimensions);
