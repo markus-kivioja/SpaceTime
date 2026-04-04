@@ -92,7 +92,8 @@ __global__ void itp_psi(PitchedPtr HPsiPtr, PitchedPtr nextStep, PitchedPtr prev
 	nextPsi->values[dualNodeId].s_1 = prev.s_1 - dt * H.s_1;
 };
 
-__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const myFloat* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const myFloat block_scale, const myFloat3 p0, const myFloat c0, const myFloat c2, myFloat dt, bool hyperb, myFloat sigma)
+__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const myFloat* __restrict__ hodges, 
+	MagFields Bs, const uint3 dimensions, const myFloat block_scale, const myFloat3 p0, const myFloat c0, const myFloat c2, myFloat dt, bool hyperb, myFloat sigma)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -476,8 +477,8 @@ __global__ void weightedDiff(myFloat2* result, PitchedPtr pLeft, PitchedPtr pRig
 
 	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
 
-	result[idx].x = diffSqr * leftSqr; // Takes the phase into account
-	result[idx].y = diffSqr; // Doesn't count phase, only magnitude
+	result[idx].x = diffSqr;
+	result[idx].y = diffSqr;
 }
 
 __global__ void densDiff(myFloat* result, PitchedPtr pLeft, PitchedPtr pRight, uint3 dimensions)

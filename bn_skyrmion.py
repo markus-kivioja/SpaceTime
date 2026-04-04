@@ -3,11 +3,12 @@ from mayavi.mlab import *
 from tvtk.api import tvtk
 from scipy.special import sph_harm
 
-filename = '0.250141.vtk'
+#filename = '0.250141.vtk'
+filename = 'C:\\Users\\marku\\SpaceTime\\0.505256.vtk'
 #filename = '0.241425.vtk'
 
-use_spherical_harmonics = True
-#use_spherical_harmonics = False
+#use_spherical_harmonics = True
+use_spherical_harmonics = False
 
 figure(1, bgcolor=(1, 1, 1))
 clf()

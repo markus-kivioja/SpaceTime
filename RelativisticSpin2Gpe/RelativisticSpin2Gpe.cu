@@ -13,7 +13,8 @@ enum class Phase {
 	BN_HORI,
 	CYCLIC
 };
-constexpr Phase initPhase = Phase::UN;
+//constexpr Phase initPhase = Phase::UN;
+constexpr Phase initPhase = Phase::BN_HORI;
 //constexpr Phase initPhase = Phase::BN_VERT;
 //constexpr Phase initPhase = Phase::CYCLIC;
 
@@ -65,11 +66,12 @@ std::string getProjectionString()
 
 #define HYPERBOLIC 1
 #define PARABOLIC 0
-#define ANALYTIC 1
+#define ANALYTIC 0
+#define COMPUTE_STABLE_DT 0
 #define COMPUTE_ERROR ((HYPERBOLIC && PARABOLIC) || (ANALYTIC && PARABOLIC) || (HYPERBOLIC && ANALYTIC))
 
-#define SAVE_STATES 0
-#define SAVE_PICTURE 0
+#define SAVE_STATES 1
+#define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
 #define THREAD_BLOCK_Y 2
@@ -126,30 +128,36 @@ constexpr myFloat NOISE_AMPLITUDE = 0;
 //myFloat dt = 1e-4; // 5e-5;
 //myFloat dt_increse = 1e-5;
 
-//myFloat dt = 5e-4;
-//myFloat dt = 1.5e-3; // 5e-5;
-myFloat dt = 5e-5;
+myFloat dt = 5e-4;
+//myFloat dt = 1.4e-3; // 5e-5;
+//myFloat dt = 5e-5;
+#if HYPERBOLIC
+//myFloat dt = 1.1e-3; // Max hyper
+#elif PARABOLIC
+myFloat dt = 5.6e-4; // Max para
+#endif
 myFloat dt_decrese = 1e-4;
 myFloat dt_increse = 1e-5;
 
-const myFloat IMAGE_SAVE_INTERVAL = 0.01; // 0.2; // ms
+const myFloat IMAGE_SAVE_INTERVAL = 0.1; // 0.2; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
 
 myFloat t = 0; // Start time in ms
-constexpr myFloat END_TIME = 1.0; // 7.4; // End time in ms
+constexpr myFloat END_TIME = 0.5; // 7.4; // End time in ms
 
 #if COMPUTE_GROUND_STATE
 myFloat sigma = 0.1;
 #else
-myFloat sigma = 0.002; // 0.01; // Coefficient for the relativistic term
+myFloat sigma = 0.005; // 0.01; // Coefficient for the relativistic term
 #endif
 myFloat dt_per_sigma = dt / sigma;
 static int dtIncreaseCount = 0;
 
 //constexpr myFloat E = 126.621; // The energy given by the ITP method
-constexpr myFloat E = 126.592; // This procudes a constant error with hyperbolic
+constexpr myFloat E = 126.6006; // This produces the smallest error with parabolic
+//constexpr myFloat E = 126.592; // This procudes a constant error with hyperbolic
 
 std::string toStringShort(const myFloat value)
 {
@@ -246,11 +254,14 @@ __global__ void weightedDiff(myFloat2* result, PitchedPtr pLeft, PitchedPtr pRig
 	myFloat diffSqr = (conj(diff.s2) * diff.s2).x + (conj(diff.s1) * diff.s1).x + (conj(diff.s0) * diff.s0).x + (conj(diff.s_1) * diff.s_1).x + (conj(diff.s_2) * diff.s_2).x;
 
 	myFloat leftSqr = (conj(left.s2) * left.s2).x + (conj(left.s1) * left.s1).x + (conj(left.s0) * left.s0).x + (conj(left.s_1) * left.s_1).x + (conj(left.s_2) * left.s_2).x;
+	myFloat rightSqr = (conj(right.s2) * right.s2).x + (conj(right.s1) * right.s1).x + (conj(right.s0) * right.s0).x + (conj(right.s_1) * right.s_1).x + (conj(right.s_2) * right.s_2).x;
 
 	size_t idx = VALUES_IN_BLOCK * (zid * dimensions.x * dimensions.y + yid * dimensions.x + dataXid) + dualNodeId;
-
-	result[idx].x = diffSqr; // Takes the phase into account
-	result[idx].y = (atan2(left.s0.y, left.s0.x) - atan2(right.s0.y, right.s0.x)); // Doesn't count phase, only magnitude
+	
+	result[idx].x = diffSqr;
+	//result[idx].x = leftSqr - rightSqr;//diffSqr;
+	//result[idx].x *= result[idx].x;
+	result[idx].y = (atan2(left.s0.y, left.s0.x) - atan2(right.s0.y, right.s0.x)) * leftSqr; // Phase
 }
 
 __global__ void analyticStep(PitchedPtr nextStep, PitchedPtr prevStep, uint3 dimensions, const myFloat2 phaseShift)
@@ -1218,13 +1229,10 @@ cudaPitchedPtr allocDevice3D(cudaExtent extent)
 	checkCudaErrors(cudaMalloc3D(&ptr, extent));
 	return ptr;
 }
-size_t totalAmount = 0;
+
 template<typename T>
 T* allocHost(size_t count)
 {
-	totalAmount += count * sizeof(T);
-	std::cout << totalAmount / 1024 / 1024 / 1024 << std::endl;
-
 	T* ptr;
 	checkCudaErrors(cudaMallocHost(&ptr, count * sizeof(T)));
 	memset(ptr, 0, count * sizeof(T));
@@ -1401,7 +1409,6 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 	BlockPsis* h_analyticPsi = allocHost<BlockPsis>(hostSize);
 #endif
 	myFloat* h_density = allocHost<myFloat>(bodies);
-	std::cout << totalAmount << std::endl;
 	const std::string EXTRA_INFORMATION = toStringShort(DOMAIN_SIZE_X) + "_" + toStringShort(REPLICABLE_STRUCTURE_COUNT_X);
 	const std::string GROUND_STATE_PSI_FILENAME = "ground_state_psi_" + EXTRA_INFORMATION + "_" + PRECISION + ".dat";
 	const std::string GROUND_STATE_Q_FILENAME = "ground_state_q_" + EXTRA_INFORMATION + "_" + PRECISION + ".dat";
@@ -1770,7 +1777,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #else
 	std::string dirPrefix = phaseToString(initPhase) + dirSeparator + getProjectionString() + dirSeparator;
 #endif
-
+#if !COMPUTE_STABLE_DT
 	std::string densDir = dirPrefix + "dens";
 	std::string vtksDir = dirPrefix + "dens_vtks";
 	std::string spinorVtksDir = dirPrefix + "spinor_vtks";
@@ -1784,6 +1791,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 	system(createVtksDirCommand.c_str());
 	system(createSpinorVtksDirCommand.c_str());
 	system(createDatsDirCommand.c_str());
+#endif
 #if ANALYTIC
 	myFloat phaseTime = 0;
 #endif
@@ -1816,16 +1824,17 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 	//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - hError.x << ", ";
 #endif
 
-	while (t < END_TIME)
-	{
-		// Measure wall clock time
-		static auto prevTime = std::chrono::high_resolution_clock::now();
-		auto duration = std::chrono::high_resolution_clock::now() - prevTime;
-		//std::cout << "Simulation time: " << t << " ms. Real time from previous save: " << duration.count() * 1e-9 << " s." << std::endl;
-		prevTime = std::chrono::high_resolution_clock::now();
+	// Measure wall clock time
+	static auto prevTime = std::chrono::high_resolution_clock::now();
 
+#if COMPUTE_STABLE_DT
+	int iterCount = 0;
+#else
+	while (t < END_TIME)
+#endif
+	{
 		// For checking the numerical stability
-#if 0 // Disable / enable numerical stability measurement
+#if COMPUTE_STABLE_DT // Disable / enable numerical stability measurement
 #if !COMPUTE_ERROR
 #if HYPERBOLIC
 		myFloat dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
@@ -1835,12 +1844,13 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #endif
 		static myFloat prevDens = dens;
 		//std::cout << "At " << t << " ms density is " << dens << std::endl;
-		constexpr myFloat RELATIVE_MARGIN = 0.1; // 0.02;
+		//constexpr myFloat RELATIVE_MARGIN = 0.1; // 0.02;
 		constexpr myFloat ABSOLUTE_MARGIN = 1.1; // 0.02;
 		//if (t > 0 && (abs(dens - prevDens) > RELATIVE_MARGIN || isnan(dens)))
 
 		if (t > 0 && dens > ABSOLUTE_MARGIN || isnan(dens))
 		{
+			//std::cout << dens << std::endl;
 #if HYPERBOLIC
 			checkCudaErrors(cudaFree(d_cudaEvenPsiHyper.ptr));
 			checkCudaErrors(cudaFree(d_cudaEvenQHyper.ptr));
@@ -1894,18 +1904,22 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #else
 #if !COMPUTE_ERROR
 #if HYPERBOLIC
-		myFloat3 comHyper = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiHyper, dimensions, bodies, volume, block_scale, d_p0);
-		std::cout << comHyper.x << ", "; // << std::endl;
+		//myFloat3 comHyper = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiHyper, dimensions, bodies, volume, block_scale, d_p0);
+		//std::cout << comHyper.x << ", "; // << std::endl;
 #endif
 #if PARABOLIC
-		myFloat3 comPara = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiPara, dimensions, bodies, volume, block_scale, d_p0);
-		std::cout << comPara.x << ", " << std::endl;
+		//myFloat3 comPara = centerOfMass(dimGrid, psiDimBlock, d_com, d_oddPsiPara, dimensions, bodies, volume, block_scale, d_p0);
+		//std::cout << comPara.x << ", " << std::endl;
 #endif
 #endif
 #endif
 
 		// integrate one iteration
+#if COMPUTE_STABLE_DT
+		for (uint step = 0; step < 200; step++) // For checking the numerical stability (not dependent on dt)
+#else
 		for (uint step = 0; step < IMAGE_SAVE_FREQUENCY; step++)
+#endif
 		{
 			// update odd values
 #if ANALYTIC
@@ -1945,6 +1959,9 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #if PARABOLIC
 			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, false, 0.0);
 			update_q << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions, dt_per_sigma, false);
+#endif
+#if COMPUTE_STABLE_DT
+			iterCount += 2;
 #endif
 		}
 #if SAVE_PICTURE
@@ -2000,6 +2017,9 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 		myFloat2 hError = { 0 };
 		//myFloat hError = { 0 };
 		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(myFloat2), cudaMemcpyDeviceToHost));
+		hError.y = fabsf(hError.y);
+		if (hError.y > PI)
+			hError.y = 2 * PI - hError.y;
 		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - sqrt((conj(hError) * hError).x) << ", ";
 		std::cout << hError.x << ", " << hError.y << "; ";
 		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - hError.x << ", ";
@@ -2016,12 +2036,27 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #if HYPERBOLIC
 		if (t > 0.5)
 		{
-			saveVolume(vtksDir, h_oddPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t);
+			//saveVolume(vtksDir, h_oddPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t);
 			saveSpinor(spinorVtksDir, h_oddPsiHyper, bsize, dxsize, dysize, dzsize, block_scale, d_p0, t);
 		}
 #endif
 #endif
 	}
+#endif
+#if HYPERBOLIC
+	cudaDeviceSynchronize();
+	auto duration = std::chrono::high_resolution_clock::now() - prevTime;
+	std::cout << "Simulation time: " << t << " ms. Real time: " << duration.count() * 1e-9 << " s." << std::endl;
+
+	checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
+	drawDensity("hyper_verify", ".", h_oddPsiHyper, dxsize, dysize, dzsize, sigma, Bs, d_p0, block_scale);
+#elif PARABOLIC
+	cudaDeviceSynchronize();
+	auto duration = std::chrono::high_resolution_clock::now() - prevTime;
+	std::cout << "Simulation time: " << t << " ms. Real time: " << duration.count() * 1e-9 << " s." << std::endl;
+
+	checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsPara));
+	drawDensity("para_verify", ".", h_oddPsiPara, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
 #endif
 #if COMPUTE_ERROR
 	std::cout << "]';" << std::endl;
@@ -2065,10 +2100,10 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 		fprintf(stderr, "Failed to launch kernels (error code %s)!\n", cudaGetErrorString(err));
 		exit(EXIT_FAILURE);
 	}
-
+#if COMPUTE_STABLE_DT
 	dt += dt_increse;
 	dtIncreaseCount++;
-
+#endif
 	return 0;
 }
 
@@ -2095,12 +2130,7 @@ int main(int argc, char** argv)
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
 
-#if COMPUTE_GROUND_STATE || COMPUTE_ERROR
-	const myFloat blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
-	std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
-	integrateInTime(blockScale, domainMin, domainMax);
-#else
-	//integrateInTime(blockScale, domainMin, domainMax);+	for (int i = 0; i < 10; ++i)
+#if COMPUTE_STABLE_DT
 	for (int i = 0; i < 10; ++i)
 	{
 		REPLICABLE_STRUCTURE_COUNT_X = 58.0 + i * 6.0;
@@ -2119,7 +2149,10 @@ int main(int argc, char** argv)
 		dtIncreaseCount = 0;
 	}
 
-	std::cout << std::endl;
+#else
+	const myFloat blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
+	std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
+	integrateInTime(blockScale, domainMin, domainMax);
 #endif
 	return 0;
 }
