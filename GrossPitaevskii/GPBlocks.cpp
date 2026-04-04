@@ -47,8 +47,8 @@ void generateCode() // generates code section for different grid structures
 	mesh.stretchLinear(Vector4(0,0,1,0), 1, 0, 0, 0);
 	const Vector3 dim(SQ3,3,1); // maximum block coordinates
 */
-	//for (GridType gridType = CUBIC; gridType < GridType::COUNT; gridType = (GridType)(gridType + 1))
-	GridType gridType = BCC;
+	for (GridType gridType = CUBIC; gridType < GridType::COUNT; gridType = (GridType)(gridType + 1))
+	//GridType gridType = BCC;
 	{
 		uint i, j, k;
 		DelaunayMesh mesh(3);
@@ -75,8 +75,7 @@ void generateCode() // generates code section for different grid structures
 		case BCC:
 			mesh.createBccGrid(scale * Vector3(-1.125, -1.125, -1.125), scale * Vector3(1.875, 1.875, 1.875), scale);
 			dim = Vector3(scale, scale, scale); // maximum block coordinates
-			//filename = "../../GrossPitaevskiiGpuBcc/mesh.h";
-			filename = "../../RelativisticGpeBCC/mesh2.h";
+			filename = "../../GrossPitaevskiiGpuBcc/mesh.h";
 			gridName = "BCC";
 			break;
 		case A15:
@@ -103,8 +102,8 @@ void generateCode() // generates code section for different grid structures
 
 		// find circumcenters inside the block
 		Buffer<Vector3> p(mesh.getBodySize());
-		Buffer<uint> ind;
-		uint inds = 0;
+		Buffer<uint> bodyIndices;
+		uint bodyCount = 0;
 		uint64_t totalFaceCount = 0;
 		for (i = 0; i < p.size(); i++)
 		{
@@ -112,16 +111,16 @@ void generateCode() // generates code section for different grid structures
 
 			if (p[i].x < 0.0 || p[i].y < 0.0 || p[i].z < 0.0) continue;
 			if (p[i].x >= dim.x || p[i].y >= dim.y || p[i].z >= dim.z) continue;
-			ind.gather(i, inds);
+			bodyIndices.gather(i, bodyCount);
 			totalFaceCount += mesh.getBodyFaces(i).size();
 		}
 
 		// compute terms for laplacian
-		const ddouble bhodge = mesh.getBodyHodge(ind[0]);
+		const ddouble bhodge = mesh.getBodyHodge(bodyIndices[0]);
 		uint fsize = 0;
 		ddouble factor = 0.0;
 		ddouble dualEdgeLength = 0;
-		const Buffer<uint>& f0 = mesh.getBodyFaces(ind[0]);
+		const Buffer<uint>& f0 = mesh.getBodyFaces(bodyIndices[0]);
 		for (i = 0; i < f0.size(); i++)
 		{
 			auto faceBodies = mesh.getFaceBodies(f0[i]);
@@ -142,11 +141,11 @@ void generateCode() // generates code section for different grid structures
 		Text indicesAndFaceCountsText;
 		text.precision(17);
 		hodgesText.precision(17);
-		bool constantFaceCount = totalFaceCount == (f0.size() * inds);
-		int facesPerBody = totalFaceCount / inds;
+		bool constantFaceCount = totalFaceCount == (f0.size() * bodyCount);
+		int facesPerBody = totalFaceCount / bodyCount;
 		text << "#define FACE_COUNT " << facesPerBody << std::endl;
 		text << "#define DUAL_EDGE_LENGTH " << dualEdgeLength << std::endl;
-		text << "#define VALUES_IN_BLOCK " << inds << std::endl;
+		text << "#define VALUES_IN_BLOCK " << bodyCount << std::endl;
 		text << "#define EDGES_IN_BLOCK " << totalFaceCount / 2 << std::endl;
 		text << "#define INDICES_PER_BLOCK " << totalFaceCount << std::endl;
 		text << "const Vector3 BLOCK_WIDTH = Vector3(" << dim.x << ", " << dim.y << ", " << dim.z << "); // dimensions of unit block" << std::endl;
@@ -156,34 +155,37 @@ void generateCode() // generates code section for different grid structures
 		text << "void getPositions(Buffer<Vector3> &pos)" << std::endl;
 		text << "{" << std::endl;
 		text << "\tpos.resize(VALUES_IN_BLOCK);" << std::endl;
-		for (i = 0; i < inds; i++) text << "\tpos[" << i << "] = Vector3(" << p[ind[i]].x << ", " << p[ind[i]].y << ", " << p[ind[i]].z << ");" << std::endl;
+
+		for (i = 0; i < bodyCount; i++)
+			text << "\tpos[" << i << "] = Vector3(" << p[bodyIndices[i]].x << ", " << p[bodyIndices[i]].y << ", " << p[bodyIndices[i]].z << ");" << std::endl;
 		text << "}" << std::endl;
+		
 		if (constantFaceCount)
 			text << "ddouble getLaplacian(Buffer<ddouble>& hodges, Buffer<int3>& d0, Buffer<int2>& d1, const int d0x, const int d0y, const int d0z, const int d1x, const int d1y, const int d1z) // offsets in bytes" << std::endl;
 		else
-			text << "ddouble getLaplacian(Buffer<int2> &ind, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz, Buffer<int2> &indicesAndFaceCounts) // nx, ny, nz in bytes" << std::endl;
+			text << "ddouble getLaplacian(Buffer<int2> &bodyIndices, Buffer<ddouble> &hodges, const int nx, const int ny, const int nz, Buffer<int2> &indicesAndFaceCounts) // nx, ny, nz in bytes" << std::endl;
 		text << "{" << std::endl;
 		text << "\td0.resize(EDGES_IN_BLOCK);";
 		fsize = 0;
 		int edgeId = 0;
-		struct int2
+		struct edge
 		{
 			int id = 0;
 			std::string offset;
 			ddouble hodge;
 		};
-		std::vector<std::vector<int2>> edgeMap(inds);
+		std::vector<std::vector<edge>> edgeMap(bodyCount);
 		//std::vector<ddouble> hodges(totalFaceCount);
-		for (i = 0; i < inds; i++)
+		for (i = 0; i < bodyCount; i++)
 		{
-			ddouble bodyHodge = mesh.getBodyHodge(ind[i]);
-			const Buffer<uint>& f = mesh.getBodyFaces(ind[i]);
-			indicesAndFaceCountsText << "\tindicesAndFaceCounts[" << i << "] = make_int2(" << fsize << ", " << f.size() << ");" << std::endl;
-			for (j = 0; j < f.size(); j++)
+			ddouble bodyHodge = mesh.getBodyHodge(bodyIndices[i]);
+			const Buffer<uint>& faces = mesh.getBodyFaces(bodyIndices[i]);
+			indicesAndFaceCountsText << "\tindicesAndFaceCounts[" << i << "] = make_int2(" << fsize << ", " << faces.size() << ");" << std::endl;
+			for (j = 0; j < faces.size(); j++)
 			{
-				const Buffer<uint>& b = mesh.getFaceBodies(f[j]);
+				const Buffer<uint>& b = mesh.getFaceBodies(faces[j]);
 				if (b.size() < 2) continue;
-				const uint other = (b[0] == ind[i] ? b[1] : b[0]);
+				const uint other = (b[0] == bodyIndices[i] ? b[1] : b[0]);
 				Vector3 pp = p[other];
 				Text d0Link;
 				Text d1Link;
@@ -223,11 +225,11 @@ void generateCode() // generates code section for different grid structures
 					d0Link << (d0Link.str().empty() ? "d0z" : " + d0z");
 					d1Link << (d1Link.str().empty() ? "d1z" : " + d1z");
 				}
-				for (k = 0; k < inds; k++)
+				for (k = 0; k < bodyCount; k++)
 				{
-					if ((p[ind[k]] - pp).lensq() < 1e-13) break;
+					if ((p[bodyIndices[k]] - pp).lensq() < 1e-13) break;
 				}
-				if (k >= inds)
+				if (k >= bodyCount)
 				{
 					std::cout << "FAILED" << std::endl;
 					return;
@@ -237,8 +239,8 @@ void generateCode() // generates code section for different grid structures
 					d0Link << "0";
 					d1Link << "0";
 				}
-				ddouble hodge = bodyHodge / mesh.getFaceHodge(f[j]);
-				if ((i <= k) && (edgeMap[i].size() < facesPerBody))
+				ddouble hodge = bodyHodge / mesh.getFaceHodge(faces[j]);
+				if ((i <= k) && (edgeMap[i].size() < faces.size()))
 				{
 					edgesText << "\td0[" << edgeId << "] = {make_int3(" << i << ", " << d0Link.str() << ", " << k << ")};" << std::endl;
 					edgeMap[i].push_back({ edgeId, "0", hodge });
@@ -257,10 +259,11 @@ void generateCode() // generates code section for different grid structures
 
 		int edgeIndsId = 0;
 		text << "\td1.resize(INDICES_PER_BLOCK);" << std::endl;
-		for (int index = 0; index < inds; index++)
+		for (int index = 0; index < bodyCount; index++)
 		{
 			text << "\t//" << index << std::endl;
-			for (int edgeIndInd = 0; edgeIndInd < facesPerBody; ++edgeIndInd)
+			const Buffer<uint>& faces = mesh.getBodyFaces(bodyIndices[index]);
+			for (int edgeIndInd = 0; edgeIndInd < faces.size(); ++edgeIndInd)
 			{
 				text << "\td1[" << edgeIndsId << "] = make_int2(" << edgeMap[index][edgeIndInd].offset << ", " << edgeMap[index][edgeIndInd].id << ");" << std::endl;
 				hodgesText << "\thodges[" << edgeIndsId << "] = " << edgeMap[index][edgeIndInd].hodge << ";" << std::endl;
@@ -286,10 +289,10 @@ void generateCode() // generates code section for different grid structures
 		const uint64_t xsize = uint64_t(domain.x / (block_scale * dim.x)) + 1;
 		const uint64_t ysize = uint64_t(domain.y / (block_scale * dim.y)) + 1;
 		const uint64_t zsize = uint64_t(domain.z / (block_scale * dim.z)) + 1;
-		uint64_t bodies = xsize * ysize * zsize * inds;
+		uint64_t bodies = xsize * ysize * zsize * bodyCount;
 		ddouble maxpot = 68.0;
 		ddouble lapfac = -0.5 * factor / (block_scale * block_scale);
-		const uint64_t lapsize = totalFaceCount / inds;
+		const uint64_t lapsize = totalFaceCount / bodyCount;
 		ddouble lapfac0 = lapsize * (-lapfac);
 		const uint64_t steps_per_iteration = uint64_t(1.0 * (maxpot + lapfac0)) + 1;
 
@@ -309,13 +312,13 @@ void getPositions(Buffer<Vector3> &pos)
 	pos.resize(1);
 	pos[0] = Vector3(0.5, 0.5, 0.5);
 }
-ddouble getLaplacian(Buffer<uint> &ind, const uint nx, const uint ny, const uint nz)
+ddouble getLaplacian(Buffer<uint> &bodyIndices, const uint nx, const uint ny, const uint nz)
 {
-	ind.resize(4);
-	ind[0] = 0 - nx;
-	ind[1] = 0 - ny;
-	ind[2] = 0 + nx;
-	ind[3] = 0 + ny;
+	bodyIndices.resize(4);
+	bodyIndices[0] = 0 - nx;
+	bodyIndices[1] = 0 - ny;
+	bodyIndices[2] = 0 + nx;
+	bodyIndices[3] = 0 + ny;
 	return 1;
 }
 */
@@ -332,21 +335,21 @@ void getPositions(Buffer<Vector3> &pos)
 	pos[2] = Vector3(0, 2, 0.5);
 	pos[3] = Vector3(sqrt(0.75), 2.5, 0.5);
 }
-ddouble getLaplacian(Buffer<uint> &ind, const uint nx, const uint ny, const uint nz)
+ddouble getLaplacian(Buffer<uint> &bodyIndices, const uint nx, const uint ny, const uint nz)
 {
-	ind.resize(12);
-	ind[0] = 1 - nx;
-	ind[1] = 1;
-	ind[2] = 2;
-	ind[3] = 0 + nx;
-	ind[4] = 0;
-	ind[5] = 3 - ny;
-	ind[6] = 3 - nx;
-	ind[7] = 3;
-	ind[8] = 0;
-	ind[9] = 2 + nx;
-	ind[10] = 2;
-	ind[11] = 1 + ny;
+	bodyIndices.resize(12);
+	bodyIndices[0] = 1 - nx;
+	bodyIndices[1] = 1;
+	bodyIndices[2] = 2;
+	bodyIndices[3] = 0 + nx;
+	bodyIndices[4] = 0;
+	bodyIndices[5] = 3 - ny;
+	bodyIndices[6] = 3 - nx;
+	bodyIndices[7] = 3;
+	bodyIndices[8] = 0;
+	bodyIndices[9] = 2 + nx;
+	bodyIndices[10] = 2;
+	bodyIndices[11] = 1 + ny;
 	return 4.0 / 3.0;
 }
 */
@@ -360,15 +363,15 @@ void getPositions(Buffer<Vector3> &pos)
 	pos.resize(1);
 	pos[0] = Vector3(0.5, 0.5, 0.5);
 }
-ddouble getLaplacian(Buffer<uint> &ind, const uint nx, const uint ny, const uint nz)
+ddouble getLaplacian(Buffer<uint> &bodyIndices, const uint nx, const uint ny, const uint nz)
 {
-	ind.resize(6);
-	ind[0] = 0 - nz;
-	ind[1] = 0 - nx;
-	ind[2] = 0 - ny;
-	ind[3] = 0 + nx;
-	ind[4] = 0 + ny;
-	ind[5] = 0 + nz;
+	bodyIndices.resize(6);
+	bodyIndices[0] = 0 - nz;
+	bodyIndices[1] = 0 - nx;
+	bodyIndices[2] = 0 - ny;
+	bodyIndices[3] = 0 + nx;
+	bodyIndices[4] = 0 + ny;
+	bodyIndices[5] = 0 + nz;
 	return 1;
 }
 */
@@ -394,57 +397,57 @@ void getPositions(Buffer<Vector3> &pos)
 	pos[10] = SQ1_8 * Vector3(3, 5, 7);
 	pos[11] = SQ1_8 * Vector3(5, 3, 7);
 }
-ddouble getLaplacian(Buffer<uint> &ind, const uint nx, const uint ny, const uint nz)
+ddouble getLaplacian(Buffer<uint> &bodyIndices, const uint nx, const uint ny, const uint nz)
 {
-	ind.resize(48);
-	ind[0] = 9;
-	ind[1] = 10;
-	ind[2] = 2 - nx + nz;
-	ind[3] = 3 - nx;
-	ind[4] = 2;
-	ind[5] = 3;
-	ind[6] = 5 + nx - ny;
-	ind[7] = 8 - ny;
-	ind[8] = 1;
-	ind[9] = 4;
-	ind[10] = 0 + nx - nz;
-	ind[11] = 11 - nz;
-	ind[12] = 1;
-	ind[13] = 4;
-	ind[14] = 0 + nx;
-	ind[15] = 11;
-	ind[16] = 2;
-	ind[17] = 3;
-	ind[18] = 5 + nx;
-	ind[19] = 8;
-	ind[20] = 6;
-	ind[21] = 7;
-	ind[22] = 1 - nx + ny;
-	ind[23] = 4 - nx;
-	ind[24] = 5;
-	ind[25] = 8;
-	ind[26] = 9 + ny - nz;
-	ind[27] = 10 - nz;
-	ind[28] = 5;
-	ind[29] = 8;
-	ind[30] = 9 + ny;
-	ind[31] = 10;
-	ind[32] = 6;
-	ind[33] = 7;
-	ind[34] = 1 + ny;
-	ind[35] = 4;
-	ind[36] = 0;
-	ind[37] = 11;
-	ind[38] = 6 - ny + nz;
-	ind[39] = 7 - ny;
-	ind[40] = 0;
-	ind[41] = 11;
-	ind[42] = 6 + nz;
-	ind[43] = 7;
-	ind[44] = 9;
-	ind[45] = 10;
-	ind[46] = 2 + nz;
-	ind[47] = 3;
+	bodyIndices.resize(48);
+	bodyIndices[0] = 9;
+	bodyIndices[1] = 10;
+	bodyIndices[2] = 2 - nx + nz;
+	bodyIndices[3] = 3 - nx;
+	bodyIndices[4] = 2;
+	bodyIndices[5] = 3;
+	bodyIndices[6] = 5 + nx - ny;
+	bodyIndices[7] = 8 - ny;
+	bodyIndices[8] = 1;
+	bodyIndices[9] = 4;
+	bodyIndices[10] = 0 + nx - nz;
+	bodyIndices[11] = 11 - nz;
+	bodyIndices[12] = 1;
+	bodyIndices[13] = 4;
+	bodyIndices[14] = 0 + nx;
+	bodyIndices[15] = 11;
+	bodyIndices[16] = 2;
+	bodyIndices[17] = 3;
+	bodyIndices[18] = 5 + nx;
+	bodyIndices[19] = 8;
+	bodyIndices[20] = 6;
+	bodyIndices[21] = 7;
+	bodyIndices[22] = 1 - nx + ny;
+	bodyIndices[23] = 4 - nx;
+	bodyIndices[24] = 5;
+	bodyIndices[25] = 8;
+	bodyIndices[26] = 9 + ny - nz;
+	bodyIndices[27] = 10 - nz;
+	bodyIndices[28] = 5;
+	bodyIndices[29] = 8;
+	bodyIndices[30] = 9 + ny;
+	bodyIndices[31] = 10;
+	bodyIndices[32] = 6;
+	bodyIndices[33] = 7;
+	bodyIndices[34] = 1 + ny;
+	bodyIndices[35] = 4;
+	bodyIndices[36] = 0;
+	bodyIndices[37] = 11;
+	bodyIndices[38] = 6 - ny + nz;
+	bodyIndices[39] = 7 - ny;
+	bodyIndices[40] = 0;
+	bodyIndices[41] = 11;
+	bodyIndices[42] = 6 + nz;
+	bodyIndices[43] = 7;
+	bodyIndices[44] = 9;
+	bodyIndices[45] = 10;
+	bodyIndices[46] = 2 + nz;
+	bodyIndices[47] = 3;
 	return 1.5;
 }
 

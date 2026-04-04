@@ -167,7 +167,7 @@ __global__ void init_q(PitchedPtr next_q, PitchedPtr psi, int3* d0, uint3 dimens
 
 	char* pPsi = psi.ptr + psi.slicePitch * dataZid + psi.pitch * yid + sizeof(BlockPsis) * xid;
 
-	size_t dualEdgeId = zid % EDGES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+	size_t dualEdgeId = zid % EDGES_IN_BLOCK; // Dual edge id. One thread per every dual edge so EDGES_IN_BLOCK threads per mesh block (on z-axis)
 
 	BlockEdges* next = (BlockEdges*)(next_q.ptr + next_q.slicePitch * dataZid + next_q.pitch * yid) + xid;
 	double2 d0psi = ((BlockPsis*)(pPsi + d0[dualEdgeId].y))->values[d0[dualEdgeId].z] -

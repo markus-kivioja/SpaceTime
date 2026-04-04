@@ -8,7 +8,7 @@ __global__ void update_q_para(PitchedPtr next_q, PitchedPtr psi, int3* d0, uint3
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
 
 	size_t dataXid = xid / EDGES_IN_BLOCK; // One thread per every dual edge so EDGES_IN_BLOCK threads per mesh block (on z-axis)
-	size_t dualEdgeId = xid % EDGES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+	size_t dualEdgeId = xid % EDGES_IN_BLOCK; // Dual edge id. One thread per every dual edge so EDGES_IN_BLOCK threads per mesh block (on z-axis)
 
 	// Exit leftover threads
 	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
