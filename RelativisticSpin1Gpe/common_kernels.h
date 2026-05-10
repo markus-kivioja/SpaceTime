@@ -93,7 +93,7 @@ __global__ void itp_psi(PitchedPtr HPsiPtr, PitchedPtr nextStep, PitchedPtr prev
 };
 
 __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const myFloat* __restrict__ hodges, 
-	MagFields Bs, const uint3 dimensions, const myFloat block_scale, const myFloat3 p0, const myFloat c0, const myFloat c2, myFloat dt, bool hyperb, myFloat sigma)
+	MagFields Bs, const uint3 dimensions, const myFloat block_scale, const myFloat3 p0, const myFloat c0, const myFloat c2, myFloat dt, bool hyperb, myFloat tau)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -146,18 +146,6 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 
 	myFloat2 totalPot = { trap(globalPos) + c0 * normSq, 0 };
 
-	if (hyperb)
-	{
-		myFloat c_K = 1 + sigma * totalPot.x;
-		H.s1 = -c_K * H.s1;
-		H.s0 = -c_K * H.s0;
-		H.s_1 = -c_K * H.s_1;
-	}
-
-	H.s1 += totalPot * prev.s1;
-	H.s0 += totalPot * prev.s0;
-	H.s_1 += totalPot * prev.s_1;
-
 	const myFloat2 magXY = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
 	myFloat3 B = magneticField(globalPos, Bs.Bq, Bs.Bb);
 	B += c2 * myFloat3{ magXY.x, magXY.y, normSq_s1 - normSq_s_1 };
@@ -165,16 +153,29 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 	// Linear Zeeman shift
 	myFloat2 Bxy = INV_SQRT_2 * myFloat2{ B.x, B.y };
 	myFloat2 BxyConj = conj(Bxy);
-	H.s1 += (B.z * prev.s1 + BxyConj * prev.s0);
-	H.s0 += (Bxy * prev.s1 + BxyConj * prev.s_1);
-	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
+
+	if (hyperb)
+	{
+		H.s1 += tau * ((totalPot + myFloat2{ B.z, 0 }) * H.s1 + BxyConj * H.s0);
+		H.s0 += tau * (Bxy * H.s1 + totalPot * H.s0 + BxyConj * H.s_1);
+		H.s_1 += tau * (Bxy * H.s0 + (totalPot - myFloat2{ B.z, 0 }) * H.s_1);
+
+		H.s1 = -H.s1;
+		H.s0 = -H.s0;
+		H.s_1 = -H.s_1;
+	}
+
+	// Multiply the total U by Psi
+	H.s1 += (totalPot + myFloat2{ B.z, 0 }) * prev.s1 + BxyConj * prev.s0;
+	H.s0 += Bxy * prev.s1 + totalPot * prev.s0 + BxyConj * prev.s_1;
+	H.s_1 += Bxy * prev.s0 + (totalPot - myFloat2{ B.z, 0 }) * prev.s_1;
 
 	nextPsi->values[dualNodeId].s1 = prev.s1 + dt * myFloat2{ H.s1.y, -H.s1.x };
 	nextPsi->values[dualNodeId].s0 = prev.s0 + dt * myFloat2{ H.s0.y, -H.s0.x };
 	nextPsi->values[dualNodeId].s_1 = prev.s_1 + dt * myFloat2{ H.s_1.y, -H.s_1.x };
 };
 
-__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const myFloat* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const myFloat block_scale, const myFloat3 p0, const myFloat c0, const myFloat c2, myFloat dt, bool hyperb, myFloat sigma)
+__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const myFloat* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const myFloat block_scale, const myFloat3 p0, const myFloat c0, const myFloat c2, myFloat dt, bool hyperb, myFloat tau)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -237,9 +238,9 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 
 	if (hyperb)
 	{
-		H.s1 += (totalPot + B.z) * H.s1 + BxyConj * H.s0;
-		H.s0 += Bxy * H.s1 + totalPot * H.s0 + BxyConj * H.s_1;
-		H.s_1 += Bxy * H.s0 + (totalPot - B.z) * H.s_1;
+		H.s1 += tau * ((totalPot + myFloat2{ B.z, 0 }) * H.s1 + BxyConj * H.s0);
+		H.s0 += tau * (Bxy * H.s1 + totalPot * H.s0 + BxyConj * H.s_1);
+		H.s_1 += tau * (Bxy * H.s0 + (totalPot - myFloat2{ B.z, 0 }) * H.s_1);
 
 		H.s1 = -H.s1;
 		H.s0 = -H.s0;
@@ -247,9 +248,9 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 	}
 
 	// Multiply the total U by Psi
-	H.s1 += (totalPot + B.z) * prev.s1 + BxyConj * prev.s0;
+	H.s1 += (totalPot + myFloat2{ B.z, 0 }) * prev.s1 + BxyConj * prev.s0;
 	H.s0 += Bxy * prev.s1 + totalPot * prev.s0 + BxyConj * prev.s_1;
-	H.s_1 += Bxy * prev.s0 + (totalPot - B.z) * prev.s_1;
+	H.s_1 += Bxy * prev.s0 + (totalPot - myFloat2{ B.z, 0 }) * prev.s_1;
 
 	nextPsi->values[dualNodeId].s1 += 2.0 * dt * myFloat2{ H.s1.y, -H.s1.x };
 	nextPsi->values[dualNodeId].s0 += 2.0 * dt * myFloat2{ H.s0.y, -H.s0.x };

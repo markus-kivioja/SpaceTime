@@ -36,7 +36,7 @@ std::string toStringShort(const myFloat value)
 
 #include "mesh.h"
 
-#define COMPUTE_GROUND_STATE 1
+#define COMPUTE_GROUND_STATE 0
 
 #define SAVE_STATES 1
 #define SAVE_PICTURE 1
@@ -885,10 +885,6 @@ __global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, const int4* _
 		totalPot.y = -alpha * normSq * normSq;
 	}
 
-	H.s1 += totalPot * prev.s1;
-	H.s0 += totalPot * prev.s0;
-	H.s_1 += totalPot * prev.s_1;
-
 	const myFloat2 magXY = SQRT_2 * (conj(prev.s1) * prev.s0 + conj(prev.s0) * prev.s_1);
 	myFloat3 B = magneticField(globalPos, Bs.Bq, Bs.Bb, USE_QUADRUPOLE_OFFSET);
 	B += c2 * myFloat3{ magXY.x, magXY.y, normSq_s1 - normSq_s_1 };
@@ -896,9 +892,10 @@ __global__ void leapfrog(PitchedPtr nextStep, PitchedPtr prevStep, const int4* _
 	// Linear Zeeman shift
 	myFloat2 Bxy = INV_SQRT_2 * myFloat2{ B.x, B.y };
 	myFloat2 BxyConj = conj(Bxy);
-	H.s1 += (B.z * prev.s1 + BxyConj * prev.s0);
-	H.s0 += (Bxy * prev.s1 + BxyConj * prev.s_1);
-	H.s_1 += (Bxy * prev.s0 - B.z * prev.s_1);
+
+	H.s1 += (totalPot + myFloat2{ B.z, 0 }) * prev.s1 + BxyConj * prev.s0;
+	H.s0 += Bxy * prev.s1 + totalPot * prev.s0 + BxyConj * prev.s_1;
+	H.s_1 += Bxy * prev.s0 + (totalPot - myFloat2{ B.z, 0 }) * prev.s_1;
 
 	if (USE_QUADRATIC_ZEEMAN)
 	{

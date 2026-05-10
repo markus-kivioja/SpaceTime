@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <math.h>
 
-#define USE_DOUBLE 1
+#define USE_DOUBLE 0
 
 #if USE_DOUBLE
 #define myFloat double

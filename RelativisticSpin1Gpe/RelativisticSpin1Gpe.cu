@@ -32,13 +32,13 @@ std::string getProjectionString()
 
 #define HYPERBOLIC 1
 #define PARABOLIC 0
-#define ANALYTIC 0
+#define ANALYTIC 1
 #define COMPUTE_STABLE_DT 0
 #define COMPUTE_ERROR ((HYPERBOLIC && PARABOLIC) || (ANALYTIC && PARABOLIC) || (HYPERBOLIC && ANALYTIC))
 #define COMPUTE_COM 0
 
 #define SAVE_STATES 0
-#define SAVE_PICTURE 1
+#define SAVE_PICTURE 0
 
 #define THREAD_BLOCK_X 16
 #define THREAD_BLOCK_Y 2
@@ -92,17 +92,17 @@ constexpr myFloat INV_SQRT_2 = 0.70710678118655;
 //myFloat dt = 6.9e-4; // For hyperbolic eq and 112^3 domain
 //myFloat dt = 1e-4; // Default
 //myFloat dt = 1.2e-3;
-//myFloat dt = 5e-5;
+myFloat dt = 5e-5;
 #if HYPERBOLIC
 //myFloat dt = 8.2e-4;
-myFloat dt = 1.12e-3;
+//myFloat dt = 1.12e-3;
 #elif PARABOLIC
-myFloat dt = 3.9e-4;
+//myFloat dt = 3.9e-4;
 #endif
 myFloat dt_decrese = 1e-4;
 myFloat dt_increse = 1e-5;
 
-const myFloat IMAGE_SAVE_INTERVAL = 0.5; //0.01; // ms
+const myFloat IMAGE_SAVE_INTERVAL = 0.01; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
@@ -111,21 +111,21 @@ myFloat t = 0; // Start time in ms
 #if COMPUTE_COM
 myFloat END_TIME = 10.0; // End time in ms
 #else
-myFloat END_TIME = 0.6; // End time in ms
+myFloat END_TIME = 1.0; // End time in ms
 #endif
 
 #if COMPUTE_GROUND_STATE
 myFloat sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
 #else
-myFloat sigma = 0.005; // 0.01; // Coefficient for the relativistic term
+myFloat sigma = 0.004; // 0.01; // Coefficient for the relativistic term
 #endif
 myFloat dt_per_sigma = dt / sigma;
 static int dtIncreaseCount = 0;
 
 //constexpr myFloat E = 126.7; // Adjusted by hand to match the parabolic equation
 //constexpr myFloat E = 127.346; // Computed with the hyperbolic ITP
-//constexpr myFloat E = 127.333; // Computed with the hyperbolic ITP
-constexpr myFloat E = 127.314; // Parabolic
+constexpr myFloat E = 127.333; // Computed with the hyperbolic ITP
+//constexpr myFloat E = 127.314; // Parabolic
 //constexpr myFloat E = 127.295; // Hyperbolic
 
 /// Hyperbolic
@@ -990,7 +990,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 		//myFloat hError = { 0 };
 		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(myFloat2), cudaMemcpyDeviceToHost));
 		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - sqrt((conj(hError) * hError).x) << ", ";
-		std::cout << hError.x << ", " << hError.y << "; ";
+		std::cout << hError.x << ", "; // << hError.y << "; ";
 		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - hError.x << ", ";
 #endif
 		//std::cout << t << ", ";
@@ -1036,14 +1036,14 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #if HYPERBOLIC
 	cudaDeviceSynchronize();
 	auto duration = std::chrono::high_resolution_clock::now() - prevTime;
-	std::cout << "Simulation time: " << t << " ms. Real time: " << duration.count() * 1e-9 << " s." << std::endl;
+	//std::cout << "Simulation time: " << t << " ms. Real time: " << duration.count() * 1e-9 << " s." << std::endl;
 
 	checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
 	drawDensity("hyper_verify", h_oddPsiHyper, dxsize, dysize, dzsize, t, ".");
 #elif PARABOLIC
 	cudaDeviceSynchronize();
 	auto duration = std::chrono::high_resolution_clock::now() - prevTime;
-	std::cout << "Simulation time: " << t << " ms. Real time: " << duration.count() * 1e-9 << " s." << std::endl;
+	//std::cout << "Simulation time: " << t << " ms. Real time: " << duration.count() * 1e-9 << " s." << std::endl;
 
 	checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsPara));
 	drawDensity("para_verify", h_oddPsiPara, dxsize, dysize, dzsize, t, ".");
@@ -1160,7 +1160,7 @@ int main(int argc, char** argv)
 	auto domainMax = Vector3(DOMAIN_SIZE_X * 0.5, DOMAIN_SIZE_Y * 0.5, DOMAIN_SIZE_Z * 0.5);
 
 #if COMPUTE_STABLE_DT
-	for (int i = 0; i < 10; ++i)
+	for (int i = 0; i < 10; ++i)  
 	{
 		REPLICABLE_STRUCTURE_COUNT_X = 58.0 + i * 6.0;
 		const myFloat blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
@@ -1182,13 +1182,13 @@ int main(int argc, char** argv)
 	std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
 #if COMPUTE_COM
 	std::cout << "corrected_F1_com = [";
-	while (sigma < 0.0031)
+	//while (sigma < 0.0031)
 	{
 		t = 0;
 		integrateInTime(blockScale, domainMin, domainMax);
 		std::cout << ";";
-		sigma += 0.00025;
-		dt_per_sigma = dt / sigma;
+		//sigma += 0.00025;
+		//dt_per_sigma = dt / sigma;
 	}
 	std::cout << "];" << std::endl;
 #else

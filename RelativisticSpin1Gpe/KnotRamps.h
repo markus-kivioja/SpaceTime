@@ -11,7 +11,7 @@
 
 #include "utils.h"
 
-#define DISABLE 0
+#define DISABLE 1
 
 struct Signal
 {
