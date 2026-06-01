@@ -4,7 +4,7 @@ from tvtk.api import tvtk
 from scipy.special import sph_harm
 
 #filename = '0.250141.vtk'
-filename = 'C:\\Users\\marku\\SpaceTime\\0.505256.vtk'
+filename = 'C:\\Users\\marku\\SpaceTime\\0.500171.vtk'
 #filename = '0.241425.vtk'
 
 #use_spherical_harmonics = True
@@ -289,6 +289,7 @@ def draw_on_axis():
             block_offset = 0
             local_offset = 5
             x_idx = (BLOCK_COUNT_Y - y_idx)
+            print(x_idx, y_idx)
             idx = (int(BLOCK_COUNT_Z / 2) + block_offset) * z_stride + y_idx * y_stride + x_idx * x_stride + local_offset
 
             psi = [
@@ -333,6 +334,35 @@ def draw_on_axis():
             else:
                 draw_majorana(psi, location, z_idx == 0)
 
+def draw_on_radius(radius):
+    first_iter = True
+    for angle in range(0, 360, 10):
+        block_offset = 0
+        local_offset = 5
+        x_idx = int(radius * cos(angle / 360 * 2 * pi) + BLOCK_COUNT_X / 2)
+        y_idx = int(radius * sin(angle / 360 * 2 * pi) + BLOCK_COUNT_Y / 2)
+        idx = (int(BLOCK_COUNT_Z / 2) + block_offset) * z_stride + y_idx * y_stride + x_idx * x_stride + local_offset
+
+        psi = [
+            m2_r[idx] + m2_i[idx]*1j,
+            m1_r[idx] + m1_i[idx]*1j,
+            m0_r[idx] + m0_i[idx]*1j,
+            m_1_r[idx] + m_1_i[idx]*1j,
+            m_2_r[idx] + m_2_i[idx]*1j
+        ]
+        location = [
+            (radius * cos(angle / 360 * 2 * pi)) * GAP_SCALE,
+            (radius * sin(angle / 360 * 2 * pi)) * GAP_SCALE,
+            0
+        ]
+
+        if use_spherical_harmonics:
+            draw_sph_harm(psi, location)
+        else:
+            draw_majorana(psi, location, first_iter)
+
+        first_iter = False
+
 def draw_preimage(vec):
     ignore_width = 18
     z_ignore_width = 44
@@ -367,6 +397,8 @@ def draw_preimage(vec):
 
 draw_on_axis()
 #draw_preimage(np.array([0, 0, 1]))
+
+draw_on_radius(19)
 
 if not use_spherical_harmonics:
     mesh = triangular_mesh(

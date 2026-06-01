@@ -13,8 +13,8 @@ enum class Phase {
 	BN_HORI,
 	CYCLIC
 };
-//constexpr Phase initPhase = Phase::UN;
-constexpr Phase initPhase = Phase::BN_HORI;
+constexpr Phase initPhase = Phase::UN;
+//constexpr Phase initPhase = Phase::BN_HORI;
 //constexpr Phase initPhase = Phase::BN_VERT;
 //constexpr Phase initPhase = Phase::CYCLIC;
 
@@ -70,7 +70,7 @@ std::string getProjectionString()
 #define COMPUTE_STABLE_DT 0
 #define COMPUTE_ERROR ((HYPERBOLIC && PARABOLIC) || (ANALYTIC && PARABOLIC) || (HYPERBOLIC && ANALYTIC))
 
-#define SAVE_STATES 1
+#define SAVE_STATES 0
 #define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
@@ -128,9 +128,9 @@ constexpr myFloat NOISE_AMPLITUDE = 0;
 //myFloat dt = 1e-4; // 5e-5;
 //myFloat dt_increse = 1e-5;
 
-myFloat dt = 5e-4;
+//myFloat dt = 5e-4;
 //myFloat dt = 1.4e-3; // 5e-5;
-//myFloat dt = 5e-5;
+myFloat dt = 5e-5;
 #if HYPERBOLIC
 //myFloat dt = 1.1e-3; // Max hyper
 #elif PARABOLIC
@@ -845,7 +845,10 @@ __global__ void forwardEuler_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr 
 	}
 }
 
-__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const myFloat* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const myFloat block_scale, const myFloat3 p0, const myFloat c0, const myFloat c2, const myFloat c4, myFloat dt, bool hyperb, myFloat sigma)
+
+constexpr myFloat c = 1.4;
+
+__global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const myFloat* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const myFloat block_scale, const myFloat3 p0, const myFloat c0, const myFloat c2, const myFloat c4, myFloat dt, bool hyperb, myFloat tau)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -905,16 +908,6 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 
 	myFloat2 ab = { trap(globalPos) + c0 * normSq, 0 };
 
-	if (hyperb)
-	{
-		myFloat c_K = 1 + sigma * ab.x;
-		H.s2 = -c_K * H.s2;
-		H.s1 = -c_K * H.s1;
-		H.s0 = -c_K * H.s0;
-		H.s_1 = -c_K * H.s_1;
-		H.s_2 = -c_K * H.s_2;
-	}
-
 	myFloat3 B = magneticField(globalPos, Bs.Bq, Bs.Bb);
 
 	const myFloat Fz = c2 * (2.0 * normSq_s2 + normSq_s1 - normSq_s_1 - 2.0 * normSq_s_2);
@@ -925,6 +918,22 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 	diagonalTerm.s0 = myFloat2{ 0.2f * c4 * normSq_s0             , 0 } + ab;
 	diagonalTerm.s_1 = myFloat2{ -Fz + 0.4f * c4 * normSq_s1 + B.z, 0 } + ab;
 	diagonalTerm.s_2 = myFloat2{ -2.0f * Fz + 0.4f * c4 * normSq_s2 + 2.0f * B.z, 0 } + ab;
+
+	if (hyperb)
+	{
+		// Kinetic-energy correction operator C_K
+		H.s2 += c * tau * diagonalTerm.s2 * H.s2;    // psi1
+		H.s1 += c * tau * diagonalTerm.s1 * H.s1;    // psi2
+		H.s0 += c * tau * diagonalTerm.s0 * H.s0;    // psi3
+		H.s_1 += c * tau * diagonalTerm.s_1 * H.s_1; // psi4
+		H.s_2 += c * tau * diagonalTerm.s_2 * H.s_2; // psi5
+
+		H.s2 = -H.s2;
+		H.s1 = -H.s1;
+		H.s0 = -H.s0;
+		H.s_1 = -H.s_1;
+		H.s_2 = -H.s_2;
+	}
 
 	H.s2 += diagonalTerm.s2 * prev.s2;    // psi1
 	H.s1 += diagonalTerm.s1 * prev.s1;    // psi2
@@ -957,7 +966,7 @@ __global__ void forwardEuler(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPt
 	nextPsi->values[dualNodeId].s_2 = prev.s_2 + dt * myFloat2{ H.s_2.y, -H.s_2.x };
 };
 
-__global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, myFloat dt_per_sigma, bool hyperb)
+__global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, myFloat dt_per_tau, bool hyperb)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -967,15 +976,37 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 	size_t dualEdgeId = xid % EDGES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
 
 	// Exit leftover threads
-	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	if (dataXid > dimensions.x || yid > dimensions.y || zid > dimensions.z)
 	{
 		return;
 	}
 
+	__shared__ BlockPsis ldsPrevPsis[THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X];
+
+	const size_t localHyperX = threadIdx.x / EDGES_IN_BLOCK;
+	const size_t localHyperIndex = threadIdx.z * THREAD_BLOCK_Y * THREAD_BLOCK_X + threadIdx.y * THREAD_BLOCK_X + localHyperX;
+
 	char* pPsi = psi.ptr + psi.slicePitch * zid + psi.pitch * yid + sizeof(BlockPsis) * dataXid;
 
-	Complex5Vec thisPsi = ((BlockPsis*)(pPsi))->values[d0[dualEdgeId].x];
-	Complex5Vec otherPsi = ((BlockPsis*)(pPsi + d0[dualEdgeId].y))->values[d0[dualEdgeId].z];
+	if (dualEdgeId < VALUES_IN_BLOCK)
+		ldsPrevPsis[localHyperIndex].values[dualEdgeId] = ((BlockPsis*)(pPsi))->values[dualEdgeId];
+
+	// Kill also the leftover edge threads
+	if (dataXid == dimensions.x || yid == dimensions.y || zid == dimensions.z)
+	{
+		return;
+	}
+	__syncthreads();
+
+	Complex5Vec thisPsi = ldsPrevPsis[localHyperIndex].values[d0[dualEdgeId].x];
+
+	int otherHyperLocalIdx = localHyperIndex + d0[dualEdgeId].y;
+
+	Complex5Vec otherPsi;
+	if (0 <= otherHyperLocalIdx && otherHyperLocalIdx < THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X)
+		otherPsi = ldsPrevPsis[otherHyperLocalIdx].values[d0[dualEdgeId].z];
+	else
+		otherPsi = ((BlockPsis*)(pPsi + d0[dualEdgeId].y))->values[d0[dualEdgeId].z];
 	Complex5Vec d0psi;
 	d0psi.s2 = otherPsi.s2 - thisPsi.s2;
 	d0psi.s1 = otherPsi.s1 - thisPsi.s1;
@@ -990,11 +1021,11 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 		BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
 		Complex5Vec q;
-		q.s2 = 2 * dt_per_sigma * (prev->values[dualEdgeId].s2 + d0psi.s2);
-		q.s1 = 2 * dt_per_sigma * (prev->values[dualEdgeId].s1 + d0psi.s1);
-		q.s0 = 2 * dt_per_sigma * (prev->values[dualEdgeId].s0 + d0psi.s0);
-		q.s_1 = 2 * dt_per_sigma * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
-		q.s_2 = 2 * dt_per_sigma * (prev->values[dualEdgeId].s_2 + d0psi.s_2);
+		q.s2 = 2 * dt_per_tau * (prev->values[dualEdgeId].s2 + d0psi.s2);
+		q.s1 = 2 * dt_per_tau * (prev->values[dualEdgeId].s1 + d0psi.s1);
+		q.s0 = 2 * dt_per_tau * (prev->values[dualEdgeId].s0 + d0psi.s0);
+		q.s_1 = 2 * dt_per_tau * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
+		q.s_2 = 2 * dt_per_tau * (prev->values[dualEdgeId].s_2 + d0psi.s_2);
 
 		next->values[dualEdgeId].s2 +=  myFloat2{-q.s2.y, q.s2.x  };
 		next->values[dualEdgeId].s1 +=  myFloat2{-q.s1.y, q.s1.x  };
@@ -1008,7 +1039,7 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 	}
 }
 
-__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const myFloat* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const myFloat block_scale, const myFloat3 p0, const myFloat c0, const myFloat c2, const myFloat c4, myFloat dt, bool hyperb, myFloat sigma)
+__global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs, const int2* __restrict__ d1Ptr, const myFloat* __restrict__ hodges, MagFields Bs, const uint3 dimensions, const myFloat block_scale, const myFloat3 p0, const myFloat c0, const myFloat c2, const myFloat c4, myFloat dt, bool hyperb, myFloat tau)
 {
 	const size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	const size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -1068,16 +1099,6 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 
 	myFloat2 ab = { trap(globalPos) + c0 * normSq, 0 };
 
-	if (hyperb)
-	{
-		myFloat c_K = 1 + sigma * ab.x;
-		H.s2 = -c_K * H.s2;
-		H.s1 = -c_K * H.s1;
-		H.s0 = -c_K * H.s0;
-		H.s_1 = -c_K * H.s_1;
-		H.s_2 = -c_K * H.s_2;
-	}
-
 	myFloat3 B = magneticField(globalPos, Bs.Bq, Bs.Bb);
 
 	const myFloat Fz = c2 * (2.0 * normSq_s2 + normSq_s1 - normSq_s_1 - 2.0 * normSq_s_2);
@@ -1088,6 +1109,22 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 	diagonalTerm.s0 = myFloat2{             0.2f * c4 * normSq_s0             , 0 } + ab;
 	diagonalTerm.s_1 = myFloat2{      -Fz + 0.4f * c4 * normSq_s1  +       B.z, 0 } + ab;
 	diagonalTerm.s_2 = myFloat2{-2.0f * Fz + 0.4f * c4 * normSq_s2  + 2.0f * B.z, 0 } + ab;
+
+	if (hyperb)
+	{
+		// Kinetic-energy correction operator C_K
+		H.s2 += c * tau * diagonalTerm.s2 * H.s2;    // psi1
+		H.s1 += c * tau * diagonalTerm.s1 * H.s1;    // psi2
+		H.s0 += c * tau * diagonalTerm.s0 * H.s0;    // psi3
+		H.s_1 += c * tau * diagonalTerm.s_1 * H.s_1; // psi4
+		H.s_2 += c * tau * diagonalTerm.s_2 * H.s_2; // psi5
+
+		H.s2 = -H.s2;
+		H.s1 = -H.s1;
+		H.s0 = -H.s0;
+		H.s_1 = -H.s_1;
+		H.s_2 = -H.s_2;
+	}
 
 	H.s2 += diagonalTerm.s2 * prev.s2;    // psi1
 	H.s1 += diagonalTerm.s1 * prev.s1;    // psi2
@@ -1828,7 +1865,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 	static auto prevTime = std::chrono::high_resolution_clock::now();
 
 #if COMPUTE_STABLE_DT
-	int iterCount = 0;
+	while (iterCount < 10000)
 #else
 	while (t < END_TIME)
 #endif
@@ -1982,7 +2019,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #endif
 #endif
 
-#if 0 // COMPUTE_ERROR
+#if COMPUTE_ERROR
 		// Compute error
 		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiHyper, dimensions);
 		int prevStride = bodies;
@@ -1995,7 +2032,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 		myFloat2 hError = { 0 };
 		//myFloat hError = { 0 };
 		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(myFloat2), cudaMemcpyDeviceToHost));
-		std::cout << hError.x << ", " << hError.y << "; ";
+		std::cout << hError.x << ", "; // << std::endl; // hError.y << "; ";
 #endif
 #if ANALYTIC
 		// Compute error
@@ -2043,17 +2080,20 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #endif
 	}
 #endif
+
+#if defined(HYPERBOLIC) || defined(PARABOLIC)
+	auto duration = std::chrono::high_resolution_clock::now() - prevTime;
+#endif
 #if HYPERBOLIC
 	cudaDeviceSynchronize();
-	auto duration = std::chrono::high_resolution_clock::now() - prevTime;
-	std::cout << "Simulation time: " << t << " ms. Real time: " << duration.count() * 1e-9 << " s." << std::endl;
+	//std::cout << "Simulation time: " << t << " ms. Real time: " << duration.count() * 1e-9 << " s." << std::endl;
 
 	checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
 	drawDensity("hyper_verify", ".", h_oddPsiHyper, dxsize, dysize, dzsize, sigma, Bs, d_p0, block_scale);
-#elif PARABOLIC
+#endif
+#if PARABOLIC
 	cudaDeviceSynchronize();
-	auto duration = std::chrono::high_resolution_clock::now() - prevTime;
-	std::cout << "Simulation time: " << t << " ms. Real time: " << duration.count() * 1e-9 << " s." << std::endl;
+	//std::cout << "Simulation time: " << t << " ms. Real time: " << duration.count() * 1e-9 << " s." << std::endl;
 
 	checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsPara));
 	drawDensity("para_verify", ".", h_oddPsiPara, dxsize, dysize, dzsize, t, Bs, d_p0, block_scale);
@@ -2152,7 +2192,14 @@ int main(int argc, char** argv)
 #else
 	const myFloat blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
 	std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
-	integrateInTime(blockScale, domainMin, domainMax);
+	//while (sigma > 0.0)
+	//{
+	//	t = 0;
+		integrateInTime(blockScale, domainMin, domainMax);
+	//	std::cout << "tau = " << sigma << std::endl;
+	//	sigma -= 0.001;
+	//	dt_per_sigma = dt / sigma;
+	//}
 #endif
 	return 0;
 }

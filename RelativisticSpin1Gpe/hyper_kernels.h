@@ -1,7 +1,7 @@
 #ifndef HYPER_KERNELS_H
 #define HYPER_KERNELS_H
 
-__global__ void itp_q_hyper(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, myFloat dt_per_sigma)
+__global__ void itp_q_hyper(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, myFloat dt_per_tau)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -30,23 +30,23 @@ __global__ void itp_q_hyper(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi
 	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
 	Complex3Vec q;
-	q.s1 = dt_per_sigma * (-d0psi.s1 + prev->values[dualEdgeId].s1);
-	q.s0 = dt_per_sigma * (-d0psi.s0 + prev->values[dualEdgeId].s0);
-	q.s_1 = dt_per_sigma * (-d0psi.s_1 + prev->values[dualEdgeId].s_1);
+	q.s1 = dt_per_tau * (-d0psi.s1 + prev->values[dualEdgeId].s1);
+	q.s0 = dt_per_tau * (-d0psi.s0 + prev->values[dualEdgeId].s0);
+	q.s_1 = dt_per_tau * (-d0psi.s_1 + prev->values[dualEdgeId].s_1);
 
 	next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1 - q.s1;
 	next->values[dualEdgeId].s0 = prev->values[dualEdgeId].s0 - q.s0;
 	next->values[dualEdgeId].s_1 = prev->values[dualEdgeId].s_1 - q.s_1;
 }
 
-__global__ void forwardEuler_q_hyper(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, myFloat dt_per_sigma)
+__global__ void forwardEuler_q_hyper(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, myFloat dt_per_tau)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
 
 	size_t dataXid = xid / EDGES_IN_BLOCK; // One thread per every dual edge so EDGES_IN_BLOCK threads per mesh block (on z-axis)
-	size_t dualEdgeId = xid % EDGES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+	size_t dualEdgeId = xid % EDGES_IN_BLOCK; // Dual edge id. One thread per every dual edge so EDGES_IN_BLOCK threads per mesh block (on z-axis)
 
 	// Exit leftover threads
 	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
@@ -68,34 +68,57 @@ __global__ void forwardEuler_q_hyper(PitchedPtr next_q, PitchedPtr prev_q, Pitch
 	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
 	Complex3Vec q;
-	q.s1 = dt_per_sigma * (prev->values[dualEdgeId].s1 + d0psi.s1);
-	q.s0 = dt_per_sigma * (prev->values[dualEdgeId].s0 + d0psi.s0);
-	q.s_1 = dt_per_sigma * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
+	q.s1 = dt_per_tau * (prev->values[dualEdgeId].s1 + d0psi.s1);
+	q.s0 = dt_per_tau * (prev->values[dualEdgeId].s0 + d0psi.s0);
+	q.s_1 = dt_per_tau * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
 
 	next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1 + myFloat2{-q.s1.y, q.s1.x};
 	next->values[dualEdgeId].s0 = prev->values[dualEdgeId].s0 + myFloat2{-q.s0.y, q.s0.x};
 	next->values[dualEdgeId].s_1 = prev->values[dualEdgeId].s_1 + myFloat2{ -q.s_1.y, q.s_1.x };
 }
 
-__global__ void update_q_hyper(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, myFloat dt_per_sigma)
+__global__ void update_q_hyper(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, myFloat dt_per_tau)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
 	size_t zid = blockIdx.z * blockDim.z + threadIdx.z;
 
 	size_t dataXid = xid / EDGES_IN_BLOCK; // One thread per every dual edge so EDGES_IN_BLOCK threads per mesh block (on z-axis)
-	size_t dualEdgeId = xid % EDGES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on z-axis)
+	size_t dualEdgeId = xid % EDGES_IN_BLOCK; // Dual edge id. One thread per every dual edge so EDGES_IN_BLOCK threads per mesh block (on z-axis)
 
 	// Exit leftover threads
-	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	if (dataXid > dimensions.x || yid > dimensions.y || zid > dimensions.z)
 	{
 		return;
 	}
 
+	__shared__ BlockPsis ldsPrevPsis[THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X];
+
+	const size_t localHyperX = threadIdx.x / EDGES_IN_BLOCK;
+	const size_t localHyperIndex = threadIdx.z * THREAD_BLOCK_Y * THREAD_BLOCK_X + threadIdx.y * THREAD_BLOCK_X + localHyperX;
+
 	char* pPsi = psi.ptr + psi.slicePitch * zid + psi.pitch * yid + sizeof(BlockPsis) * dataXid;
 
-	Complex3Vec thisPsi = ((BlockPsis*)(pPsi))->values[d0[dualEdgeId].x];
-	Complex3Vec otherPsi = ((BlockPsis*)(pPsi + d0[dualEdgeId].y))->values[d0[dualEdgeId].z];
+	if (dualEdgeId < VALUES_IN_BLOCK)
+		ldsPrevPsis[localHyperIndex].values[dualEdgeId] = ((BlockPsis*)(pPsi))->values[dualEdgeId];
+
+	// Kill also the leftover edge threads
+	if (dataXid == dimensions.x || yid == dimensions.y || zid == dimensions.z)
+	{
+		return;
+	}
+	__syncthreads();
+
+
+	Complex3Vec thisPsi = ldsPrevPsis[localHyperIndex].values[d0[dualEdgeId].x];
+
+	int otherHyperLocalIdx = localHyperIndex + d0[dualEdgeId].y;
+	
+	Complex3Vec otherPsi;
+	if (0 <= otherHyperLocalIdx && otherHyperLocalIdx < THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X)
+		otherPsi = ldsPrevPsis[otherHyperLocalIdx].values[d0[dualEdgeId].z];
+	else
+		otherPsi = ((BlockPsis*)(pPsi + d0[dualEdgeId].y))->values[d0[dualEdgeId].z];
 	Complex3Vec d0psi;
 	d0psi.s1 = otherPsi.s1 - thisPsi.s1;
 	d0psi.s0 = otherPsi.s0 - thisPsi.s0;
@@ -106,9 +129,9 @@ __global__ void update_q_hyper(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr 
 	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
 	Complex3Vec q;
-	q.s1 =  2.0 * dt_per_sigma * (prev->values[dualEdgeId].s1 + d0psi.s1);
-	q.s0 =  2.0 * dt_per_sigma * (prev->values[dualEdgeId].s0 + d0psi.s0);
-	q.s_1 = 2.0 * dt_per_sigma * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
+	q.s1 =  2.0 * dt_per_tau * (prev->values[dualEdgeId].s1 + d0psi.s1);
+	q.s0 =  2.0 * dt_per_tau * (prev->values[dualEdgeId].s0 + d0psi.s0);
+	q.s_1 = 2.0 * dt_per_tau * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
 
 	next->values[dualEdgeId].s1 += myFloat2{-q.s1.y, q.s1.x};
 	next->values[dualEdgeId].s0 += myFloat2{-q.s0.y, q.s0.x};

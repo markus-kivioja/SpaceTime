@@ -32,13 +32,13 @@ std::string getProjectionString()
 
 #define HYPERBOLIC 1
 #define PARABOLIC 0
-#define ANALYTIC 1
+#define ANALYTIC 0
 #define COMPUTE_STABLE_DT 0
 #define COMPUTE_ERROR ((HYPERBOLIC && PARABOLIC) || (ANALYTIC && PARABOLIC) || (HYPERBOLIC && ANALYTIC))
 #define COMPUTE_COM 0
 
 #define SAVE_STATES 0
-#define SAVE_PICTURE 0
+#define SAVE_PICTURE 1
 
 #define THREAD_BLOCK_X 16
 #define THREAD_BLOCK_Y 2
@@ -102,7 +102,7 @@ myFloat dt = 5e-5;
 myFloat dt_decrese = 1e-4;
 myFloat dt_increse = 1e-5;
 
-const myFloat IMAGE_SAVE_INTERVAL = 0.01; // ms
+const myFloat IMAGE_SAVE_INTERVAL = 0.02; // ms
 uint IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 
 const uint STATE_SAVE_INTERVAL = 10.0; // ms
@@ -111,13 +111,13 @@ myFloat t = 0; // Start time in ms
 #if COMPUTE_COM
 myFloat END_TIME = 10.0; // End time in ms
 #else
-myFloat END_TIME = 1.0; // End time in ms
+myFloat END_TIME = 0.55; // End time in ms
 #endif
 
 #if COMPUTE_GROUND_STATE
 myFloat sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
 #else
-myFloat sigma = 0.004; // 0.01; // Coefficient for the relativistic term
+myFloat sigma = 0.005; // 0.01; // Coefficient for the relativistic term
 #endif
 myFloat dt_per_sigma = dt / sigma;
 static int dtIncreaseCount = 0;
@@ -589,8 +589,8 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 	dim3 psiDimBlock(THREAD_BLOCK_X * VALUES_IN_BLOCK, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
 	dim3 edgeDimBlock(THREAD_BLOCK_X * EDGES_IN_BLOCK, THREAD_BLOCK_Y, THREAD_BLOCK_Z);
 	dim3 dimGrid((xsize + THREAD_BLOCK_X - 1) / THREAD_BLOCK_X,
-		(ysize + THREAD_BLOCK_Y - 1) / THREAD_BLOCK_Y,
-		((zsize + THREAD_BLOCK_Z - 1) / THREAD_BLOCK_Z));
+		         (ysize + THREAD_BLOCK_Y - 1) / THREAD_BLOCK_Y,
+		         (zsize + THREAD_BLOCK_Z - 1) / THREAD_BLOCK_Z);
 
 	Signal signal;
 	MagFields Bs{};
@@ -795,7 +795,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 	static auto prevTime = std::chrono::high_resolution_clock::now();
 
 #if COMPUTE_STABLE_DT
-	while (iterCount < 2000)
+	while (iterCount < 10000)
 #else
 	while (t < END_TIME)
 #endif
@@ -825,7 +825,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 
 
 		// For checking the numerical stability
-#if 0 // Disable / enable numerical stability measurement
+#if COMPUTE_STABLE_DT // Disable / enable numerical stability measurement
 #if !COMPUTE_ERROR
 #if HYPERBOLIC
 		myFloat dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
@@ -951,7 +951,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #endif
 			iterCount += 2;
 		}
-#if 0 // COMPUTE_ERROR
+#if COMPUTE_ERROR
 		// Compute error
 		//innerProduct << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiHyper, dimensions);
 		weightedDiff << <dimGrid, psiDimBlock >> > (d_error, d_evenPsiPara, d_evenPsiHyper, dimensions);
@@ -966,7 +966,8 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 		//myFloat hError = { 0 };
 		checkCudaErrors(cudaMemcpy(&hError, d_error, sizeof(myFloat2), cudaMemcpyDeviceToHost));
 		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - sqrt((conj(hError) * hError).x) << ", ";
-		std::cout << hError.x << ", " << hError.y << "; ";
+		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - sqrt((conj(hError) * hError).x) << std::endl;
+		std::cout << hError.x << ", " << hError.y << "; " << std::endl;
 		//std::cout << getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume) - hError.x << ", ";
 #endif
 #if ANALYTIC
