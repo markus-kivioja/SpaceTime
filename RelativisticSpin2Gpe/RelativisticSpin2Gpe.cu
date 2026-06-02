@@ -1048,7 +1048,7 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 	const size_t dualNodeId = xid % VALUES_IN_BLOCK; // Dual node id. One thread per every dual node so VALUES_IN_BLOCK threads per mesh block (on x-axis)
 
 	// Exit leftover threads
-	if (dataXid >= dimensions.x || yid >= dimensions.y || zid >= dimensions.z)
+	if (dataXid > dimensions.x || yid > dimensions.y || zid > dimensions.z)
 	{
 		return;
 	}
@@ -1057,6 +1057,21 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 	char* prevPsi = prevStep.ptr + prevStep.slicePitch * zid + prevStep.pitch * yid + sizeof(BlockPsis) * dataXid;
 	char* qPtr = qs.ptr + qs.slicePitch * zid + qs.pitch * yid + sizeof(BlockEdges) * dataXid;
 	BlockPsis* nextPsi = (BlockPsis*)(nextStep.ptr + nextStep.slicePitch * zid + nextStep.pitch * yid) + dataXid;
+
+	__shared__ BlockEdges ldsPrevQs[THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X];
+
+	const size_t localHyperX = threadIdx.x / VALUES_IN_BLOCK;
+	const size_t localHyperIndex = threadIdx.z * THREAD_BLOCK_Y * THREAD_BLOCK_X + threadIdx.y * THREAD_BLOCK_X + localHyperX;
+
+	ldsPrevQs[localHyperIndex].values[dualNodeId] = ((BlockEdges*)(qPtr))->values[dualNodeId];
+	ldsPrevQs[localHyperIndex].values[dualNodeId + VALUES_IN_BLOCK] = ((BlockEdges*)(qPtr))->values[dualNodeId + VALUES_IN_BLOCK];
+
+	// Kill also the leftover edge threads
+	if (dataXid == dimensions.x || yid == dimensions.y || zid == dimensions.z)
+	{
+		return;
+	}
+	__syncthreads();
 
 	// Update psi
 	const Complex5Vec prev = ((BlockPsis*)prevPsi)->values[dualNodeId];
@@ -1075,7 +1090,13 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 	{
 		int edgeId = startEdgeId + edgeIdOffset;
 		int2 d1 = d1Ptr[edgeId];
-		Complex5Vec d0psi = ((BlockEdges*)(qPtr + d1.x))->values[d1.y];
+		Complex5Vec d0psi;
+		
+		int otherHyperLocalIdx = localHyperIndex + d1.x;
+		if (0 <= otherHyperLocalIdx && otherHyperLocalIdx < THREAD_BLOCK_Z * THREAD_BLOCK_Y * THREAD_BLOCK_X)
+			d0psi = ldsPrevQs[otherHyperLocalIdx].values[d1.y];
+		else
+			d0psi = ((BlockEdges*)(qPtr + d1.x))->values[d1.y];
 		const myFloat hodge = hodges[edgeId];
 
 		H.s2  += hodge * d0psi.s2;

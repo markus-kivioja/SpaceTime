@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.18)
 project(SpaceTime)
 
-set(CMAKE_CUDA_ARCHITECTURES 52)
+set(CMAKE_CUDA_ARCHITECTURES 89)
 
 add_subdirectory(Mesh)
 add_subdirectory(Output)

@@ -8,7 +8,7 @@ file(GLOB SOURCES
 	*.h
 )
 
-set(CMAKE_CUDA_ARCHITECTURES 52)
+set(CMAKE_CUDA_ARCHITECTURES 89)
 
 add_executable(RelativisticSpin1Gpe ${SOURCES})
 

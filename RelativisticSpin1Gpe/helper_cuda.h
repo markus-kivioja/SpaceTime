@@ -1048,8 +1048,8 @@ inline void __printLastCudaError(const char *errorMessage, const char *file, con
 #define MAX(a,b) (a > b ? a : b)
 #endif
 
-// double To Int conversion
-inline int ftoi(double value)
+// Float To Int conversion
+inline int ftoi(float value)
 {
     return (value >= 0 ? (int)(value + 0.5) : (int)(value - 0.5));
 }
@@ -1129,7 +1129,10 @@ inline int gpuDeviceInit(int devID)
     cudaDeviceProp deviceProp;
     checkCudaErrors(cudaGetDeviceProperties(&deviceProp, devID));
 
-    if (deviceProp.computeMode == cudaComputeModeProhibited)
+    int computeMode;
+    cudaDeviceGetAttribute(&computeMode, cudaDevAttrComputeMode, devID);
+
+    if (computeMode == cudaComputeModeProhibited)
     {
         fprintf(stderr, "Error: device is running in <Compute Mode Prohibited>, no threads can use ::cudaSetDevice().\n");
         return -1;
@@ -1172,8 +1175,11 @@ inline int gpuGetMaxGflopsDeviceId()
     {
         cudaGetDeviceProperties(&deviceProp, current_device);
 
+        int computeMode;
+        cudaDeviceGetAttribute(&computeMode, cudaDevAttrComputeMode, current_device);
+
         // If this GPU is not running on Compute Mode prohibited, then we can add it to the list
-        if (deviceProp.computeMode != cudaComputeModeProhibited)
+        if (computeMode != cudaComputeModeProhibited)
         {
             if (deviceProp.major > 0 && deviceProp.major < 9999)
             {
@@ -1201,8 +1207,11 @@ inline int gpuGetMaxGflopsDeviceId()
     {
         cudaGetDeviceProperties(&deviceProp, current_device);
 
+        int computeMode;
+        cudaDeviceGetAttribute(&computeMode, cudaDevAttrComputeMode, current_device);
+
         // If this GPU is not running on Compute Mode prohibited, then we can add it to the list
-        if (deviceProp.computeMode != cudaComputeModeProhibited)
+        if (computeMode != cudaComputeModeProhibited)
         {
             if (deviceProp.major == 9999 && deviceProp.minor == 9999)
             {
@@ -1213,7 +1222,10 @@ inline int gpuGetMaxGflopsDeviceId()
                 sm_per_multiproc = _ConvertSMVer2Cores(deviceProp.major, deviceProp.minor);
             }
 
-            unsigned long long compute_perf  = (unsigned long long) deviceProp.multiProcessorCount * sm_per_multiproc * deviceProp.clockRate;
+            int clockRate;
+            cudaDeviceGetAttribute(&clockRate, cudaDevAttrClockRate, current_device);
+
+            unsigned long long compute_perf  = (unsigned long long) deviceProp.multiProcessorCount * sm_per_multiproc * clockRate;
 
             if (compute_perf  > max_compute_perf)
             {
