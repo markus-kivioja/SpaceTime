@@ -148,16 +148,16 @@ myFloat t = 0; // Start time in ms
 constexpr myFloat END_TIME = 0.5; // 7.4; // End time in ms
 
 #if COMPUTE_GROUND_STATE
-myFloat sigma = 0.1;
+myFloat tau = 0.1;
 #else
-myFloat sigma = 0.005; // 0.01; // Coefficient for the relativistic term
+myFloat tau = 0.005; // 0.01; // Coefficient for the relativistic term
 #endif
-myFloat dt_per_sigma = dt / sigma;
+myFloat dt_per_tau = dt / tau;
 static int dtIncreaseCount = 0;
 
 //constexpr myFloat E = 126.621; // The energy given by the ITP method
-constexpr myFloat E = 126.6006; // This produces the smallest error with parabolic
-//constexpr myFloat E = 126.592; // This procudes a constant error with hyperbolic
+constexpr myFloat E = 126.6006; // Parabolic
+//constexpr myFloat E = 126.592; // Hyperbolic
 
 std::string toStringShort(const myFloat value)
 {
@@ -544,7 +544,7 @@ __global__ void cyclicState(PitchedPtr psi, uint3 dimensions, myFloat phase = 0)
 };
 
 #if COMPUTE_GROUND_STATE
-__global__ void itp_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, myFloat dt_per_sigma)
+__global__ void itp_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, myFloat dt_per_tau)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -575,11 +575,11 @@ __global__ void itp_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3
 	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
 	Complex5Vec q;
-	q.s2 = dt_per_sigma * (-d0psi.s2 + prev->values[dualEdgeId].s2);
-	q.s1 = dt_per_sigma * (-d0psi.s1 + prev->values[dualEdgeId].s1);
-	q.s0 = dt_per_sigma * (-d0psi.s0 + prev->values[dualEdgeId].s0);
-	q.s_1 = dt_per_sigma * (-d0psi.s_1 + prev->values[dualEdgeId].s_1);
-	q.s_2 = dt_per_sigma * (-d0psi.s_2 + prev->values[dualEdgeId].s_2);
+	q.s2 = dt_per_tau * (-d0psi.s2 + prev->values[dualEdgeId].s2);
+	q.s1 = dt_per_tau * (-d0psi.s1 + prev->values[dualEdgeId].s1);
+	q.s0 = dt_per_tau * (-d0psi.s0 + prev->values[dualEdgeId].s0);
+	q.s_1 = dt_per_tau * (-d0psi.s_1 + prev->values[dualEdgeId].s_1);
+	q.s_2 = dt_per_tau * (-d0psi.s_2 + prev->values[dualEdgeId].s_2);
 
 	next->values[dualEdgeId].s2 = prev->values[dualEdgeId].s2 - q.s2;
 	next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1 - q.s1;
@@ -794,7 +794,7 @@ __global__ void itp_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr qs,
 	nextPsi->values[dualNodeId].s_2 = prev.s_2 - dt * H.s_2;
 };
 #else
-__global__ void forwardEuler_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, myFloat dt_per_sigma, bool hyperb)
+__global__ void forwardEuler_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, myFloat dt_per_tau, bool hyperb)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -827,11 +827,11 @@ __global__ void forwardEuler_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr 
 		BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * zid + prev_q.pitch * yid) + dataXid;
 
 		Complex5Vec q;
-		q.s2 = dt_per_sigma * (prev->values[dualEdgeId].s2 + d0psi.s2);
-		q.s1 = dt_per_sigma * (prev->values[dualEdgeId].s1 + d0psi.s1);
-		q.s0 = dt_per_sigma * (prev->values[dualEdgeId].s0 + d0psi.s0);
-		q.s_1 = dt_per_sigma * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
-		q.s_2 = dt_per_sigma * (prev->values[dualEdgeId].s_2 + d0psi.s_2);
+		q.s2 = dt_per_tau * (prev->values[dualEdgeId].s2 + d0psi.s2);
+		q.s1 = dt_per_tau * (prev->values[dualEdgeId].s1 + d0psi.s1);
+		q.s0 = dt_per_tau * (prev->values[dualEdgeId].s0 + d0psi.s0);
+		q.s_1 = dt_per_tau * (prev->values[dualEdgeId].s_1 + d0psi.s_1);
+		q.s_2 = dt_per_tau * (prev->values[dualEdgeId].s_2 + d0psi.s_2);
 
 		next->values[dualEdgeId].s2 = prev->values[dualEdgeId].s2 + myFloat2{-q.s2.y, q.s2.x};
 		next->values[dualEdgeId].s1 = prev->values[dualEdgeId].s1 + myFloat2{-q.s1.y, q.s1.x};
@@ -1708,16 +1708,16 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 		Bs.BqQuad = BqQuadScale * signal.Bq;
 		Bs.BbQuad = BzQuadScale * signal.Bb;
 #if HYPERBOLIC
-		//forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, true, sigma);
-		//forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma, true);
-		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma, false);
+		//forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, true, tau);
+		//forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_tau, true);
+		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_tau, false);
 		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, false, 0.0);
-		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma, false);
+		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_tau, false);
 #endif
 #if PARABOLIC
-		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions, dt_per_sigma, false);
+		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions, dt_per_tau, false);
 		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, false, 0.0);
-		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions, dt_per_sigma, false);
+		forwardEuler_q << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions, dt_per_tau, false);
 #endif
 	}
 	else
@@ -1737,8 +1737,8 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 	{
 		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
 		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume);
-		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
-		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_tau);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_tau);
 	}
 
 	while (true)
@@ -1794,13 +1794,13 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 		}
 
 		// Take an imaginary time step
-		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_tau);
 		itp_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, dimensions, block_scale, d_p0, c0, c2, c4, dt);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume);
 
 		// Take an imaginary time step
-		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_tau);
 		itp_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, dimensions, block_scale, d_p0, c0, c2, c4, dt);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
@@ -1853,6 +1853,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #if ANALYTIC
 	myFloat phaseTime = 0;
 #endif
+	int iterCount = 0;
 #if COMPUTE_ERROR
 	std::cout << "e_F2 = [";
 #endif
@@ -1900,11 +1901,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #if PARABOLIC
 		myFloat dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume);
 #endif
-		static myFloat prevDens = dens;
-		//std::cout << "At " << t << " ms density is " << dens << std::endl;
-		//constexpr myFloat RELATIVE_MARGIN = 0.1; // 0.02;
-		constexpr myFloat ABSOLUTE_MARGIN = 1.1; // 0.02;
-		//if (t > 0 && (abs(dens - prevDens) > RELATIVE_MARGIN || isnan(dens)))
+		constexpr myFloat ABSOLUTE_MARGIN = 1.05;
 
 		if (t > 0 && dens > ABSOLUTE_MARGIN || isnan(dens))
 		{
@@ -1957,7 +1954,6 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 				return 1;
 			}
 		}
-		prevDens = dens;
 #endif
 #else
 #if !COMPUTE_ERROR
@@ -1991,12 +1987,12 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 
 #if HYPERBOLIC
-			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, true, sigma);
-			update_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma, true);
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, true, tau);
+			update_q << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_tau, true);
 #endif
 #if PARABOLIC
 			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiPara, d_evenPsiPara, d_evenQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, false, 0.0);
-			update_q << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions, dt_per_sigma, false);
+			update_q << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddQPara, d_oddPsiPara, d_d0, dimensions, dt_per_tau, false);
 #endif
 
 			// update even values
@@ -2011,12 +2007,12 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 
 #if HYPERBOLIC
-			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, true, sigma);
-			update_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma, true);
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, true, tau);
+			update_q << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_tau, true);
 #endif
 #if PARABOLIC
 			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, c4, dt, false, 0.0);
-			update_q << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions, dt_per_sigma, false);
+			update_q << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenQPara, d_evenPsiPara, d_d0, dimensions, dt_per_tau, false);
 #endif
 #if COMPUTE_STABLE_DT
 			iterCount += 2;
@@ -2110,7 +2106,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 	//std::cout << "Simulation time: " << t << " ms. Real time: " << duration.count() * 1e-9 << " s." << std::endl;
 
 	checkCudaErrors(cudaMemcpy3D(&oddPsiBackParamsHyper));
-	drawDensity("hyper_verify", ".", h_oddPsiHyper, dxsize, dysize, dzsize, sigma, Bs, d_p0, block_scale);
+	drawDensity("hyper_verify", ".", h_oddPsiHyper, dxsize, dysize, dzsize, tau, Bs, d_p0, block_scale);
 #endif
 #if PARABOLIC
 	cudaDeviceSynchronize();
@@ -2182,8 +2178,8 @@ int main(int argc, char** argv)
 	//std::cout << "Block scale = " << blockScale << std::endl;
 	//std::cout << "c0: " << c0 << ", c2: " << c2 << ", c4: " << c4 << std::endl;
 	std::cout << "dt = " << dt << " = " << dt / omega_r * 1e3 << " ms." << std::endl;
-	std::cout << "sigma = " << sigma << std::endl;
-	std::cout << "dt / sigma = " << dt_per_sigma << std::endl;
+	std::cout << "tau = " << tau << std::endl;
+	std::cout << "dt / tau = " << dt_per_tau << std::endl;
 
 	printBasis();
 
@@ -2199,11 +2195,11 @@ int main(int argc, char** argv)
 		
 		while (!integrateInTime(blockScale, domainMin, domainMax))
 		{
-			dt_per_sigma = dt / sigma;
+			dt_per_tau = dt / tau;
 			IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 			t = 0;
 		}
-		dt_per_sigma = dt / sigma;
+		dt_per_tau = dt / tau;
 		IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 		t = 0;
 		
@@ -2213,13 +2209,13 @@ int main(int argc, char** argv)
 #else
 	const myFloat blockScale = DOMAIN_SIZE_X / REPLICABLE_STRUCTURE_COUNT_X / BLOCK_WIDTH_X;
 	std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
-	//while (sigma > 0.0)
+	//while (tau > 0.0)
 	//{
 	//	t = 0;
 		integrateInTime(blockScale, domainMin, domainMax);
-	//	std::cout << "tau = " << sigma << std::endl;
-	//	sigma -= 0.001;
-	//	dt_per_sigma = dt / sigma;
+	//	std::cout << "tau = " << tau << std::endl;
+	//	tau -= 0.001;
+	//	dt_per_tau = dt / tau;
 	//}
 #endif
 	return 0;

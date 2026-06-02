@@ -15,7 +15,7 @@ constexpr double RATIO = 1.0;
 constexpr double KAPPA = 10;
 constexpr double g = 300;
 
-constexpr double sigma = 0.001; //0.008;
+constexpr double tau = 0.001; //0.008;
 
 #define RELATIVISTIC 1
 
@@ -176,7 +176,7 @@ __global__ void init_q(PitchedPtr next_q, PitchedPtr psi, int3* d0, uint3 dimens
 	next->values[dualEdgeId] = d0psi;
 }
 
-__global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, ddouble dt_per_sigma)
+__global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, int3* d0, uint3 dimensions, ddouble dt_per_tau)
 {
 	size_t xid = blockIdx.x * blockDim.x + threadIdx.x;
 	size_t yid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -201,7 +201,7 @@ __global__ void update_q(PitchedPtr next_q, PitchedPtr prev_q, PitchedPtr psi, i
 	BlockEdges* prev = (BlockEdges*)(prev_q.ptr + prev_q.slicePitch * dataZid + prev_q.pitch * yid) + xid;
 
 #if RELATIVISTIC
-	double2 q = dt_per_sigma * (prev->values[dualEdgeId] + d0psi);
+	double2 q = dt_per_tau * (prev->values[dualEdgeId] + d0psi);
 	next->values[dualEdgeId] += make_double2(-q.y, q.x);
 #else
 	double2 q = d0psi - prev->values[dualEdgeId];
@@ -246,7 +246,7 @@ __global__ void update_psi(PitchedPtr nextStep, PitchedPtr prevStep, PitchedPtr 
 	double totalPot = pot->values[dualNodeId] + g * normsq;
 
 #if RELATIVISTIC
-	double c_K = 1 + sigma * totalPot;
+	double c_K = 1 + tau * totalPot;
 	d1q = -c_K * d1q;
 #endif
 
@@ -337,7 +337,7 @@ void loadFromFile(const std::string& filename, char* dst, size_t size)
 }
 
 
-uint integrateInTime(const ddouble block_scale, const Vector3& minp, const Vector3& maxp, const ddouble iteration_period, const uint number_of_iterations, ddouble sigma)
+uint integrateInTime(const ddouble block_scale, const Vector3& minp, const Vector3& maxp, const ddouble iteration_period, const uint number_of_iterations, ddouble tau)
 {
 	uint i, j, k, l;
 
@@ -438,11 +438,11 @@ uint integrateInTime(const ddouble block_scale, const Vector3& minp, const Vecto
 //	const uint steps_per_iteration = 522; // ... and 522 for the parabolic
 //#endif
 	const ddouble dt = iteration_period / ddouble(steps_per_iteration); // time step in time units
-	const ddouble dt_per_sigma = dt / sigma;
+	const ddouble dt_per_tau = dt / tau;
 
 	std::cout << "dt = " << dt << std::endl;
-	std::cout << "sigma = " << sigma << std::endl;
-	std::cout << "dt / sigma = " << dt_per_sigma << std::endl;
+	std::cout << "tau = " << tau << std::endl;
+	std::cout << "dt / tau = " << dt_per_tau << std::endl;
 
 	std::cout << "steps_per_iteration = " << steps_per_iteration << std::endl;
 
@@ -681,16 +681,16 @@ uint integrateInTime(const ddouble block_scale, const Vector3& minp, const Vecto
 #if RELATIVISTIC
 			// update odd values (imaginary terms)
 			update_psi << <psiDimGrid, dimBlock >> > (d_psiOdd, d_psiEven, d_qEven, d_pot, d_d1, d_hodges, g, dimensions, dt);
-			update_q << <edgeDimGrid, dimBlock >> > (d_qOdd, d_qEven, d_psiEven, d_d0, dimensions, dt_per_sigma);
+			update_q << <edgeDimGrid, dimBlock >> > (d_qOdd, d_qEven, d_psiEven, d_d0, dimensions, dt_per_tau);
 			// update even values (real terms)
 			update_psi << <psiDimGrid, dimBlock >> > (d_psiEven, d_psiOdd, d_qOdd, d_pot, d_d1, d_hodges, g, dimensions, dt);
-			update_q << <edgeDimGrid, dimBlock >> > (d_qEven, d_qOdd, d_psiOdd, d_d0, dimensions, dt_per_sigma);
+			update_q << <edgeDimGrid, dimBlock >> > (d_qEven, d_qOdd, d_psiOdd, d_d0, dimensions, dt_per_tau);
 #else
 			// update odd values (imaginary terms)
-			update_q << <edgeDimGrid, dimBlock >> > (d_qEven, d_qEven, d_psiEven, d_d0, dimensions, dt_per_sigma);
+			update_q << <edgeDimGrid, dimBlock >> > (d_qEven, d_qEven, d_psiEven, d_d0, dimensions, dt_per_tau);
 			update_psi << <psiDimGrid, dimBlock >> > (d_psiOdd, d_psiEven, d_qEven, d_pot, d_d1, d_hodges, g, dimensions, dt);
 			// update even values (real terms)
-			update_q << <edgeDimGrid, dimBlock >> > (d_qOdd, d_qOdd, d_psiOdd, d_d0, dimensions, dt_per_sigma);
+			update_q << <edgeDimGrid, dimBlock >> > (d_qOdd, d_qOdd, d_psiOdd, d_d0, dimensions, dt_per_tau);
 			update_psi << <psiDimGrid, dimBlock >> > (d_psiEven, d_psiOdd, d_qOdd, d_pot, d_d1, d_hodges, g, dimensions, dt);
 #endif
 		}
@@ -739,7 +739,7 @@ int main(int argc, char** argv)
 	std::cout << "dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
 
 	// Integrate in time using DEC
-	integrateInTime(blockScale, Vector3(-maxr, -maxr, -maxz), Vector3(maxr, maxr, maxz), iteration_period, number_of_iterations, sigma);
+	integrateInTime(blockScale, Vector3(-maxr, -maxr, -maxz), Vector3(maxr, maxr, maxz), iteration_period, number_of_iterations, tau);
 
 	return 0;
 }

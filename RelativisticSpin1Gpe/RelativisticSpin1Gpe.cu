@@ -94,7 +94,6 @@ constexpr myFloat INV_SQRT_2 = 0.70710678118655;
 //myFloat dt = 1.2e-3;
 myFloat dt = 5e-5;
 #if HYPERBOLIC
-//myFloat dt = 8.2e-4;
 //myFloat dt = 1.12e-3;
 #elif PARABOLIC
 //myFloat dt = 3.9e-4;
@@ -115,14 +114,14 @@ myFloat END_TIME = 0.55; // End time in ms
 #endif
 
 #if COMPUTE_GROUND_STATE
-myFloat sigma = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
+myFloat tau = 0.1; // 0.01; // Coefficient for the relativistic term (zero for non-relativistic)
 #else
-myFloat sigma = 0.005; // 0.01; // Coefficient for the relativistic term
+myFloat tau = 0.005; // 0.01; // Coefficient for the relativistic term
 #endif
-myFloat dt_per_sigma = dt / sigma;
+myFloat dt_per_tau = dt / tau;
 static int dtIncreaseCount = 0;
 
-//constexpr myFloat E = 126.7; // Adjusted by hand to match the parabolic equation
+//constexpr myFloat E = 126.7;
 //constexpr myFloat E = 127.346; // Computed with the hyperbolic ITP
 constexpr myFloat E = 127.333; // Computed with the hyperbolic ITP
 //constexpr myFloat E = 127.314; // Parabolic
@@ -656,13 +655,13 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 		Bs.BbQuad = BzQuadScale * signal.Bb;
 #if HYPERBOLIC
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_oddPsiHyper, d_d0, dimensions);
-		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true, sigma);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true, tau);
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_evenPsiHyper, d_d0, dimensions);
-		//forwardEuler_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
+		//forwardEuler_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_tau);
 #endif
 #if PARABOLIC
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_oddQPara, d_oddPsiPara, d_d0, dimensions);
-		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false, sigma);
+		forwardEuler << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false, tau);
 		update_q_para << <dimGrid, edgeDimBlock >> > (d_evenQPara, d_evenPsiPara, d_d0, dimensions);
 #endif
 	}
@@ -683,8 +682,8 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 	{
 		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
 		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume);
-		itp_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
-		itp_q_hyper << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_tau);
+		itp_q_hyper << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_tau);
 	}
 
 	while (true)
@@ -733,13 +732,13 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 		}
 
 		// Take an imaginary time step
-		itp_q_hyper << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_q_hyper << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_tau);
 		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_oddPsiHyper, dimensions, bodies, volume);
 
 		// Take an imaginary time step
-		itp_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
+		itp_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_tau);
 		itp_psi << <dimGrid, psiDimBlock >> > (d_HPsi, d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt);
 		// Normalize
 		normalize_h(dimGrid, psiDimBlock, d_density, d_evenPsiHyper, dimensions, bodies, volume);
@@ -833,11 +832,7 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 #if PARABOLIC
 		myFloat dens = getDensity(dimGrid, psiDimBlock, d_density, d_evenPsiPara, dimensions, bodies, volume);
 #endif
-		static myFloat prevDens = dens;
-		//std::cout << "At " << t << " ms density is " << dens << std::endl;
-		constexpr myFloat RELATIVE_MARGIN = 0.1; // 0.02;
-		constexpr myFloat ABSOLUTE_MARGIN = 1.1; // 0.02;
-		//if (t > 0 && (abs(dens - prevDens) > RELATIVE_MARGIN || isnan(dens)))
+		constexpr myFloat ABSOLUTE_MARGIN = 1.05;
 		
 		if (t > 0 && dens > ABSOLUTE_MARGIN || isnan(dens))
 		{
@@ -889,7 +884,6 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 				return 1;
 			}
 		}
-		prevDens = dens;
 #endif
 #else
 #if COMPUTE_COM
@@ -923,8 +917,8 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 
 #if HYPERBOLIC
-			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true, sigma);
-			update_q_hyper << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_sigma);
+			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiHyper, d_evenPsiHyper, d_evenQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true, tau);
+			update_q_hyper << <dimGrid, edgeDimBlock >> > (d_oddQHyper, d_evenQHyper, d_evenPsiHyper, d_d0, dimensions, dt_per_tau);
 #endif
 #if PARABOLIC
 			update_psi << <dimGrid, psiDimBlock >> > (d_oddPsiPara, d_evenPsiPara, d_evenQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false, 0);
@@ -942,8 +936,8 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 			Bs.BbQuad = BzQuadScale * signal.Bb;
 			
 #if HYPERBOLIC
-			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true, sigma);
-			update_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_sigma);
+			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiHyper, d_oddPsiHyper, d_oddQHyper, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, true, tau);
+			update_q_hyper << <dimGrid, edgeDimBlock >> > (d_evenQHyper, d_oddQHyper, d_oddPsiHyper, d_d0, dimensions, dt_per_tau);
 #endif
 #if PARABOLIC
 			update_psi << <dimGrid, psiDimBlock >> > (d_evenPsiPara, d_oddPsiPara, d_oddQPara, d_d1, d_hodges, Bs, dimensions, block_scale, d_p0, c0, c2, dt, false, 0);
@@ -1124,12 +1118,12 @@ void readConfFile()
 			{
 				dt = std::stod(line.substr(pos + 2));
 				IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
-				dt_per_sigma = dt / sigma;
+				dt_per_tau = dt / tau;
 			}
-			else if (size_t pos = line.find("sigma") != std::string::npos)
+			else if (size_t pos = line.find("tau") != std::string::npos)
 			{
-				sigma = std::stod(line.substr(pos + 5));
-				dt_per_sigma = dt / sigma;
+				tau = std::stod(line.substr(pos + 5));
+				dt_per_tau = dt / tau;
 			}
 		}
 	}
@@ -1153,8 +1147,8 @@ int main(int argc, char** argv)
 	std::cout << "The simulation will end at " << END_TIME << " ms." << std::endl;
 	//std::cout << "Block scale = " << blockScale << std::endl;
 	std::cout << "dt = " << dt << " = " << dt / omega_r * 1e3 << " ms." << std::endl;
-	std::cout << "sigma = " << sigma << std::endl;
-	std::cout << "dt / sigma = " << dt_per_sigma << std::endl;
+	std::cout << "tau = " << tau << std::endl;
+	std::cout << "dt / tau = " << dt_per_tau << std::endl;
 
 	// integrate in time using DEC
 	auto domainMin = Vector3(-DOMAIN_SIZE_X * 0.5, -DOMAIN_SIZE_Y * 0.5, -DOMAIN_SIZE_Z * 0.5);
@@ -1168,11 +1162,11 @@ int main(int argc, char** argv)
 	
 		while (!integrateInTime(blockScale, domainMin, domainMax))
 		{
-			dt_per_sigma = dt / sigma;
+			dt_per_tau = dt / tau;
 			IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 			t = 0;
 		}
-		dt_per_sigma = dt / sigma;
+		dt_per_tau = dt / tau;
 		IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
 		t = 0;
 		
@@ -1183,13 +1177,13 @@ int main(int argc, char** argv)
 	std::cout << "Dual edge length = " << DUAL_EDGE_LENGTH * blockScale << std::endl;
 #if COMPUTE_COM
 	std::cout << "corrected_F1_com = [";
-	//while (sigma < 0.0031)
+	//while (tau < 0.0031)
 	{
 		t = 0;
 		integrateInTime(blockScale, domainMin, domainMax);
 		std::cout << ";";
-		//sigma += 0.00025;
-		//dt_per_sigma = dt / sigma;
+		//tau += 0.00025;
+		//dt_per_tau = dt / tau;
 	}
 	std::cout << "];" << std::endl;
 #else

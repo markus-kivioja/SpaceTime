@@ -1752,8 +1752,8 @@ uint integrateInTime(const myFloat block_scale, const Vector3& minp, const Vecto
 	return 0;
 }
 
-myFloat sigma = 0.01;
-myFloat dt_per_sigma = dt / sigma;
+myFloat tau = 0.01;
+myFloat dt_per_tau = dt / tau;
 
 void readConfFile(const std::string& confFileName)
 {
@@ -1776,12 +1776,12 @@ void readConfFile(const std::string& confFileName)
 			{
 				dt = std::stod(line.substr(pos + 2));
 				IMAGE_SAVE_FREQUENCY = uint(IMAGE_SAVE_INTERVAL * 0.5 / 1e3 * omega_r / dt) + 1;
-				dt_per_sigma = dt / sigma;
+				dt_per_tau = dt / tau;
 			}
-			else if (size_t pos = line.find("sigma") != std::string::npos)
+			else if (size_t pos = line.find("tau") != std::string::npos)
 			{
-				sigma = std::stod(line.substr(pos + 5));
-				dt_per_sigma = dt / sigma;
+				tau = std::stod(line.substr(pos + 5));
+				dt_per_tau = dt / tau;
 			}
 			else if (size_t pos = line.find("qz") != std::string::npos)
 			{
